@@ -1,3 +1,27 @@
+// @description MIDI CC Visualizer
+// @author Giorgio Robino
+// @version 0.5.1
+// @about
+//   Real-time visualization of MIDI Continuous Controller (CC) messages with two
+//   display modes: a scrolling time graph and current-value bars, plus performance
+//   metrics for hardware testing and technique analysis (events/s, rate, jitter).
+//
+//   Each CC number is tracked per MIDI channel, so the same CC from different
+//   channels is displayed and measured separately.
+//
+//   Slider 1 selects the CC to monitor (0 = all CCs); slider 3 sets the time window
+//   in seconds (1-30). Metrics are computed over a 1-second rolling window.
+// @link
+//   GitHub https://github.com/solyarisoftware/reaper
+//   Issues https://github.com/solyarisoftware/reaper/issues
+// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_visualizer.png
+// @provides
+//   midi_cc_utils.jsfx-inc
+//   midi_cc_metrics.jsfx-inc
+// @changelog
+//   0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+//   0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)
+
 // ===================================================================
 // MIDI CC VISUALIZER WITH REAL-TIME GRAPH AND PERFORMANCE METRICS
 // ===================================================================
@@ -82,7 +106,7 @@
 
 desc:MIDI CC Visualizer with Real-Time Graph and Metrics
 author: Giorgio Robino
-version: 0.5
+version: 0.5.1
 date: 2025-11-22
 
 // Import utility libraries

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="solyarisoftware reaper">
+  <category name="MIDI">
+    <reapack name="midi_cc_visualizer.jsfx" type="effect" desc="MIDI CC Visualizer">
+      <version name="0.5.1" author="Giorgio Robino" time="2026-10-25T00:00:00Z">
+        <source file="midi_cc_visualizer.jsfx">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_visualizer.jsfx</source>
+        <source file="midi_cc_utils.jsfx-inc">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_utils.jsfx-inc</source>
+        <source file="midi_cc_metrics.jsfx-inc">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_metrics.jsfx-inc</source>
+        <changelog><![CDATA[0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+0.5 Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)]]></changelog>
+      </version>
+    </reapack>
+  </category>
+</index>
