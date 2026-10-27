@@ -11,6 +11,17 @@
 // - (CC#, Channel) pair data management
 // - Memory-safe data structures
 //
+// CHANGELOG (unreleased, 0.5.2):
+// - Fixed: the (CC, channel) key is now dense, (cc << 4) | channel, so the
+//   2048-slot value range is really enough (before, keys up to 32527 wrote
+//   into the active-flag, colour, palette, history and metrics ranges)
+// - Fixed: get_active_cc_channel_pair_by_cc() returned -1 unconditionally
+//   (no early return in EEL2)
+// - Fixed: is_cc_channel_active() could never return false
+// - Sorted pair list sized for all 2048 pairs (it was 300 slots)
+// - Removed the deprecated add_to_history() shim and the unused
+//   MEM_CC_SORTED_BY_CC / MEM_PAIR_LIST_BY_CC_COUNT ranges
+//
 // CHANGELOG (v0.5):
 // - Added multi-channel support for CC data storage
 // - History buffer now stores: time, cc_num, channel, value (was 3 items)
@@ -26,20 +37,22 @@
 @init
 
 // ========== MEMORY LAYOUT CONSTANTS ==========
-// These define where data is stored in memory to avoid collisions
-MEM_CC_VALUES = 0;           // mem[0-2047]: CC values per (CC#, Channel) pair - key format: (cc<<8)|channel
-MEM_CC_ACTIVE = 2500;        // mem[2500-2627]: Active flags per CC# (independent of channel)
-MEM_CC_CHANNEL_ACTIVE = 2700; // mem[2700-3700]: Active channel flags per CC# - format: bit array where bit N = channel N active
-MEM_CC_SORTED = 3800;        // mem[3800-4100]: Sorted active (CC#, Channel) pair list
-MEM_CC_SORTED_BY_CC = 4200;  // mem[4200-5200]: Sorted (CC#, Channel) pairs grouped by CC#
-MEM_CC_COLORS = 5300;        // mem[5300-5427]: Color assignments (CC#-based, independent of channel)
-MEM_COLOR_PALETTE = 5500;    // mem[5500-5699]: RGB color palette
-MEM_HISTORY_BASE = 6000;     // mem[6000-15000]: History buffer (now stores 4 values per entry)
-MEM_HISTORY_WRITE = 25000;   // Write position pointer
-MEM_HISTORY_COUNT = 25001;   // Item count
-MEM_NEXT_COLOR = 25002;      // Next color index to assign
-MEM_PAIR_LIST_COUNT = 25003; // Count of active (CC#, Channel) pairs
-MEM_PAIR_LIST_BY_CC_COUNT = 25004; // Count for grouped list
+// One flat mem[] space: every range must stay inside its declared size.
+// CC values are indexed with a DENSE key, key = (cc_num << 4) | channel, so
+// 128 CCs * 16 channels = 2048 slots are exactly enough (0..2047).
+// The ranges below must not overlap: tools/jsfx_memmap_check.py verifies it.
+// The metrics range (midi_cc_metrics.jsfx-inc) starts at 30000.
+MEM_CC_VALUES = 0;            // 0..2047    CC value per (CC#, channel), key = (cc<<4)|channel
+MEM_CC_ACTIVE = 2048;         // 2048..2175 active flag per CC# (any channel)
+MEM_CC_CHANNEL_ACTIVE = 2176; // 2176..2303 bitmask of active channels per CC#
+MEM_CC_SORTED = 2304;         // 2304..4351 sorted (CC#, channel) pair list, one slot per pair
+MEM_CC_COLORS = 4352;         // 4352..4479 colour index per CC# (channel-independent)
+MEM_COLOR_PALETTE = 4480;     // 4480..4515 RGB triplets, COLOR_PALETTE_SIZE * 3
+MEM_HISTORY_BASE = 4608;      // 4608..12607 history buffer, 4 slots per entry
+MEM_HISTORY_WRITE = 12608;    // write position pointer
+MEM_HISTORY_COUNT = 12609;    // item count
+MEM_NEXT_COLOR = 12610;       // next colour index to assign
+MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
 
 // ========== CONFIGURATION ==========
 MAX_HISTORY_ITEMS = 2000;    // Maximum history buffer size
@@ -48,34 +61,26 @@ MAX_CC_CHANNEL_PAIRS = 2048; // Max (CC#, Channel) pairs (128 CCs × 16 channels
 
 // ========== COLOR PALETTE INITIALIZATION ==========
 // Highly distinct, bright colors optimized for dark backgrounds
+function set_palette_color(idx, r, g, b) local(base) (
+  base = MEM_COLOR_PALETTE + idx * 3;
+  mem[base] = r;
+  mem[base + 1] = g;
+  mem[base + 2] = b;
+);
+
 function init_color_palette() (
-  // Store RGB values in memory starting at MEM_COLOR_PALETTE
-  // Each color uses 3 slots [R, G, B]
-  
-  // Color 0: Bright Red
-  mem[5500] = 1.0; mem[5501] = 0.2; mem[5502] = 0.2;
-  // Color 1: Bright Green
-  mem[5503] = 0.2; mem[5504] = 1.0; mem[5505] = 0.3;
-  // Color 2: Bright Blue
-  mem[5506] = 0.3; mem[5507] = 0.5; mem[5508] = 1.0;
-  // Color 3: Bright Yellow
-  mem[5509] = 1.0; mem[5510] = 0.95; mem[5511] = 0.2;
-  // Color 4: Bright Cyan
-  mem[5512] = 0.2; mem[5513] = 0.95; mem[5514] = 0.95;
-  // Color 5: Bright Magenta
-  mem[5515] = 1.0; mem[5516] = 0.3; mem[5517] = 0.9;
-  // Color 6: Bright Orange
-  mem[5518] = 1.0; mem[5519] = 0.6; mem[5520] = 0.2;
-  // Color 7: Bright Lime
-  mem[5521] = 0.7; mem[5522] = 1.0; mem[5523] = 0.3;
-  // Color 8: Bright Purple
-  mem[5524] = 0.7; mem[5525] = 0.4; mem[5526] = 1.0;
-  // Color 9: Bright Pink
-  mem[5527] = 1.0; mem[5528] = 0.5; mem[5529] = 0.7;
-  // Color 10: Bright Teal
-  mem[5530] = 0.3; mem[5531] = 0.9; mem[5532] = 0.7;
-  // Color 11: Bright Coral
-  mem[5533] = 1.0; mem[5534] = 0.5; mem[5535] = 0.4;
+  set_palette_color(0,  1.0, 0.2,  0.2);   // bright red
+  set_palette_color(1,  0.2, 1.0,  0.3);   // bright green
+  set_palette_color(2,  0.3, 0.5,  1.0);   // bright blue
+  set_palette_color(3,  1.0, 0.95, 0.2);   // bright yellow
+  set_palette_color(4,  0.2, 0.95, 0.95);  // bright cyan
+  set_palette_color(5,  1.0, 0.3,  0.9);   // bright magenta
+  set_palette_color(6,  1.0, 0.6,  0.2);   // bright orange
+  set_palette_color(7,  0.7, 1.0,  0.3);   // bright lime
+  set_palette_color(8,  0.7, 0.4,  1.0);   // bright purple
+  set_palette_color(9,  1.0, 0.5,  0.7);   // bright pink
+  set_palette_color(10, 0.3, 0.9,  0.7);   // bright teal
+  set_palette_color(11, 1.0, 0.5,  0.4);   // bright coral
 );
 
 // ========== COLOR MANAGEMENT ==========
@@ -130,11 +135,35 @@ function get_cc_color(cc_num) local(color_idx, base) (
 
 /**
  * Creates a unique key from CC number and channel
- * Format: (cc_num << 8) | channel
- * Used as index into memory arrays
+ *
+ * Format: (cc_num << 4) | channel  -- the DENSE encoding: 128 CCs * 16
+ * channels = 2048 keys (0..2047), which is exactly the size of the
+ * MEM_CC_VALUES range. Widening the shift means resizing that range.
+ *
+ * @param cc_num CC number (0-127)
+ * @param channel MIDI channel (0-15, where 0=channel 1, 15=channel 16)
+ * @return Unique integer key, 0..2047
  */
 function make_cc_channel_key(cc_num, channel) (
-  (cc_num << 8) | channel
+  (cc_num << 4) | channel
+);
+
+/**
+ * Extracts the CC number from a combined (CC, channel) key
+ * @param key Combined key from make_cc_channel_key()
+ * @return CC number (0-127)
+ */
+function key_to_cc(key) (
+  (key >> 4) & 0x7F
+);
+
+/**
+ * Extracts the channel from a combined (CC, channel) key
+ * @param key Combined key from make_cc_channel_key()
+ * @return MIDI channel (0-15, where 0=channel 1, 15=channel 16)
+ */
+function key_to_channel(key) (
+  key & 0x0F
 );
 
 /**
@@ -169,9 +198,10 @@ function is_cc_active(cc_num) (
 );
 
 // Checks if a specific (CC#, Channel) pair has been received
-function is_cc_channel_active(cc_num, channel) local(key) (
-  key = make_cc_channel_key(cc_num, channel);
-  mem[MEM_CC_VALUES + key] >= 0
+// (a CC value is always 0..127, so testing the stored value cannot tell
+// "received 0" from "never received": ask the channel bitmask instead)
+function is_cc_channel_active(cc_num, channel) (
+  (mem[MEM_CC_CHANNEL_ACTIVE + cc_num] & (1 << channel)) != 0
 );
 
 /**
@@ -224,26 +254,30 @@ function get_active_cc_channel_pair(index) local(count) (
  * @param channel_idx Which channel (0-15) for this CC# (0 = first active channel)
  * @return Combined key (CC#, Channel) or -1 if not found
  */
-function get_active_cc_channel_pair_by_cc(cc_num, channel_idx) local(channel, channel_mask, active_channel_count, found_count, key)
+function get_active_cc_channel_pair_by_cc(cc_num, channel_idx) local(channel, channel_mask, found_count, key)
 (
-  mem[MEM_CC_ACTIVE + cc_num] == 0 ? -1 : (
+  // EEL2 has no early return: the result is accumulated and returned after
+  // the loop. Returning a value from inside loop() does nothing - the
+  // function returns its last evaluated expression instead.
+  key = -1;
+
+  mem[MEM_CC_ACTIVE + cc_num] != 0 ? (
     channel_mask = mem[MEM_CC_CHANNEL_ACTIVE + cc_num];
     found_count = 0;
-    
+
     channel = 0;
     loop(16,
       (channel_mask & (1 << channel)) ? (
-        found_count == channel_idx ? (
+        found_count == channel_idx && key < 0 ? (
           key = make_cc_channel_key(cc_num, channel);
-          key
         );
         found_count += 1;
       );
       channel += 1;
     );
-    
-    -1  // Not found
   );
+
+  key
 );
 
 /**
@@ -298,18 +332,6 @@ function add_to_history_with_channel(timestamp, cc_num, channel, cc_value) local
 // ========== HISTORY BUFFER MANAGEMENT (WITH CHANNEL SUPPORT) ==========
 // Circular buffer that stores [timestamp, cc_num, channel, cc_value] quadruplets
 // Automatically overwrites oldest data when full
-
-/**
- * Adds a data point to the history buffer (without channel)
- * DEPRECATED: Use add_to_history_with_channel() instead
- * @param timestamp Time value (seconds)
- * @param cc_num CC number (0-127)
- * @param cc_value CC value (0-127)
- */
-function add_to_history(timestamp, cc_num, cc_value) 
-(
-  add_to_history_with_channel(timestamp, cc_num, 0, cc_value);
-);
 
 
 /**
@@ -382,7 +404,6 @@ function init_cc_utils() local(i) (
   mem[MEM_HISTORY_COUNT] = 0;
   mem[MEM_NEXT_COLOR] = 0;
   mem[MEM_PAIR_LIST_COUNT] = 0;
-  mem[MEM_PAIR_LIST_BY_CC_COUNT] = 0;
   
   // Initialize color palette
   init_color_palette();

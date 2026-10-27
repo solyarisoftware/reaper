@@ -125,19 +125,18 @@ BAR_SPACING = 8;         // Space between bars
 MIN_BAR_SECTION = 80;    // Minimum height for bar section
 MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
 Y_AXIS_PADDING = 0.05;   // 5% padding top and bottom for Y-axis
-STATUS_TEXT_MARGIN = 25; // Space for status text at bottom
+STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
+BAR_SECTION_TOP_GAP = 4; // Gap between the graph area and the first bar
 
 // ========== GLOBAL LAYOUT VARIABLES ==========
 g_graph_height = 0;
 g_bars_height = 0;
 g_start_y = 0;
 g_label_width = 0;
-g_value_width = 0;
 g_margin = 0;
 g_available_width = 0;
 g_max_bars = 0;
 g_visible_bars = 0;
-g_separator_y = 0;
 g_graph_start_y = 0;
 g_graph_margin_left = 0;
 g_graph_margin_right = 0;
@@ -159,38 +158,8 @@ PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
 
 // ========== FUNCTION DEFINITIONS ==========
 
-/**
- * Creates a unique key from CC number and channel for use as dictionary key
- * Format: (cc_num << 8) | channel
- * This ensures each (CC#, Channel) pair has a unique identifier
- * 
- * @param cc_num CC number (0-127)
- * @param channel MIDI channel (0-15, where 0=channel 1, 15=channel 16)
- * @return Unique integer key
- */
-function make_cc_channel_key(cc_num, channel) (
-  (cc_num << 8) | channel
-);
-
-/**
- * Extracts CC number from a combined (CC, Channel) key
- * 
- * @param key Combined key from make_cc_channel_key()
- * @return CC number (0-127)
- */
-function key_to_cc(key) (
-  (key >> 8) & 0x7F
-);
-
-/**
- * Extracts channel from a combined (CC, Channel) key
- * 
- * @param key Combined key from make_cc_channel_key()
- * @return MIDI channel (0-15, where 0=channel 1, 15=channel 16)
- */
-function key_to_channel(key) (
-  key & 0x0F
-);
+// The (CC, channel) key encoding has ONE definition, in
+// midi_cc_utils.jsfx-inc: make_cc_channel_key(), key_to_cc(), key_to_channel().
 
 /**
  * Calculates all layout dimensions for the UI with dynamic sizing
@@ -206,39 +175,40 @@ function key_to_channel(key) (
  * 
  * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
  */
-function calculate_layout(filtered_count) local(required_bar_height, max_bar_height) (
-  
-  // Calculate MINIMUM height needed for bars based on actual (CC, Channel) pair count
-  required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + 20;
+function calculate_layout(filtered_count) local(required_bar_height, max_bar_height, available_bar_space) (
+
+  // Minimum height needed for the bar section: one row per (CC, channel)
+  // pair, plus the status line and the gap under the graph.
+  required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
   required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
-  
+
   // Ensure bars don't dominate the window (max 35% of total height)
   max_bar_height = floor(gfx_h * MAX_BAR_PROPORTION);
   g_bars_height = min(required_bar_height, max_bar_height);
-  
-  // ========== GRAPH GETS ALL REMAINING SPACE ==========
+
+  // ========== GRAPH GETS ALL REMAINING SPACE (TOP) ==========
   g_graph_height = gfx_h - g_bars_height;
-  
-  // ========== GRAPH IS AT TOP ==========
+
   g_graph_start_y = 10;
   g_graph_margin_left = 35;
   g_graph_margin_right = 10;
   g_graph_margin_bottom = 10;
   g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
-  g_graph_actual_height = g_graph_height - g_graph_margin_bottom;
-  
-  // ========== BARS ARE AT BOTTOM ==========
-  g_start_y = g_graph_start_y + g_graph_height + 10;
-  g_label_width = FONT_SIZE * 6;  // Increased for "CC1 (CH:01)" format
-  g_value_width = FONT_SIZE * 3;
+  g_graph_actual_height = g_graph_height - g_graph_start_y;
+
+  // ========== BARS ARE PINNED TO THE BOTTOM, ABOVE THE STATUS LINE ==========
+  // The bar section starts where the graph ends (plus a small gap): no magic
+  // offsets, so the last bar cannot be drawn under the status text.
+  g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
+  g_label_width = FONT_SIZE * 6;  // room for the "CCnn/CHnn" label
   g_margin = 20;
-  g_available_width = gfx_w - g_label_width - g_value_width - g_margin * 2;
-  
-  // Calculate how many bars can fit in allocated space
-  available_bar_space = g_bars_height - STATUS_TEXT_MARGIN;
-  g_max_bars = floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING));
+  g_available_width = gfx_w - g_label_width - g_margin * 2;
+
+  // How many bars really fit between the graph and the status line
+  available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
+  g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
   g_visible_bars = min(filtered_count, g_max_bars);
-  
+
   // Calculate Y-axis range with padding
   g_y_range_min = 0 - (127 * Y_AXIS_PADDING);
   g_y_range_max = 127 + (127 * Y_AXIS_PADDING);
@@ -263,6 +233,21 @@ function calculate_time_window() local(current_time_sec) (
 
 
 /**
+ * Returns the index-th (CC#, channel) pair of the VISIBLE selection: all active
+ * pairs when slider1 is 0, otherwise only the channels carrying that CC#.
+ *
+ * The graph and the bars must both use this, or the two disagree: before
+ * 0.5.2 the bars ignored slider1 entirely and the graph drew nothing.
+ *
+ * @param index 0-based index into the visible selection
+ * @return Combined key (CC#, channel) or -1
+ */
+function get_visible_cc_channel_pair(index) (
+  slider1 != 0 ? get_active_cc_channel_pair_by_cc(slider1, index)
+               : get_active_cc_channel_pair(index)
+);
+
+/**
  * Draws horizontal bars showing current CC values with performance metrics
  * 
  * For each active/filtered (CC#, Channel) pair:
@@ -274,12 +259,11 @@ function calculate_time_window() local(current_time_sec) (
  * DISPLAY FORMAT (v0.5.1):
  * CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
  * 
- * CHANGES (v0.5.2):
- * - Made bar width and metrics layout fully responsive to window resize
- * - Bar width now scales dynamically based on available horizontal space
- * - Metrics text position adapts proportionally to window width
- * - Maintains optimal visual proportions across all window sizes
- * 
+ * CHANGES (unreleased, 0.5.2):
+ * - Bars follow slider1 like the graph (get_visible_cc_channel_pair)
+ * - Bar width is derived from g_available_width, computed once in the layout
+ * - A pair that resolves to -1 is skipped instead of drawing garbage
+ *
  * CHANGES (v0.5.1):
  * - Removed pipe separators (│) for cleaner appearance
  * - Added "Value:" label to CC value display for clarity
@@ -295,58 +279,63 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val, b
   y_pos = g_start_y;
   i = 0;
   
-  // Calculate bar width as percentage of available window width (fully responsive!)
-  // Bar takes 35% of total window width to leave room for metrics text in default window
-  bar_width = floor((gfx_w - g_margin * 2 - g_label_width) * 0.35);
+  // Bar width as a fraction of the horizontal space left by the label column;
+  // the rest of the width is for the value and the metrics text.
+  bar_width = floor(g_available_width * 0.35);
   bar_width = max(bar_width, 50); // Minimum bar width for readability
-  
+
   loop(g_visible_bars,
-    cc_channel_pair = get_active_cc_channel_pair(i);
-    cc_num = key_to_cc(cc_channel_pair);
-    channel = key_to_channel(cc_channel_pair);
-    val = get_cc_channel_value(cc_num, channel);
+    cc_channel_pair = get_visible_cc_channel_pair(i);
+
+    cc_num = cc_channel_pair >= 0 ? key_to_cc(cc_channel_pair) : -1;
+    channel = cc_channel_pair >= 0 ? key_to_channel(cc_channel_pair) : -1;
+    val = cc_channel_pair >= 0 ? get_cc_channel_value(cc_num, channel) : 0;
+
+    cc_channel_pair >= 0 ? (
     
-    // Set color for this CC (based on CC number only)
-    get_cc_color(cc_num);
+      // Set color for this CC (based on CC number only)
+      get_cc_color(cc_num);
     
-    // Draw CC number and channel label
-    gfx_x = g_margin;
-    gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
-    gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);  // channel + 1 for display (1-16 instead of 0-15)
+      // Draw CC number and channel label
+      gfx_x = g_margin;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);  // channel + 1 for display (1-16 instead of 0-15)
 
     
-    // Calculate and draw bar
-    bar_x = g_margin + g_label_width;
-    width = (val / 127.0) * bar_width;
-    width = max(width, 2);
+      // Calculate and draw bar
+      bar_x = g_margin + g_label_width;
+      width = (val / 127.0) * bar_width;
+      width = max(width, 2);
     
-    gfx_rect(bar_x, y_pos, width, BAR_HEIGHT);
+      gfx_rect(bar_x, y_pos, width, BAR_HEIGHT);
     
-    // Draw value number
-    gfx_x = bar_x + bar_width + 8;
-    gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
-    gfx_printf("Value: %d", val);
+      // Draw value number
+      gfx_x = bar_x + bar_width + 8;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("Value: %d", val);
     
-    // Get metrics for this (CC, Channel) pair
-    events_ps = get_events_per_second_cc_channel(cc_num, channel);
-    rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
-    rate_quality = get_rate_quality(rate_ps);
-    jitter_ms = floor(get_jitter_ms_cc_channel(cc_num, channel));
-    jitter_quality = get_jitter_quality(jitter_ms);
+      // Get metrics for this (CC, Channel) pair
+      events_ps = get_events_per_second_cc_channel(cc_num, channel);
+      rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
+      rate_quality = get_rate_quality(rate_ps);
+      jitter_ms = floor(get_jitter_ms_cc_channel(cc_num, channel));
+      jitter_quality = get_jitter_quality(jitter_ms);
     
-    // Draw metrics text with responsive positioning (uses remaining window space)
-    gfx_r = 0.7; gfx_g = 0.7; gfx_b = 0.7; gfx_a = 1;
-    metrics_x = bar_x + bar_width + 80; // Leave proper spacing after value number
-    gfx_x = metrics_x;
-    gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      // Draw metrics text with responsive positioning (uses remaining window space)
+      gfx_r = 0.7; gfx_g = 0.7; gfx_b = 0.7; gfx_a = 1;
+      metrics_x = bar_x + bar_width + 80; // Leave proper spacing after value number
+      gfx_x = metrics_x;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
     
-    events_ps > 0 ? (
-      gfx_printf("Events: %d/s    Rate: %d u/s (%s)    Jitter: ±%dms (%s)", 
-                 events_ps, rate_ps, rate_quality, jitter_ms, jitter_quality);
-    ) : (
-      gfx_printf("No activity in last second");
+      events_ps > 0 ? (
+        gfx_printf("Events: %d/s    Rate: %d u/s (%s)    Jitter: ±%dms (%s)", 
+                   events_ps, rate_ps, rate_quality, jitter_ms, jitter_quality);
+      ) : (
+        gfx_printf("No activity in last second");
+      );
+    
     );
-    
+
     y_pos += BAR_HEIGHT + BAR_SPACING;
     i += 1;
   );
@@ -436,20 +425,19 @@ function draw_time_grid() local(tick_interval, first_tick_time, current_tick_tim
  * 
  * Uses color assigned to each CC number (shared across channels)
  * 
- * @param active_count Total number of active (CC#, Channel) pairs
+ * @param visible_count Number of (CC#, channel) pairs in the visible selection
  */
-function draw_cc_data_lines(active_count) local(history_count, cc_draw_count, cc_idx, cc_channel_pair,
+function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_channel_pair,
                                                  cc_num, channel, first_point, prev_x, prev_y, hist_idx, base,
                                                  h_time, h_cc, h_channel, h_val, relative_time, x, y) (
   history_count = get_history_count();
-  
-  // For each active (CC, Channel) pair (or just selected CC)
-  cc_draw_count = slider1 != 0 ? active_count : active_count;  // When slider1 is set, we filter by CC# but show all channels
+
+  // Exactly the same selection the bars use (see get_visible_cc_channel_pair)
   cc_idx = 0;
-  
-  loop(cc_draw_count,
-    cc_channel_pair = slider1 != 0 ? get_active_cc_channel_pair_by_cc(slider1, cc_idx) : get_active_cc_channel_pair(cc_idx);
-    
+
+  loop(visible_count,
+    cc_channel_pair = get_visible_cc_channel_pair(cc_idx);
+
     cc_channel_pair >= 0 ? (
       cc_num = key_to_cc(cc_channel_pair);
       channel = key_to_channel(cc_channel_pair);
@@ -529,8 +517,14 @@ function draw_status_info(filtered_count, history_count) local() (
       gfx_drawstr("Send MIDI CC data to visualize.");
     );
   ) : (
-    gfx_printf("Time: %d sec window | %d points in history | Metrics: 1-second rolling window", 
+    gfx_printf("Time: %d sec window | %d points in history | Metrics: 1-second rolling window",
                slider3, history_count);
+
+    // Never hide bars silently: say when the window is too short for them all
+    filtered_count > g_visible_bars ? (
+      gfx_printf(" | showing %d of %d pairs: enlarge the window to see the rest",
+                 g_visible_bars, filtered_count);
+    );
   );
 );
 
@@ -625,7 +619,7 @@ calculate_time_window();
 // ========== DRAW UI ELEMENTS ==========
 draw_graph_background();
 draw_time_grid();
-draw_cc_data_lines(active_count);
+draw_cc_data_lines(filtered_count);
 draw_cc_bars();
 
 // Get history count for status display
