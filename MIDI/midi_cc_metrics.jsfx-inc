@@ -42,6 +42,10 @@
 // DISPLAY FORMAT:
 // CC1 (CH:01) [████████████████░░░░░░░░] 67  │ Events: 45/s │ Rate: 23 u/s (Gentle) │ Jitter: ±4ms (Excellent)
 //
+// CHANGELOG (unreleased, 0.5.2):
+// - Removed the deprecated single-channel shims (update_metrics_for_cc,
+//   get_events_per_second, get_rate_per_second, get_jitter_ms)
+//
 // CHANGELOG (v0.5):
 // - Added multi-channel metrics tracking
 // - Each (CC#, Channel) pair maintains independent metrics
@@ -148,14 +152,6 @@ function update_metrics_for_cc_channel(cc_num, channel, value, time_sec)
 );
 
 /**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use update_metrics_for_cc_channel() instead
- */
-function update_metrics_for_cc(cc_num, value, time_sec) (
-  update_metrics_for_cc_channel(cc_num, 0, value, time_sec);
-);
-
-/**
  * Removes events older than METRICS_WINDOW_SEC from all (CC#, Channel) buffers
  * @param current_time_sec Current time in seconds
  */
@@ -218,14 +214,6 @@ function get_events_per_second_cc_channel(cc_num, channel) local(base) (
 );
 
 /**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_events_per_second_cc_channel() instead
- */
-function get_events_per_second(cc_num) (
-  get_events_per_second_cc_channel(cc_num, 0)
-);
-
-/**
  * Calculates rate (value change per second) for a (CC#, Channel) pair
  * @param cc_num CC number (0-127)
  * @param channel MIDI channel (0-15)
@@ -247,14 +235,6 @@ function get_rate_per_second_cc_channel(cc_num, channel)
   );
   
   total_delta
-);
-
-/**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_rate_per_second_cc_channel() instead
- */
-function get_rate_per_second(cc_num) (
-  get_rate_per_second_cc_channel(cc_num, 0)
 );
 
 /**
@@ -314,14 +294,6 @@ function get_jitter_ms_cc_channel(cc_num, channel)
     stddev = sqrt(variance) * 1000;
     stddev
   );
-);
-
-/**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_jitter_ms_cc_channel() instead
- */
-function get_jitter_ms(cc_num) (
-  get_jitter_ms_cc_channel(cc_num, 0)
 );
 
 /**
