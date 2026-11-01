@@ -68,15 +68,18 @@
 // MEMORY LAYOUT (per CC per Channel):
 // - Event buffer: stores timestamps and values for last 1 second
 // - Each event: 3 floats (timestamp, value, delta)
-// - Max 200 events per (CC#, Channel) pair (= 200 evt/s; further events in the
-//   same window are dropped, the counters saturate)
+// - 500 events per (CC#, Channel) pair, i.e. up to 500 evt/s. The buffer is
+//   larger than the window needs at that rate on purpose: the window is
+//   filtered on read (see g_metrics_now), so a buffer holding exactly one
+//   second of events would under-report as soon as the prune runs late.
 // ===================================================================
 
 @init
 
 // ========== CONFIGURATION ==========
 METRICS_WINDOW_SEC = 1.0;      // Rolling window duration
-MAX_EVENTS_PER_CC = 200;       // Buffer size per CC (supports up to 200 evt/s)
+MIN_JITTER_INTERVALS = 4;      // below this, jitter is reported as -1 (n/a)
+MAX_EVENTS_PER_CC = 500;       // events held per (CC, channel); 500 evt/s at 1 s
 
 // ========== MEMORY ALLOCATION ==========
 // Memory layout: base = 30000 (avoid conflict with other modules)
@@ -91,9 +94,10 @@ metrics_base = 30000;
 // [2 .. 2 + MAX_EVENTS_PER_CC*3 - 1]: event buffer, 3 slots per event
 //   Each event: [timestamp, value, delta]
 
-// 602, not 600: two header slots plus the events. The block size follows from
-// the layout above; typing a round number here is what corrupted the next
-// pair's header on every 200th event. tools/jsfx_memmap_check.py verifies it.
+// 1502 = two header slots plus the events. The block size follows from the
+// layout above; typing a round number here is what corrupted the next pair's
+// header on every 200th event (0.5.1). tools/jsfx_memmap_check.py verifies it,
+// and the whole area still fits mem[]: 30000 + 2048 * 1502 < 3.1 M slots.
 CC_BLOCK_SIZE = 2 + (MAX_EVENTS_PER_CC * 3);
 CHANNELS_PER_CC = 16;
 CC_METRICS_BLOCKS = 128 * CHANNELS_PER_CC;  // 2048 total blocks
@@ -107,6 +111,11 @@ CC_METRICS_BLOCKS = 128 * CHANNELS_PER_CC;  // 2048 total blocks
 function get_cc_channel_metrics_base(cc_num, channel) (
   metrics_base + (cc_num * CHANNELS_PER_CC + channel) * CC_BLOCK_SIZE
 );
+
+// "Now" for every window computation below. The caller sets it once per frame;
+// the buffers are pruned every 100 ms, so counting what is *buffered* would
+// count up to 1.1 s of events and overstate the rate by up to 10%.
+g_metrics_now = 0;
 
 /**
  * Initializes the metrics system
@@ -217,9 +226,22 @@ function prune_old_metrics(current_time_sec)
  * @param channel MIDI channel (0-15)
  * @return Number of events in the last second
  */
-function get_events_per_second_cc_channel(cc_num, channel) local(base) (
+function get_events_per_second_cc_channel(cc_num, channel)
+  local(base, count, i, ptr, kept, cutoff) (
+
   base = get_cc_channel_metrics_base(cc_num, channel);
-  mem[base]  // Event count IS the events per second (in 1-second window)
+  count = mem[base];
+  cutoff = g_metrics_now - METRICS_WINDOW_SEC;
+
+  kept = 0;
+  i = 0;
+  loop(count,
+    ptr = base + 2 + (i * 3);
+    mem[ptr] >= cutoff ? kept += 1;
+    i += 1;
+  );
+
+  kept
 );
 
 /**
@@ -228,21 +250,22 @@ function get_events_per_second_cc_channel(cc_num, channel) local(base) (
  * @param channel MIDI channel (0-15)
  * @return Sum of absolute value changes per second
  */
-function get_rate_per_second_cc_channel(cc_num, channel) 
-  local(base, count, total_delta, i, event_ptr) (
-  
+function get_rate_per_second_cc_channel(cc_num, channel)
+  local(base, count, total_delta, i, ptr, cutoff) (
+
   base = get_cc_channel_metrics_base(cc_num, channel);
   count = mem[base];
-  
+  cutoff = g_metrics_now - METRICS_WINDOW_SEC;
+
   total_delta = 0;
   i = 0;
-  
+
   loop(count,
-    event_ptr = base + 2 + (i * 3);
-    total_delta += mem[event_ptr + 2];  // Sum deltas
+    ptr = base + 2 + (i * 3);
+    mem[ptr] >= cutoff ? total_delta += mem[ptr + 2];
     i += 1;
   );
-  
+
   total_delta
 );
 
@@ -265,43 +288,61 @@ function get_rate_quality(rate_value) (
  * @param channel MIDI channel (0-15)
  * @return Jitter in milliseconds (±)
  */
-function get_jitter_ms_cc_channel(cc_num, channel) 
-  local(base, count, i, event_ptr, prev_time, curr_time, interval,
-        sum_intervals, mean_interval, sum_squared_diff, variance, stddev) (
-  
+function get_jitter_ms_cc_channel(cc_num, channel)
+  local(base, count, i, ptr, cutoff, first_time, prev_time, curr_time, interval,
+        used, sum_intervals, mean_interval, sum_squared_diff, variance) (
+
   base = get_cc_channel_metrics_base(cc_num, channel);
   count = mem[base];
-  
-  // Need at least 2 events to calculate jitter
-  count < 2 ? (
-    0
+  cutoff = g_metrics_now - METRICS_WINDOW_SEC;
+
+  // One interval is not a distribution: below MIN_JITTER_INTERVALS intervals
+  // the answer is -1 ("not measurable") and the display says so, instead of
+  // turning a single irregular gap into "Poor".
+  sum_intervals = 0;
+  used = 0;
+  prev_time = 0;
+  i = 0;
+  loop(count,
+    ptr = base + 2 + (i * 3);
+    mem[ptr] >= cutoff ? (
+      used == 0 ? (
+        prev_time = mem[ptr];
+      ) : (
+        sum_intervals += mem[ptr] - prev_time;
+        prev_time = mem[ptr];
+      );
+      used += 1;
+    );
+    i += 1;
+  );
+
+  used < MIN_JITTER_INTERVALS + 1 ? (
+    -1
   ) : (
-    // Calculate mean interval
-    sum_intervals = 0;
-    i = 1;
-    loop(count - 1,
-      prev_time = mem[base + 2 + ((i - 1) * 3)];
-      curr_time = mem[base + 2 + (i * 3)];
-      sum_intervals += (curr_time - prev_time);
-      i += 1;
-    );
-    mean_interval = sum_intervals / (count - 1);
-    
-    // Calculate variance
+    mean_interval = sum_intervals / (used - 1);
+
     sum_squared_diff = 0;
-    i = 1;
-    loop(count - 1,
-      prev_time = mem[base + 2 + ((i - 1) * 3)];
-      curr_time = mem[base + 2 + (i * 3)];
-      interval = curr_time - prev_time;
-      sum_squared_diff += (interval - mean_interval) * (interval - mean_interval);
+    used = 0;
+    prev_time = 0;
+    i = 0;
+    loop(count,
+      ptr = base + 2 + (i * 3);
+      mem[ptr] >= cutoff ? (
+        used == 0 ? (
+          prev_time = mem[ptr];
+        ) : (
+          interval = mem[ptr] - prev_time;
+          sum_squared_diff += (interval - mean_interval) * (interval - mean_interval);
+          prev_time = mem[ptr];
+        );
+        used += 1;
+      );
       i += 1;
     );
-    variance = sum_squared_diff / (count - 1);
-    
-    // Standard deviation in milliseconds
-    stddev = sqrt(variance) * 1000;
-    stddev
+
+    variance = sum_squared_diff / (used - 1);
+    sqrt(variance) * 1000
   );
 );
 
