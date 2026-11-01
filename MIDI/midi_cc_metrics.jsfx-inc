@@ -275,11 +275,12 @@ function get_rate_per_second_cc_channel(cc_num, channel)
  * @param rate_value Rate in units per second
  * @return Quality string: "Gentle", "Moderate", "Active", or "Aggressive"
  */
+// Words for a musician, not for an engineer: this is how fast the gesture moves
 function get_rate_quality(rate_value) (
-  rate_value <= 15 ? "Gentle" :
-  rate_value <= 40 ? "Moderate" :
-  rate_value <= 70 ? "Active" :
-  "Aggressive"
+  rate_value <= 15 ? "slow" :
+  rate_value <= 40 ? "moderate" :
+  rate_value <= 70 ? "brisk" :
+  "fast"
 );
 
 /**
@@ -399,12 +400,13 @@ function get_jitter_ms_cc_channel(cc_num, channel)
  * @param jitter_ms Jitter in milliseconds
  * @return Quality string: "Excellent", "Very Good", "Good", "Fair", or "Poor"
  */
+// How much the spacing between messages wobbles
 function get_jitter_quality(jitter_ms) (
-  jitter_ms <= 5 ? "Excellent" :
-  jitter_ms <= 15 ? "Very Good" :
-  jitter_ms <= 30 ? "Good" :
-  jitter_ms <= 50 ? "Fair" :
-  "Poor"
+  jitter_ms <= 5 ? "steady" :
+  jitter_ms <= 15 ? "even" :
+  jitter_ms <= 30 ? "uneven" :
+  jitter_ms <= 50 ? "loose" :
+  "erratic"
 );
 
 // Initialize metrics system

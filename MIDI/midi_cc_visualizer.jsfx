@@ -16,6 +16,12 @@
 //   Each (CC, channel) pair has its own colour shade, the bars carry it in the
 //   label, the time axis is labelled, and Freeze stops the acquisition so a
 //   reading can be examined without it moving.
+//
+//   The three numbers per pair are named after what they mean, not after how they
+//   are computed: Messages = how many times per second the controller sends;
+//   Motion = how far the value travels per second (gesture speed);
+//   Timing = how much the spacing between messages wobbles. Pointing at them
+//   says the same thing on screen.
 // @link
 //   GitHub https://github.com/solyarisoftware/reaper
 //   Issues https://github.com/solyarisoftware/reaper/issues
@@ -106,8 +112,13 @@
 // - The metrics window is exactly one second, filtered on read: counts were up to
 //   10% high because they counted whatever the 100 ms prune had not removed yet
 // - 500 events/s per pair (was 200); jitter shows n/a below 5 events in the window
-// - Jitter ignores gaps (an interval over 4x the shortest is a pause, not jitter)
-//   and says how many intervals it was computed on: "±0.4ms (Excellent, 240 int)"
+// - The numbers are named after what they mean: Messages (how often it sends),
+//   Motion (how fast the value moves), Timing (how much the spacing wobbles)
+// - Timing ignores gaps (an interval over 4x the shortest is a pause, not jitter)
+//   and says how many intervals it was computed on: "±0.4ms (steady, 240 int)"
+// - The quality words are for musicians: slow/moderate/brisk/fast, steady/even/
+//   uneven/loose/erratic
+// - Pointing at the numbers explains them in a small panel
 //
 // CHANGELOG (v0.5.2):
 // - Bars follow slider 1 like the graph (one shared visible selection)
@@ -383,19 +394,20 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
         gfx_drawstr("no activity in the last second");
       ) : (
         jitter_ms < 0 ? (
-          sprintf(#m_full,  "Events: %d/s    Rate: %d u/s (%s)    Jitter: n/a", events_ps, rate_ps, rate_q);
-          sprintf(#m_mid,   "Events: %d/s    Rate: %d u/s    Jitter: n/a", events_ps, rate_ps);
-          sprintf(#m_short, "E%d/s  R%d u/s  J n/a", events_ps, rate_ps);
+          sprintf(#m_full,  "Messages %d/s    Motion %d u/s (%s)    Timing n/a",
+                  events_ps, rate_ps, rate_q);
+          sprintf(#m_mid,   "Messages %d/s    Motion %d u/s    Timing n/a", events_ps, rate_ps);
+          sprintf(#m_short, "%d msg/s   %d mot   n/a", events_ps, rate_ps);
         ) : (
           // n = how many intervals the figure is computed on: five and two
           // hundred are not the same claim
-          sprintf(#m_full,  "Events: %d/s    Rate: %d u/s (%s)    Jitter: ±%.1fms (%s, %d int)",
+          sprintf(#m_full,  "Messages %d/s    Motion %d u/s (%s)    Timing ±%.1fms (%s, %d int)",
                   events_ps, rate_ps, rate_q, jitter_ms, jitter_q, g_jitter_intervals);
-          sprintf(#m_mid,   "Events: %d/s    Rate: %d u/s    Jitter: ±%.1fms (%d int)",
+          sprintf(#m_mid,   "Messages %d/s    Motion %d u/s    Timing ±%.1fms (%d int)",
                   events_ps, rate_ps, jitter_ms, g_jitter_intervals);
-          sprintf(#m_short, "E%d/s  R%d u/s  J±%.1fms", events_ps, rate_ps, jitter_ms);
+          sprintf(#m_short, "%d msg/s   %d mot   ±%.1fms", events_ps, rate_ps, jitter_ms);
         );
-        sprintf(#m_min, "E%d/s", events_ps);
+        sprintf(#m_min, "%d msg/s", events_ps);
 
         gfx_measurestr(#m_full, tw, th);
         tw <= avail ? (
@@ -606,6 +618,56 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
  * @param filtered_count Number of active/filtered (CC#, Channel) pairs
  * @param history_count Number of points in history buffer
  */
+/**
+ * Explains the three numbers, but only where they are: with the pointer over the
+ * metrics of a row, a small box says what Messages, Motion and Timing are. The
+ * window stays clean the rest of the time, and nothing has to be read in the
+ * README before the numbers make sense.
+ */
+function draw_metric_tooltip() local(i, y_pos, hit, metrics_x, bx, by, bw, bh, lh) (
+  hit = 0;
+  y_pos = g_start_y;
+  i = 0;
+  loop(g_visible_bars,
+    (mouse_y >= y_pos - 2 && mouse_y <= y_pos + BAR_HEIGHT + BAR_SPACING) ? (
+      metrics_x = g_margin + g_label_width + floor(g_available_width * 0.30) + 40;
+      (mouse_x >= metrics_x) ? hit = 1;
+    );
+    y_pos += BAR_HEIGHT + BAR_SPACING;
+    i += 1;
+  );
+
+  hit && mouse_x > 0 && mouse_y > 0 ? (
+    bw = 520; bh = 62;
+    bx = min(mouse_x + 16, gfx_w - bw - 6);
+    bx = max(bx, 6);
+    by = mouse_y - bh - 14;
+    by < 6 ? by = mouse_y + 22;
+    by = min(by, gfx_h - bh - 6);
+
+    // Opaque panel: the rows underneath must not show through. gfx_r/gfx_g/gfx_b/
+    // gfx_a is the idiom that works here -- gfx_set(...,1,0,0) left the panel
+    // translucent in REAPER 7.82.
+    gfx_r = 0.09; gfx_g = 0.09; gfx_b = 0.12; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 0);
+
+    gfx_setfont(1, "Arial", FONT_SIZE - 4);
+    gfx_r = 0.9; gfx_g = 0.9; gfx_b = 0.9; gfx_a = 1;
+    // gfx_drawstr advances gfx_x: every line has to set it again
+    gfx_x = bx + 8; gfx_y = by + 6;
+    gfx_drawstr("Messages  times per second the controller sends");
+    gfx_x = bx + 8; gfx_y = by + 23;
+    gfx_drawstr("Motion    how far the value travels per second");
+    gfx_x = bx + 8; gfx_y = by + 40;
+    gfx_drawstr("Timing    how much the spacing between events wobbles");
+
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
+);
+
 function draw_status_info(filtered_count, history_count) local() (
   gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
   gfx_x = 10;
@@ -759,3 +821,6 @@ draw_cc_bars();
 // Get history count for status display
 history_count = get_history_count();
 draw_status_info(filtered_count, history_count);
+
+// On top of everything: the explanation of the numbers under the pointer
+draw_metric_tooltip();

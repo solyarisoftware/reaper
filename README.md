@@ -25,13 +25,25 @@ inside your REAPER resource directory (on Windows `%APPDATA%\REAPER\Effects\MIDI
 ![screenshot](MIDI/midi_cc_visualizer.png)
 
 Two display modes: a scrolling time graph and one bar per active CC. Each CC number is tracked
-**per MIDI channel**, so the same CC from different channels is shown and measured separately.
+**per MIDI channel**, so the same CC from different channels is shown and measured separately —
+same hue per CC, a different shade per channel, and the row label carries the colour.
 
 - **Slider 1** — CC to monitor (`0` = all CCs, `1-127` = one CC)
-- **Slider 3** — time window, 1–30 s
-- **Metrics**, computed over a 1 s rolling window: **events/s** (message frequency — controller
-  resolution), **rate** in units/s (how fast the values move — gesture intensity), **jitter** in ms
-  (timing consistency — a hardware quality indicator)
+- **Slider 2** — Freeze: stops acquisition (MIDI still passes through) so a reading can be examined
+- **Slider 3** — time window, 1–30 s; the time axis is labelled from `-10s` to `now`
+- **Slider 4** — Clear history and metrics; it returns itself to `0`
+
+Three numbers per row, named after what they mean rather than how they are computed. Pointing at
+them explains them on screen:
+
+| | what it says |
+|---|---|
+| **Messages** | how many times per second the controller sends — its update rate |
+| **Motion** | how far the value (0–127) travels per second — how fast the gesture is; rated slow, moderate, brisk, fast |
+| **Timing** | how much the spacing between messages wobbles, in ms — rated steady, even, uneven, loose, erratic, and shown with the number of intervals it was computed on. Gaps (a pause, a loop jump) are not counted as jitter, and `n/a` means there were too few intervals to say |
+
+The window is exactly one second, filtered on read, so a rate of 240/s is what the plugin was
+measuring and not what happened to be in a buffer.
 
 It was written for testing MIDI hardware: the numbers tell you whether a controller really
 transmits at high resolution, whether its timing is stable, and how hard you are actually moving it.
