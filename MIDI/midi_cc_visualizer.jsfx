@@ -261,7 +261,7 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
 
   g_graph_start_y = 10;
   g_graph_margin_left = 35;
-  g_graph_margin_right = 10;
+  g_graph_margin_right = 16;  // half of "now" when it is centred on the last line
   g_graph_margin_bottom = 10;
   g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
   g_graph_actual_height = g_graph_height - g_graph_start_y;
@@ -270,7 +270,7 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   // The bar section starts where the graph ends (plus a small gap): no magic
   // offsets, so the last bar cannot be drawn under the status text.
   g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
-  g_label_width = FONT_SIZE * 6;  // room for the "CCnn/CHnn" label
+  g_label_width = FONT_SIZE * 6 + 8;  // "CCnn/CHnn" plus air before the bar
   g_margin = 20;
   g_available_width = gfx_w - g_label_width - g_margin * 2;
 
@@ -458,7 +458,7 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
  * - Y-axis value labels on the left side
  * - Clean, minimal appearance without dark background
  */
-function draw_graph_background() local(i, level, y) (
+function draw_graph_background() local(i, level, weight, y) (
   // The plot area is a very slightly lighter panel: it defines the drawing area
   // without a heavy frame, and the margins stay black
   gfx_r = 0.025; gfx_g = 0.025; gfx_b = 0.03; gfx_a = 1;
@@ -469,14 +469,25 @@ function draw_graph_background() local(i, level, y) (
   gfx_r = 0.30; gfx_g = 0.30; gfx_b = 0.32; gfx_a = 1;
   gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 0);
 
-  // Centre, dashed so it cannot be mistaken for a bound
-  y = g_graph_start_y + g_graph_actual_height
-      - ((64 - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
-  gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.24; gfx_a = 1;
-  gfx_x = g_graph_margin_left;
-  loop(floor(g_graph_width / 8),
-    gfx_rect(gfx_x, y, 4, 1, 1);
-    gfx_x += 8;
+  // Interior guidance at the quarter points, dashed and unlabelled: they help
+  // the eye estimate without competing with the bounds, which are the frame
+  // itself. 64 is the centre and slightly brighter than 32 and 96.
+  weight = 0;
+  i = 0;
+  loop(3,
+    level = i == 0 ? 32 : i == 1 ? 64 : 96;
+    y = g_graph_start_y + g_graph_actual_height
+        - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+
+    weight = level == 64 ? 0.24 : 0.17;
+    gfx_r = weight; gfx_g = weight; gfx_b = weight + 0.02; gfx_a = 1;
+    gfx_x = g_graph_margin_left;
+    loop(floor(g_graph_width / 8),
+      gfx_rect(gfx_x, y, 4, 1, 1);
+      gfx_x += 8;
+    );
+
+    i += 1;
   );
 
   // Labels in the margin, right-aligned, digits padded. The two bounds are
@@ -498,7 +509,7 @@ function draw_graph_background() local(i, level, y) (
     gfx_g = level == 64 ? 0.45 : 0.58;
     gfx_b = level == 64 ? 0.48 : 0.60; gfx_a = 1;
     sprintf(#ylab, "%3d", level);
-    gfx_x = g_graph_margin_left - 30;
+    gfx_x = g_graph_margin_left - 26;
     gfx_y = y;
     gfx_drawstr(#ylab);
 
@@ -561,7 +572,7 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
   gfx_setfont(1, "Arial", FONT_SIZE - 4);
   gfx_r = 0.62; gfx_g = 0.62; gfx_b = 0.64;
   gfx_measurestr("now", tw, th);
-  gfx_x = g_graph_margin_left + g_graph_width - tw - 2;
+  gfx_x = g_graph_margin_left + g_graph_width - (tw / 2);
   gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
   gfx_drawstr("now");
   gfx_setfont(1, "Arial", FONT_SIZE);
