@@ -182,7 +182,7 @@ BAR_SPACING = 8;         // Space between bars
 MIN_BAR_SECTION = 80;    // Minimum height for bar section
 MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
-BAR_SECTION_TOP_GAP = 4; // Gap between the graph area and the first bar
+BAR_SECTION_TOP_GAP = 16; // band between the plot and the bars: holds the time labels
 DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
 
 // ========== GLOBAL LAYOUT VARIABLES ==========
@@ -533,13 +533,13 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
         gfx_a = 1;
         gfx_line(x_pos, g_graph_start_y, x_pos, g_graph_start_y + g_graph_actual_height);
 
-        // Labels only on major ticks, brighter than the grid, above the border,
-        // and never in the corner that belongs to "now"
+        // Labels on major ticks only, placed *outside* the plot like the value
+        // labels, and never in the corner that belongs to "now"
         (is_major && k > 0 && x_pos < g_graph_margin_left + g_graph_width - 38) ? (
           gfx_setfont(1, "Arial", FONT_SIZE - 4);
           gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.54;
-          gfx_x = x_pos + 3;
-          gfx_y = g_graph_start_y + g_graph_actual_height - FONT_SIZE - 5;
+          gfx_x = x_pos + 2;
+          gfx_y = g_graph_start_y + g_graph_actual_height + 2;
           gfx_printf("-%ds", k);
         );
       );
@@ -552,7 +552,7 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
   gfx_setfont(1, "Arial", FONT_SIZE - 4);
   gfx_r = 0.62; gfx_g = 0.62; gfx_b = 0.64;
   gfx_x = g_graph_margin_left + g_graph_width - 26;
-  gfx_y = g_graph_start_y + g_graph_actual_height - FONT_SIZE - 5;
+  gfx_y = g_graph_start_y + g_graph_actual_height + 2;
   gfx_drawstr("now");
   gfx_setfont(1, "Arial", FONT_SIZE);
 );
