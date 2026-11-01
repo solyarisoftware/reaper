@@ -82,7 +82,8 @@
 // - Bars follow slider 1 like the graph (one shared visible selection)
 // - Fixed: every event of an audio block carried the same timestamp, so the
 //   reported jitter was quantised to the block length (10.7 ms at 512/48k).
-//   An event is now timed at block_start + offset/srate.
+//   Events are now timed at block_start + offset/srate, on an audio-sample
+//   clock instead of the wall clock (which jitters with the callback).
 //
 // CHANGELOG (v0.5.1):
 // - Refactored draw_cc_bars() function for improved UI clarity
@@ -154,6 +155,14 @@ g_y_range_max = 0;
 g_y_range_total = 0;
 
 // ========== TIME WINDOW VARIABLES ==========
+// One clock for the whole plugin: the audio timeline, advanced by samplesblock
+// in @block. time_precise() would be the wall clock at which the audio callback
+// happened to run, and that jitters by about a millisecond between callbacks --
+// which is the same order as the jitter this plugin reports (measured: a MIDI
+// item with events exactly 8.33 ms apart read 1 ms of jitter with the wall
+// clock). Events, the visible window and the metrics all use this clock.
+g_clock_sec = 0;         // end of the last processed block, in seconds
+
 g_time_window = 0;
 g_time_start = 0;
 g_time_end = 0;
@@ -230,7 +239,7 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
  * - g_time_end: End time of visible window (seconds)
  */
 function calculate_time_window() local(current_time_sec) (
-  current_time_sec = time_precise();
+  current_time_sec = g_clock_sec;
   
   g_time_window = slider3;
   g_time_end = current_time_sec;
@@ -547,12 +556,13 @@ function draw_status_info(filtered_count, history_count) local() (
  */
 function process_midi_messages() local(offset, msg1, msg2, msg3, status, cc_num, cc_val,
                                         midi_channel, block_start_sec, event_time_sec) (
-  // Wall-clock time of the first sample of this block. midirecv()'s offset is
-  // in samples from here, so an event's real time is block_start + offset/srate.
-  // Using block_start alone would give every event of the block the same
-  // timestamp: a 512-sample block at 48 kHz quantises jitter to 10.7 ms steps,
-  // which is coarser than the quality thresholds the plugin reports.
-  block_start_sec = time_precise();
+  // The audio clock: block_start is the time of this block's first sample and
+  // advances by exactly samplesblock/srate per block, so consecutive blocks are
+  // evenly spaced even when the audio callback is scheduled late. midirecv()'s
+  // offset is in samples from block_start, so an event's time is
+  // block_start + offset/srate -- the same timebase the visible window uses.
+  block_start_sec = g_clock_sec;
+  g_clock_sec += samplesblock / srate;
 
   // Process MIDI messages
   while (midirecv(offset, msg1, msg2, msg3)) (
