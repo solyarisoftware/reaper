@@ -131,6 +131,49 @@ function get_cc_color(cc_num) local(color_idx, base) (
   gfx_a = 1;
 );
 
+// Sets gfx color for a (CC#, Channel) pair. The hue belongs to the CC number
+// and the channel only changes the shade, so two channels of the same CC are
+// one colour family, not two unrelated colours:
+//   channel 0/4/8/12  base
+//   channel 1/5/9/13  darker
+//   channel 2/6/10/14 lighter (towards white)
+//   channel 3/7/11/15 muted  (towards grey)
+function get_cc_channel_color(cc_num, channel) local(idx, base, v, r, g, b) (
+  idx = mem[MEM_CC_COLORS + cc_num];
+
+  idx < 0 ? (
+    assign_color_to_cc(cc_num);
+    idx = mem[MEM_CC_COLORS + cc_num];
+  );
+  (idx < 0 || idx >= COLOR_PALETTE_SIZE) ? idx = 0;
+
+  base = MEM_COLOR_PALETTE + (idx * 3);
+  r = mem[base];
+  g = mem[base + 1];
+  b = mem[base + 2];
+
+  v = channel % 4;
+  v == 1 ? (
+    r *= 0.55; g *= 0.55; b *= 0.55;
+  ) : v == 2 ? (
+    r = r * 0.45 + 0.55; g = g * 0.45 + 0.55; b = b * 0.45 + 0.55;
+  ) : v == 3 ? (
+    r = r * 0.60 + 0.28; g = g * 0.60 + 0.28; b = b * 0.60 + 0.28;
+  );
+
+  gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1;
+);
+
+// Clears the stored value of every (CC#, channel) pair, keeping the pairs
+// themselves: the bars stay where they are and drop to zero.
+function clear_all_cc_values() local(i) (
+  i = 0;
+  loop(MAX_CC_CHANNEL_PAIRS,
+    mem[MEM_CC_VALUES + i] = 0;
+    i += 1;
+  );
+);
+
 // ========== CC DATA MANAGEMENT (WITH CHANNEL SUPPORT) ==========
 
 /**
