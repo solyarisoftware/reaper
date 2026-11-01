@@ -182,7 +182,8 @@ BAR_SPACING = 8;         // Space between bars
 MIN_BAR_SECTION = 80;    // Minimum height for bar section
 MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
-BAR_SECTION_TOP_GAP = 16; // band between the plot and the bars: holds the time labels
+BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
+TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
 DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
 
 // ========== GLOBAL LAYOUT VARIABLES ==========
@@ -401,18 +402,23 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       events_ps <= 0 ? (
         gfx_drawstr("no activity in the last second");
       ) : (
+        // The sample size is shown only when it is small enough to matter: with
+        // 240 intervals the number speaks for itself, with 5 it does not.
         jitter_ms < 0 ? (
-          sprintf(#m_full,  "Messages %d/s    Motion %d u/s (%s)    Timing n/a",
-                  events_ps, rate_ps, rate_q);
-          sprintf(#m_mid,   "Messages %d/s    Motion %d u/s    Timing n/a", events_ps, rate_ps);
+          #jit_full = "Timing n/a";
+        ) : g_jitter_intervals < 20 ? (
+          sprintf(#jit_full, "Timing ±%.1fms (%s, %d int)", jitter_ms, jitter_q, g_jitter_intervals);
+        ) : (
+          sprintf(#jit_full, "Timing ±%.1fms (%s)", jitter_ms, jitter_q);
+        );
+
+        jitter_ms < 0 ? (
+          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
+          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing n/a", events_ps, rate_ps);
           sprintf(#m_short, "%d msg/s   %d mot   n/a", events_ps, rate_ps);
         ) : (
-          // n = how many intervals the figure is computed on: five and two
-          // hundred are not the same claim
-          sprintf(#m_full,  "Messages %d/s    Motion %d u/s (%s)    Timing ±%.1fms (%s, %d int)",
-                  events_ps, rate_ps, rate_q, jitter_ms, jitter_q, g_jitter_intervals);
-          sprintf(#m_mid,   "Messages %d/s    Motion %d u/s    Timing ±%.1fms (%d int)",
-                  events_ps, rate_ps, jitter_ms, g_jitter_intervals);
+          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
+          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing ±%.1fms", events_ps, rate_ps, jitter_ms);
           sprintf(#m_short, "%d msg/s   %d mot   ±%.1fms", events_ps, rate_ps, jitter_ms);
         );
         sprintf(#m_min, "%d msg/s", events_ps);
@@ -508,7 +514,7 @@ function draw_graph_background() local(i, level, y) (
  * Creates tick marks every 1 second with time labels showing
  * seconds relative to the oldest visible point in the window
  */
-function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_major) (
+function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_major, tw, th) (
   // A ruler: a faint line every second, a brighter one where there is a label.
   // Ticks are counted *backwards from now*, so the labels read exactly -5s, -10s
   // and stay aligned with the right edge while the window slides.
@@ -533,14 +539,17 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
         gfx_a = 1;
         gfx_line(x_pos, g_graph_start_y, x_pos, g_graph_start_y + g_graph_actual_height);
 
-        // Labels on major ticks only, placed *outside* the plot like the value
-        // labels, and never in the corner that belongs to "now"
+        // Labels on major ticks only, *outside* the plot like the value labels,
+        // centred under their tick (a ruler, not a tick with a caption), and
+        // never in the corner that belongs to "now"
         (is_major && k > 0 && x_pos < g_graph_margin_left + g_graph_width - 38) ? (
           gfx_setfont(1, "Arial", FONT_SIZE - 4);
           gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.54;
-          gfx_x = x_pos + 2;
-          gfx_y = g_graph_start_y + g_graph_actual_height + 2;
-          gfx_printf("-%ds", k);
+          sprintf(#tlab, "-%ds", k);
+          gfx_measurestr(#tlab, tw, th);
+          gfx_x = x_pos - (tw / 2);
+          gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
+          gfx_drawstr(#tlab);
         );
       );
     );
@@ -548,11 +557,12 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
     k += 1;
   );
 
-  // Right edge is the present
+  // Right edge is the present: right-aligned on the border it names
   gfx_setfont(1, "Arial", FONT_SIZE - 4);
   gfx_r = 0.62; gfx_g = 0.62; gfx_b = 0.64;
-  gfx_x = g_graph_margin_left + g_graph_width - 26;
-  gfx_y = g_graph_start_y + g_graph_actual_height + 2;
+  gfx_measurestr("now", tw, th);
+  gfx_x = g_graph_margin_left + g_graph_width - tw - 2;
+  gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
   gfx_drawstr("now");
   gfx_setfont(1, "Arial", FONT_SIZE);
 );
