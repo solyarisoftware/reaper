@@ -119,6 +119,8 @@
 //   and says how many intervals it was computed on: "±0.4ms (steady, 240 int)"
 // - The quality words are for musicians: slow/moderate/brisk/fast, steady/even/
 //   uneven/loose/erratic
+// - The plot covers exactly 0..127: no empty band above the top or below the
+//   bottom, the frame itself is the scale
 // - Pointing at the numbers explains them in a small panel
 // - Slider 5 chooses the dots: Auto (one every 12 px, the default), Every event
 //   (the raw samples, heavier), None (plain lines)
@@ -179,7 +181,6 @@ BAR_HEIGHT = 8;          // Height of each CC bar
 BAR_SPACING = 8;         // Space between bars
 MIN_BAR_SECTION = 80;    // Minimum height for bar section
 MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
-Y_AXIS_PADDING = 0.05;   // 5% padding top and bottom for Y-axis
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 4; // Gap between the graph area and the first bar
 DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
@@ -277,10 +278,12 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
   g_visible_bars = min(filtered_count, g_max_bars);
 
-  // Calculate Y-axis range with padding
-  g_y_range_min = 0 - (127 * Y_AXIS_PADDING);
-  g_y_range_max = 127 + (127 * Y_AXIS_PADDING);
-  g_y_range_total = g_y_range_max - g_y_range_min;
+  // The plot covers exactly the CC range: 0 is the bottom edge, 127 the top.
+  // Any padding here is dead space that makes the scale look like it continues
+  // beyond the limits of a 7-bit controller.
+  g_y_range_min = 0;
+  g_y_range_max = 127;
+  g_y_range_total = 127;
 );
 
 /**
@@ -449,44 +452,48 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
  * - Y-axis value labels on the left side
  * - Clean, minimal appearance without dark background
  */
-function draw_graph_background() local(i, level, weight, y) (
+function draw_graph_background() local(i, level, y) (
   // The plot area is a very slightly lighter panel: it defines the drawing area
   // without a heavy frame, and the margins stay black
   gfx_r = 0.025; gfx_g = 0.025; gfx_b = 0.03; gfx_a = 1;
   gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 1);
 
-  // Frame first: the traces are drawn on top of it, so a peak at 127 is not cut
-  gfx_r = 0.18; gfx_g = 0.18; gfx_b = 0.20; gfx_a = 1;
+  // The frame is the scale: its top edge is 127, its bottom edge is 0. Drawing
+  // two more lines on top of them would only double the border.
+  gfx_r = 0.30; gfx_g = 0.30; gfx_b = 0.32; gfx_a = 1;
   gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 0);
 
-  // A scale, not a texture: the two bounds marked, the centre lighter. Five equal
-  // lines read as background noise; 0 / 64 / 127 read as a scale.
+  // Centre, dashed so it cannot be mistaken for a bound
+  y = g_graph_start_y + g_graph_actual_height
+      - ((64 - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+  gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.24; gfx_a = 1;
+  gfx_x = g_graph_margin_left;
+  loop(floor(g_graph_width / 8),
+    gfx_rect(gfx_x, y, 4, 1, 1);
+    gfx_x += 8;
+  );
+
+  // Labels in the margin, right-aligned, digits padded. The two bounds are
+  // kept inside the window: 127 sits just under the top edge, 0 just above the
+  // bottom one, the centre on its line.
   gfx_setfont(1, "Arial", FONT_SIZE - 4);
 
   i = 0;
   loop(3,
     level = i == 0 ? 0 : i == 1 ? 64 : 127;
-    weight = level == 64 ? 0.26 : 0.34;
     y = g_graph_start_y + g_graph_actual_height
         - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
 
-    gfx_r = weight; gfx_g = weight; gfx_b = weight; gfx_a = 1;
-    level == 64 ? (
-      // centre: dashed, so it cannot be mistaken for a bound
-      gfx_x = g_graph_margin_left;
-      loop(floor(g_graph_width / 8),
-        gfx_rect(gfx_x, y, 4, 1, 1);
-        gfx_x += 8;
-      );
-    ) : (
-      gfx_line(g_graph_margin_left, y, g_graph_margin_left + g_graph_width, y);
-    );
+    level == 127 ? ( y = g_graph_start_y + 1 ) :
+    level == 0   ? ( y = g_graph_start_y + g_graph_actual_height - (FONT_SIZE - 4) - 1 ) :
+                   ( y = y - (FONT_SIZE - 4) / 2 );
 
-    // Labels brighter than the grid, right-aligned in the margin, digits padded
-    gfx_r = 0.5; gfx_g = 0.5; gfx_b = 0.52; gfx_a = 1;
+    gfx_r = level == 64 ? 0.45 : 0.58;
+    gfx_g = level == 64 ? 0.45 : 0.58;
+    gfx_b = level == 64 ? 0.48 : 0.60; gfx_a = 1;
     sprintf(#ylab, "%3d", level);
     gfx_x = g_graph_margin_left - 30;
-    gfx_y = y - (FONT_SIZE - 4) / 2;
+    gfx_y = y;
     gfx_drawstr(#ylab);
 
     i += 1;
