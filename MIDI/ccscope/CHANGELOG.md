@@ -3,6 +3,28 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.7.0 — 2026-11-01
+
+- **The sliders are gone; the plugin draws its own controls.** Every slider is declared with a
+  leading `-` in its name, which hides REAPER's strip and keeps the parameter alive: still
+  automatable, still saved in presets, still listed by the FX window's **Param** button. In
+  their place a bar of seven cells sits at the top of the canvas: `CC`, `CH`, `WIN`, `DOTS`,
+  `ROWS`, `FREEZE`, `CLEAR`.
+- **Measured: the strip was costing 190 px of window height** (REAPER 7.84, 1016 px wide) — about
+  eleven rows of pairs, or 37 rows instead of 26 at the same window size. Hiding it hands the
+  space to the plot and the list.
+- **Interaction without a keyboard**, because a JSFX cannot ask for one: click a cell with a
+  caret to open its list, the wheel steps the value (one notch = one step: the raw host delta
+  is 120 per notch, which took the time window from 10 s to 30 s in a single turn), a right
+  click restores the default.
+- **The bar degrades instead of clipping**: in a narrow window the cell labels are dropped
+  first — `FREEZE` and `CLEAR` keep theirs, because their text *is* the button.
+- **Two EEL2 traps, found the hard way.** `loop()` is not reentrant, so a hit test written as a
+  loop inside the loop that draws the cells corrupts the counter and the frame stops halfway;
+  the hit test is now a chain. And two arrays (`g_ctl_x[8]` / `g_ctl_w[8]`) were given the same
+  memory — every cell was placed at its own width — so the geometry lives in `mem[]`, in the
+  two ranges the memory-map checker verifies.
+
 ## 0.6.5 — 2026-11-01
 
 - **The `now` edge is one line again.** The right border of the plot was solid, as it should

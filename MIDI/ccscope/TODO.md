@@ -28,6 +28,23 @@ announced there with the full change list:
   500 events/s per pair with an exact one-second window.
 - **The bottom row of text overlapped the CC rows**: fixed in 0.5.2.
 
+## Decided, not yet done
+
+- **The control bar replaced REAPER's sliders in 0.7.0**, and it is deliberately one simple
+  widget: click opens a list, the wheel steps, a right click resets. What it cannot do is take
+  a value typed from the keyboard (a JSFX has no text input without a library), and with 128
+  controllers the `CC` list is long enough to need scrolling. Both point at the same thing: an
+  overlay panel with `−`/`+` steppers and a value in clear, opened by a button — the "redbox"
+  idea — to be done when the bar starts to feel tight.
+- **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` is
+  permissively licensed (*"free as in free beer… share your plugins for free too"*) but it ships
+  knobs, buttons and meters — no dropdowns, which is exactly what the three enum parameters
+  need. Geraint Luff's `ui-lib.jsfx-inc` does have selectors and text input, but declares no
+  license, so it cannot be vendored into this MIT repository without asking him first. The
+  bar is ~200 lines of our own code and needs neither.
+- **The README GIF and screenshot are from 0.6**, recorded when the parameters were REAPER
+  sliders. They need re-recording with the bar; until then the caption says so.
+
 ## Open issues
 
 | issue | what it is |

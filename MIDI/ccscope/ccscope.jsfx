@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.5
+// @version 0.7.0
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -190,7 +190,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.6.5
+version: 0.7.0
 date: 2026-11-01
 
 // Import utility libraries
@@ -198,13 +198,18 @@ import ccscope_utils.jsfx-inc
 import ccscope_metrics.jsfx-inc
 
 options:no_meter
-slider1:0<0,127,1>CC to Monitor (0=All)
-slider2:0<0,1,1>Freeze (stop acquiring)
-slider3:10<1,30,1>Time Window (seconds)
-slider4:0<0,1,1>Clear history and metrics
-slider5:0<0,2,1{Auto (12 px),Every event,None}>Dots on traces
-slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>Channel to Monitor (0=All)
-slider7:0<0,1,1{Rows below,Rows beside}>Pair list layout
+// The leading "-" hides REAPER's slider strip while keeping the parameter alive:
+// hidden sliders are still automatable, still saved in presets, and still listed
+// by the FX window's Param button. The strip costs 190 px of window height
+// (measured on REAPER 7.84), which for this plugin is about eleven rows of pairs.
+// In its place @gfx draws the control bar at the top of the canvas.
+slider1:0<0,127,1>-CC to Monitor (0=All)
+slider2:0<0,1,1>-Freeze (stop acquiring)
+slider3:10<1,30,1>-Time Window (seconds)
+slider4:0<0,1,1>-Clear history and metrics
+slider5:0<0,2,1{Auto (12 px),Every event,None}>-Dots on traces
+slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Channel to Monitor (0=All)
+slider7:0<0,1,1{Rows below,Rows beside}>-Pair list layout
 
 @init
 // ========== CONFIGURATION VARIABLES ==========
@@ -242,6 +247,20 @@ DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous o
 Y_LABEL_OFFSET = 26;     // px left of the plot: the left edge of the value labels,
                          //  and of the bar rows, so all text hangs from one vertical
 
+// ========== THE CONTROL BAR (what REAPER's slider strip used to be) ==========
+// Seven cells at the top of the canvas: five selectors and two buttons. The
+// interaction needs no keyboard, because a JSFX cannot ask for one: click opens
+// the list, the wheel steps the value, a right click restores the default.
+CTRL_BAR_TOP = 6;        // gap between the top of the canvas and the bar
+CTRL_BAR_HEIGHT = 24;    // the bar itself
+CTRL_BAR_GAP = 8;        // between the bar and the plot
+CTRL_BAR_PAD = 8;        // left margin of the first cell
+CTRL_CELL_GAP = 6;       // between cells
+CTRL_CELL_PAD = 6;       // inside a cell
+CTRL_ITEM_HEIGHT = 15;   // one row of an open list
+CTRL_MENU_ROWS = 12;     // rows visible before the list starts scrolling
+BAR_FONT = FONT_SIZE - 3; // the bar is one size under the rest of the text
+
 // ========== GLOBAL LAYOUT VARIABLES ==========
 g_graph_height = 0;
 g_bars_height = 0;
@@ -278,6 +297,30 @@ g_bar_x = 0;
 g_bar_width = 0;
 g_value_x = 0;
 g_metrics_x = 0;
+
+// ========== CONTROL BAR STATE ==========
+// The geometry of the seven cells lives in mem[], in the two ranges declared in
+// ccscope_utils.jsfx-inc: EEL2 arrays cannot be trusted for this. Measured here:
+// writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME seven
+// numbers for both -- two arrays had been given the same memory, so every cell
+// was placed at its own width. mem[] with explicit offsets is what the rest of
+// the plugin uses, and tools/jsfx_memmap_check.py verifies the ranges.
+g_bar_has_labels = 1;
+g_bar_total = 0;
+
+g_menu_open = 0;         // index of the cell whose list is open, 0 = closed
+g_menu_x = 0;            // where that list is drawn
+g_menu_y = 0;
+g_menu_w = 0;
+g_menu_rows = 0;
+g_menu_count = 0;
+g_menu_scroll = 0;
+
+g_mouse_down = 0;        // previous frame, for edge detection
+g_mouse_right = 0;
+g_wheel_last = 0;        // mouse_wheel is cumulative: only the delta matters
+g_ctl_ready = 0;         // the first frame has no previous state to compare
+g_hover_cell = 0;        // the cell under the pointer, computed once per frame
 
 // ========== TIME WINDOW VARIABLES ==========
 // One clock for the whole plugin: the audio timeline, advanced by samplesblock
@@ -323,7 +366,7 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
                                                min_graph_height, available_bar_space,
                                                column_width, side_needed_width) (
 
-  g_graph_start_y = 10;
+  g_graph_start_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + CTRL_BAR_GAP;
   g_graph_margin_left = 35;
   g_graph_margin_right = 16;  // half of "now" when it is centred on the last line
   g_graph_margin_bottom = 10;
@@ -406,6 +449,367 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   g_y_range_min = 0;
   g_y_range_max = 127;
   g_y_range_total = 127;
+);
+
+// ========== CONTROL BAR: WHAT EACH CELL DRIVES ==========
+// The bar is ordered by what you reach for first, not by the order of the slider
+// declarations, so the mapping lives here once and nowhere else.
+function ctl_slider_number(i) (
+  i == 1 ? 1 : i == 2 ? 6 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 2 : 4;
+);
+
+function ctl_is_selector(i) ( i <= 5 ? 1 : 0 );
+
+// The two buttons carry their text in the key, not in a value: dropping the
+// labels in a narrow window would leave FREEZE and CLEAR blank, so they keep
+// theirs while the selectors go to values only.
+function ctl_shows_key(i) ( (i >= 6 || g_bar_has_labels) ? 1 : 0 );
+
+function ctl_min(i) (
+  i == 1 ? 0 : i == 2 ? 0 : i == 3 ? 1 : i == 4 ? 0 : i == 5 ? 0 : 0;
+);
+
+function ctl_max(i) (
+  i == 1 ? 127 : i == 2 ? 16 : i == 3 ? 30 : i == 4 ? 2 : i == 5 ? 1 : 1;
+);
+
+function ctl_default(i) (
+  i == 1 ? 0 : i == 2 ? 0 : i == 3 ? 10 : i == 4 ? 0 : i == 5 ? 0 : 0;
+);
+
+function ctl_get(i) local(s) (
+  s = ctl_slider_number(i);
+  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 : s == 5 ? slider5 : s == 6 ? slider6 : slider7;
+);
+
+// The documented form is sliderchange(sliderN): it tells REAPER the value was set
+// from code, so embedded displays and the Param list follow. It does not write
+// automation -- slider_automate() would -- so a cell is a setting, not a source
+// of automation. The clamp lives here, so no caller can store an out-of-range
+// value that the slider would then refuse to show.
+function ctl_set(i, v) local(s) (
+  s = ctl_slider_number(i);
+  v = max(ctl_min(i), min(ctl_max(i), v));
+  s == 1 ? ( slider1 = v; sliderchange(slider1); ) :
+  s == 2 ? ( slider2 = v; sliderchange(slider2); ) :
+  s == 3 ? ( slider3 = v; sliderchange(slider3); ) :
+  s == 4 ? ( slider4 = v; sliderchange(slider4); ) :
+  s == 5 ? ( slider5 = v; sliderchange(slider5); ) :
+  s == 6 ? ( slider6 = v; sliderchange(slider6); ) :
+           ( slider7 = v; sliderchange(slider7); );
+);
+
+// What a cell says. Key text is the dim label, value text the bright one.
+function ctl_key_text(i) (
+  i == 1 ? ( #ctl_key = "CC"; ) :
+  i == 2 ? ( #ctl_key = "CH"; ) :
+  i == 3 ? ( #ctl_key = "WIN"; ) :
+  i == 4 ? ( #ctl_key = "DOTS"; ) :
+  i == 5 ? ( #ctl_key = "ROWS"; ) :
+  i == 6 ? ( slider2 ? ( #ctl_key = "FROZEN"; ) : ( #ctl_key = "FREEZE"; ); ) :
+           ( #ctl_key = "CLEAR"; );
+);
+
+function ctl_value_text(i) local(v) (
+  v = ctl_get(i);
+  i == 1 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
+  i == 2 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
+  i == 3 ? ( sprintf(#ctl_val, "%ds", v); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_val = "auto"; ) : v == 1 ? ( #ctl_val = "event"; ) : ( #ctl_val = "none"; ); ) :
+  i == 5 ? ( v == 0 ? ( #ctl_val = "below"; ) : ( #ctl_val = "beside"; ); ) :
+           ( #ctl_val = ""; );
+);
+
+// The widest text a cell can show, so the cells do not move while a value
+// changes: measuring what is on screen would shift every cell to its right.
+function ctl_value_widest(i) (
+  i == 1 ? ( #ctl_val = "127"; ) :
+  i == 2 ? ( #ctl_val = "all"; ) :
+  i == 3 ? ( #ctl_val = "30s"; ) :
+  i == 4 ? ( #ctl_val = "event"; ) :
+  i == 5 ? ( #ctl_val = "beside"; ) :
+           ( #ctl_val = ""; );
+);
+
+function ctl_item_text(i, v) (
+  i == 1 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
+  i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
+  i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every event"; ) : ( #ctl_item = "none"; ); ) :
+           ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); );
+);
+
+/**
+ * Places the seven cells left to right and records their geometry
+ *
+ * Widths come from the widest text each cell can hold, so a value changing does
+ * not move its neighbours. Two tiers: with the key labels, and without them.
+ */
+function layout_bar_cells() local(i, x, w, tw, th) (
+  x = CTRL_BAR_PAD;
+  i = 1;
+  loop(7,
+    ctl_key_text(i);
+    #ctl_key_measure = #ctl_key;
+    i == 6 ? ( #ctl_key_measure = "FROZEN"; );
+    w = CTRL_CELL_PAD * 2;
+    ctl_shows_key(i) ? (
+      gfx_measurestr(#ctl_key_measure, tw, th);
+      w += tw + 8;
+    );
+    ctl_value_widest(i);
+    gfx_measurestr(#ctl_val, tw, th);
+    w += tw;
+    ctl_is_selector(i) ? ( w += 11; );   // the caret and its air
+    w = max(w, 20);
+    mem[MEM_CTL_X + i] = x;
+    mem[MEM_CTL_W + i] = w;
+    x += w + CTRL_CELL_GAP;
+    i += 1;
+  );
+  g_bar_total = x - CTRL_CELL_GAP + CTRL_BAR_PAD;
+);
+
+function calculate_bar_layout() (
+  gfx_setfont(1, "Arial", BAR_FONT);
+  g_bar_has_labels = 1;
+  layout_bar_cells();
+  g_bar_total > gfx_w - CTRL_BAR_PAD ? (
+    g_bar_has_labels = 0;
+    layout_bar_cells();
+  );
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+// Hit test written as a chain and not as a loop on purpose: loop() in EEL2 is
+// not reentrant, and this one is called from inside the loop that draws the
+// cells. A nested loop there does not fail loudly -- it corrupts the outer
+// counter, so the cells are drawn in a random order and the rest of the frame
+// never runs.
+function ctl_hit_test(px, py) local(hit) (
+  hit = 0;
+  (py >= CTRL_BAR_TOP && py <= CTRL_BAR_TOP + CTRL_BAR_HEIGHT) ? (
+    hit = (px >= mem[MEM_CTL_X + 7] && px <= mem[MEM_CTL_X + 7] + mem[MEM_CTL_W + 7]) ? 7 :
+          (px >= mem[MEM_CTL_X + 6] && px <= mem[MEM_CTL_X + 6] + mem[MEM_CTL_W + 6]) ? 6 :
+          (px >= mem[MEM_CTL_X + 5] && px <= mem[MEM_CTL_X + 5] + mem[MEM_CTL_W + 5]) ? 5 :
+          (px >= mem[MEM_CTL_X + 4] && px <= mem[MEM_CTL_X + 4] + mem[MEM_CTL_W + 4]) ? 4 :
+          (px >= mem[MEM_CTL_X + 3] && px <= mem[MEM_CTL_X + 3] + mem[MEM_CTL_W + 3]) ? 3 :
+          (px >= mem[MEM_CTL_X + 2] && px <= mem[MEM_CTL_X + 2] + mem[MEM_CTL_W + 2]) ? 2 :
+          (px >= mem[MEM_CTL_X + 1] && px <= mem[MEM_CTL_X + 1] + mem[MEM_CTL_W + 1]) ? 1 : 0;
+  );
+  hit;
+);
+
+// Opens the list of a selector, scrolled so that the current value is in the
+// middle: with 128 controllers the list cannot start at the top every time.
+function ctl_open_menu(i) local(cur) (
+  g_menu_open = 0;
+  ctl_is_selector(i) ? (
+    g_menu_open = i;
+    g_menu_count = ctl_max(i) - ctl_min(i) + 1;
+    g_menu_rows = min(g_menu_count, CTRL_MENU_ROWS);
+    g_menu_w = max(mem[MEM_CTL_W + i], 92);
+    g_menu_x = mem[MEM_CTL_X + i];
+    g_menu_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + 3;
+    cur = ctl_get(i) - ctl_min(i);
+    g_menu_scroll = max(0, min(cur - floor(g_menu_rows / 2), g_menu_count - g_menu_rows));
+  );
+);
+
+// Returns 1 when the press was inside the open list (and acted on it), so the
+// caller knows the click was consumed even after the list has closed.
+function ctl_menu_press(px, py) local(r, v, h, used) (
+  used = 0;
+  g_menu_open > 0 ? (
+    h = g_menu_rows * CTRL_ITEM_HEIGHT + 4;
+    (px >= g_menu_x && px <= g_menu_x + g_menu_w && py >= g_menu_y && py <= g_menu_y + h) ? (
+      r = floor((py - g_menu_y - 2) / CTRL_ITEM_HEIGHT);
+      v = ctl_min(g_menu_open) + g_menu_scroll + r;
+      (r >= 0 && r < g_menu_rows && v <= ctl_max(g_menu_open)) ? ( ctl_set(g_menu_open, v); );
+      used = 1;
+    );
+    g_menu_open = 0;
+  );
+  used;
+);
+
+// The wheel arrives in host units, not in notches: measured on Windows a single
+// notch is 120, so stepping by the raw delta took the time window from 10 s to
+// 30 s (its maximum) in one turn. One notch = one step, and a fast spin still
+// moves several when the delta is a multiple of it.
+function ctl_wheel_steps(delta) (
+  (delta > 0) ? max(1, floor(delta / 120)) : -max(1, floor(-delta / 120));
+);
+
+/**
+ * Turns the mouse into changes: click opens, wheel steps, right click resets
+ *
+ * Run before drawing, so the frame shows the state the pointer has just made.
+ * mouse_x / mouse_y are canvas coordinates, and with every slider hidden the
+ * canvas is the whole window: the bar's geometry is the drawing geometry.
+ */
+function ctl_handle_mouse() local(down, rdown, wd, used) (
+  g_ctl_ready == 0 ? (
+    g_wheel_last = mouse_wheel;
+    g_mouse_down = mouse_cap & 1;
+    g_mouse_right = mouse_cap & 2;
+    g_ctl_ready = 1;
+  );
+
+  down = mouse_cap & 1;
+  rdown = mouse_cap & 2;
+  g_hover_cell = ctl_hit_test(mouse_x, mouse_y);
+
+  wd = mouse_wheel - g_wheel_last;
+  g_wheel_last = mouse_wheel;
+  wd != 0 ? (
+    g_menu_open > 0 ? (
+      g_menu_scroll = max(0, min(g_menu_scroll - ctl_wheel_steps(wd), g_menu_count - g_menu_rows));
+    ) : (
+      g_hover_cell > 0 ? ( ctl_is_selector(g_hover_cell) ? ( ctl_set(g_hover_cell, ctl_get(g_hover_cell) + ctl_wheel_steps(wd)); ); );
+    );
+  );
+
+  (down && !g_mouse_down) ? (
+    used = ctl_menu_press(mouse_x, mouse_y);
+    used == 0 ? (
+      g_menu_open = 0;
+      g_hover_cell > 0 ? (
+        g_hover_cell == 6 ? ( ctl_set(6, 1 - slider2); ) :
+        g_hover_cell == 7 ? ( slider4 = 1; sliderchange(slider4); ) :
+                            ( ctl_open_menu(g_hover_cell); );
+      );
+    );
+  );
+
+  (rdown && !g_mouse_right) ? (
+    g_hover_cell > 0 ? (
+      g_hover_cell == 7 ? ( slider4 = 1; sliderchange(slider4); ) : ( ctl_set(g_hover_cell, ctl_default(g_hover_cell)); );
+    );
+  );
+
+  g_mouse_down = down;
+  g_mouse_right = rdown;
+);
+
+/**
+ * Draws the bar: a band of cells where REAPER's sliders used to be
+ */
+function draw_control_bar() local(i, x, w, y, tx, tw, th, hovered, is_on) (
+  gfx_setfont(1, "Arial", BAR_FONT);
+  y = CTRL_BAR_TOP;
+
+  // The band is darker than the plot panel, so the plot stays the subject
+  gfx_r = 0.075; gfx_g = 0.075; gfx_b = 0.085; gfx_a = 1;
+  gfx_rect(0, 0, gfx_w, y + CTRL_BAR_HEIGHT + 3, 1);
+  gfx_r = 0.12; gfx_g = 0.12; gfx_b = 0.14; gfx_a = 1;
+  gfx_rect(0, y + CTRL_BAR_HEIGHT + 3, gfx_w, 1, 1);
+
+  i = 1;
+  loop(7,
+    x = mem[MEM_CTL_X + i];
+    w = mem[MEM_CTL_W + i];
+    hovered = (g_hover_cell == i) ? 1 : 0;
+    is_on = (i == 6 && slider2) ? 1 : 0;
+
+    // Flat cells: the pointer over one, an open list or an engaged button are
+    // the only three things that change the fill, so "on" reads at a glance
+    is_on ? (
+      gfx_r = 0.32; gfx_g = 0.21; gfx_b = 0.08;
+    ) : (hovered || g_menu_open == i) ? (
+      gfx_r = 0.16; gfx_g = 0.16; gfx_b = 0.18;
+    ) : (
+      gfx_r = 0.10; gfx_g = 0.10; gfx_b = 0.11;
+    );
+    gfx_a = 1;
+    gfx_rect(x, y, w, CTRL_BAR_HEIGHT, 1);
+    gfx_r = (hovered || g_menu_open == i) ? 0.55 : 0.22;
+    gfx_g = gfx_r;
+    gfx_b = gfx_r + 0.02;
+    gfx_rect(x, y, w, CTRL_BAR_HEIGHT, 0);
+
+    ctl_key_text(i);
+    ctl_value_text(i);
+    tx = x + CTRL_CELL_PAD;
+    gfx_y = y + floor((CTRL_BAR_HEIGHT - BAR_FONT) / 2);
+    ctl_shows_key(i) ? (
+      gfx_measurestr(#ctl_key, tw, th);
+      is_on ? ( gfx_r = 1.0; gfx_g = 0.72; gfx_b = 0.30; ) : ( gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62; );
+      gfx_a = 1;
+      gfx_x = tx;
+      gfx_drawstr(#ctl_key);
+      tx += tw + 8;
+    );
+
+    is_on ? ( gfx_r = 1.0; gfx_g = 0.80; gfx_b = 0.40; ) : ( gfx_r = 0.94; gfx_g = 0.94; gfx_b = 0.95; );
+    gfx_a = 1;
+    gfx_x = tx;
+    gfx_drawstr(#ctl_val);
+
+    // The caret is drawn, not typed: no font is guaranteed to have the glyph
+    ctl_is_selector(i) ? (
+      gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.55; gfx_a = 1;
+      gfx_triangle(x + w - 11, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
+                   x + w - 5, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
+                   x + w - 8, y + floor(CTRL_BAR_HEIGHT / 2) + 2);
+    );
+
+    i += 1;
+  );
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+/**
+ * Draws the open list, last, so it can overlap the plot
+ */
+function draw_control_menu() local(i, r, v, y, h, hovered, current, thumb, thumbnail, scroll_h) (
+  g_menu_open > 0 ? (
+    i = g_menu_open;
+    h = g_menu_rows * CTRL_ITEM_HEIGHT + 4;
+    gfx_setfont(1, "Arial", BAR_FONT);
+
+    gfx_r = 0.04; gfx_g = 0.04; gfx_b = 0.05; gfx_a = 1;
+    gfx_rect(g_menu_x + 2, g_menu_y + 2, g_menu_w, h, 1);
+    gfx_r = 0.11; gfx_g = 0.11; gfx_b = 0.13; gfx_a = 1;
+    gfx_rect(g_menu_x, g_menu_y, g_menu_w, h, 1);
+    gfx_r = 0.42; gfx_g = 0.42; gfx_b = 0.45; gfx_a = 1;
+    gfx_rect(g_menu_x, g_menu_y, g_menu_w, h, 0);
+
+    r = 0;
+    loop(g_menu_rows,
+      v = ctl_min(i) + g_menu_scroll + r;
+      v <= ctl_max(i) ? (
+        y = g_menu_y + 2 + r * CTRL_ITEM_HEIGHT;
+        hovered = (mouse_x >= g_menu_x && mouse_x <= g_menu_x + g_menu_w
+                   && mouse_y >= y && mouse_y < y + CTRL_ITEM_HEIGHT) ? 1 : 0;
+        hovered ? (
+          gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.24; gfx_a = 1;
+          gfx_rect(g_menu_x + 1, y, g_menu_w - 2, CTRL_ITEM_HEIGHT, 1);
+        );
+        ctl_item_text(i, v);
+        current = (v == ctl_get(i)) ? 1 : 0;
+        current ? ( gfx_r = 1.0; gfx_g = 0.76; gfx_b = 0.36; ) : ( gfx_r = 0.78; gfx_g = 0.78; gfx_b = 0.80; );
+        gfx_a = 1;
+        gfx_x = g_menu_x + 10;
+        gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
+        gfx_drawstr(#ctl_item);
+      );
+      r += 1;
+    );
+
+    // With 128 controllers the list is longer than it is tall: a thin track and
+    // a thumb say that there is more of it, which a clipped list does not.
+    (g_menu_count > g_menu_rows) ? (
+      scroll_h = h - 6;
+      gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.25; gfx_a = 1;
+      gfx_rect(g_menu_x + g_menu_w - 4, g_menu_y + 3, 2, scroll_h, 1);
+      thumbnail = max(floor(scroll_h * g_menu_rows / g_menu_count), 8);
+      thumb = floor((scroll_h - thumbnail) * g_menu_scroll / max(g_menu_count - g_menu_rows, 1));
+      gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.54;
+      gfx_rect(g_menu_x + g_menu_w - 4, g_menu_y + 3 + thumb, 2, thumbnail, 1);
+    );
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
 );
 
 /**
@@ -988,8 +1392,15 @@ process_midi_messages();
 gfx_clear = 0;
 gfx_mode = 0;
 
+
 // Set font size
 gfx_setfont(1, "Arial", FONT_SIZE);
+
+// ========== THE CONTROL BAR ==========
+// Geometry first (the plot starts below the bar), then the pointer, then the
+// drawing: one frame, one state, and what you click is what you see.
+calculate_bar_layout();
+ctl_handle_mouse();
 
 // ========== SLIDER EDGES ==========
 // Freeze: remember the instant, so the window and the numbers describe it
@@ -1024,6 +1435,7 @@ calculate_time_window();
 g_metrics_now = g_time_end;
 
 // ========== DRAW UI ELEMENTS ==========
+draw_control_bar();
 draw_graph_background();
 draw_time_grid();
 draw_cc_data_lines(filtered_count);
@@ -1035,3 +1447,6 @@ draw_status_info(filtered_count, history_count);
 
 // On top of everything: the explanation of the numbers under the pointer
 draw_metric_tooltip();
+
+// ...and the open list above even that, because it is what the pointer is using
+draw_control_menu();

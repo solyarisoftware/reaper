@@ -59,6 +59,8 @@ MEM_HISTORY_WRITE = 12608;    // write position pointer
 MEM_HISTORY_COUNT = 12609;    // item count
 MEM_NEXT_COLOR = 12610;       // next colour index to assign
 MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
+MEM_CTL_X = 12612;            // 12612..12619 x of the 7 control-bar cells
+MEM_CTL_W = 12620;            // 12620..12627 width of the 7 control-bar cells
 
 // ========== CONFIGURATION ==========
 MAX_HISTORY_ITEMS = 2000;    // Maximum history buffer size

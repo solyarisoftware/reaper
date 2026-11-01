@@ -6,6 +6,8 @@ A JSFX effect for REAPER 6.37 or newer.
 
 Recorded in REAPER: one fader gesture, four CC streams (four shades of colour), the
 metrics updating live. The static screenshot used by ReaPack is [`ccscope.png`](ccscope.png).
+Both were recorded on 0.6, when the parameters were REAPER sliders in a strip above the plot;
+the same readings, with the controls now drawn by the plugin, are in the bar at the top.
 
 Two display modes: a scrolling time graph and one fader bar per active CC. Each CC number is
 tracked **per MIDI channel**, so the same CC from different channels is shown and measured
@@ -13,21 +15,32 @@ separately — same hue per CC, a different shade per channel, and the row label
 colour. The CC filter and the channel filter are independent and combine: one CC, one
 channel, or one CC on one channel.
 
-- **Slider 1** — CC to monitor (`0` = all CCs, `1-127` = one CC)
-- **Slider 2** — Freeze: stops acquisition (MIDI still passes through) so a reading can be examined
-- **Slider 3** — time window, 1–30 s; the time axis is labelled from `-10s` to `now`
-- **Slider 4** — Clear history and metrics; it returns itself to `0`
-- **Slider 5** — dots on the traces: `Auto` (one every 12 px), `Every event`, `None`
-- **Slider 6** — MIDI channel to monitor (`0` = all channels, `1-16` = one channel). It
-  combines with slider 1, so *CC1 on channel 3*, *every CC on channel 3* and *CC1 on every
-  channel* are all selections; the two filters share one list, and the graph and the bars
-  read that list, so they cannot disagree about what is on screen.
-- **Slider 7** — where the pair list lives: **Rows below** the plot (default) or **Rows
-  beside** it, as a column on the right. The column uses the whole window height and keeps
-  the same 16 px per row, so one window shows more pairs than with the list below — measured
-  at 1016×600: 10 pairs below, 18 beside. Below ~720 px of window width the plot would be
-  too narrow to be a plot, so the layout falls back to the rows below and the status line
-  says `rows beside need a wider window`.
+- **The control bar** — the seven parameters have no REAPER sliders: the sliders are declared
+  with a leading `-` in their name, which hides them while keeping them automatable, saved in
+  presets and listed by the FX window's **Param** button. In their place the plugin draws a bar
+  of seven cells at the top of the canvas. Hiding the strip gives back **190 px** of window
+  height (measured on REAPER 7.84), which is about eleven rows of pairs.
+  - click a cell with a caret to open its list, **the wheel** steps the value, a **right click**
+    restores the default;
+  - `CC` (`all` or one controller), `CH` (`all` or one channel);
+  - `WIN` — the time window, 1–30 s; the time axis is labelled from `-10s` to `now`;
+  - `DOTS` — `auto` (one every 12 px), `every event`, `none`;
+  - `ROWS` — `below` or `beside` (see below);
+  - `FREEZE` — stops acquisition (MIDI still passes through) so a reading can be examined;
+  - `CLEAR` — wipes history and metrics.
+
+  In a narrow window the cell labels are dropped first, and `FREEZE`/`CLEAR` keep theirs; below
+  ~460 px of width the last cells are clipped, and at that size the plot is not much of a plot
+  either.
+- The two filters (which CC, which channel) combine, so *CC1 on channel 3*, *every CC on
+  channel 3* and *CC1 on every channel* are all selections; they share one list, and the graph
+  and the bars read that list, so they cannot disagree about what is on screen.
+- **Where the pair list lives** — **below** the plot (default) or **beside** it, as a column on
+  the right. The column uses the whole window height and keeps the same 16 px per row, so one
+  window shows more pairs than with the list below — measured at 1016×600: 10 pairs below, 18
+  beside. Below ~720 px of window width the plot would be too narrow to be a plot, so the
+  layout falls back to the rows below and the status line says
+  `rows beside need a wider window`.
 
 One row per (CC, channel) pair. With the list **below**, the rows take the height they need:
 the plot keeps a minimum share of the window, so a taller window shows more pairs instead of
