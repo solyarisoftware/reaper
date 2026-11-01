@@ -52,6 +52,19 @@ measuring and not what happened to be in a buffer.
 It was written for testing MIDI hardware: the numbers tell you whether a controller really
 transmits at high resolution, whether its timing is stable, and how hard you are actually moving it.
 
+### The hardware it was written for
+
+![A four-fader MIDI controller](MIDI/controller.jpg)
+
+Four faders and four switches, each fader on its own CC (1, 11, 17, 21): the animation
+above is this device. Photo and review are mine —
+[Amazon.it](https://www.amazon.it/dp/B0FT2DSFHN).
+
+It answers a question a MIDI logger does not: **how fast, and how regularly, does this
+controller actually send?** That is `Messages/s` per CC and per channel, and it is what
+makes the plugin useful beyond faders — to check a rate limit in a JSFX of your own, for
+example.
+
 ## How this repository is organised
 
 This is a ReaPack repository, so **the folder tree is the package taxonomy**: a file in `MIDI/`
