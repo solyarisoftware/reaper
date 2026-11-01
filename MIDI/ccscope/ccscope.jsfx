@@ -25,7 +25,7 @@
 // @link
 //   GitHub https://github.com/solyarisoftware/reaper
 //   Issues https://github.com/solyarisoftware/reaper/issues
-// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope.png
+// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope/ccscope.png
 // @provides
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
