@@ -27,8 +27,8 @@
 //   Issues https://github.com/solyarisoftware/reaper/issues
 // @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope.png
 // @provides
-//   midi_cc_utils.jsfx-inc
-//   midi_cc_metrics.jsfx-inc
+//   ccscope_utils.jsfx-inc
+//   ccscope_metrics.jsfx-inc
 // @changelog
 //   0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
 //         ccscope.jsfx: uninstall the old one, it is no longer in the repository).
@@ -154,8 +154,8 @@
 //
 // ARCHITECTURE:
 // - Modular function-based design for maintainability
-// - Separate utility library (midi_cc_utils.jsfx-inc) for data management
-// - Separate metrics library (midi_cc_metrics.jsfx-inc) for performance analysis
+// - Separate utility library (ccscope_utils.jsfx-inc) for data management
+// - Separate metrics library (ccscope_metrics.jsfx-inc) for performance analysis
 // - Efficient memory management for history buffer and metrics
 // - All metrics calculated over 1-second rolling window for real-time feedback
 // ===================================================================
@@ -166,8 +166,8 @@ version: 0.6.0
 date: 2026-11-01
 
 // Import utility libraries
-import midi_cc_utils.jsfx-inc
-import midi_cc_metrics.jsfx-inc
+import ccscope_utils.jsfx-inc
+import ccscope_metrics.jsfx-inc
 
 options:no_meter
 slider1:0<0,127,1>CC to Monitor (0=All)
@@ -233,7 +233,7 @@ PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
 // ========== FUNCTION DEFINITIONS ==========
 
 // The (CC, channel) key encoding has ONE definition, in
-// midi_cc_utils.jsfx-inc: make_cc_channel_key(), key_to_cc(), key_to_channel().
+// ccscope_utils.jsfx-inc: make_cc_channel_key(), key_to_cc(), key_to_channel().
 
 /**
  * Calculates all layout dimensions for the UI with dynamic sizing

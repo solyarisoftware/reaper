@@ -5,8 +5,10 @@ history, including every intermediate step, `git log`.
 
 ## 0.6.0 — 2026-11-01
 
-- **Renamed to CCScope** (was "MIDI CC Visualizer"), and the package is a new file:
-  uninstall the old one before syncing.
+- **Renamed to CCScope** (was "MIDI CC Visualizer"). Everything is new: the package
+  file, the two includes (`ccscope_utils.jsfx-inc`, `ccscope_metrics.jsfx-inc`) and the
+  screenshot. No path is shared with 0.5.2, so the old package can be uninstalled when
+  convenient — ReaPack will offer to do it, since 0.5.2 is no longer in the repository.
 - **One colour per (CC, channel)**: the hue belongs to the CC, the channel changes the
   shade, so two channels of the same CC are no longer drawn identically.
 - **Readable at a glance**: labelled time axis, the grid is a scale (0 / 64 / 127 on the
