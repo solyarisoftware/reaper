@@ -93,6 +93,15 @@ Alexander-Scriabin-Scales
 Olivier-Messiaen-Modes
 }}}
 \sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Support\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 {\b IF YOU LIKE THE PROJECT, PLEASE \u11088 ?\u65039 ?STAR THIS REPOSITORY TO SHOW YOUR SUPPORT!}\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A star costs nothing, and it is the only signal GitHub shows to whoever is looking for a tool like this one: the count is what makes a repository look alive.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 If you want to go further, there is a donate button in the {\b Sponsor} menu of this repository:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b {\field{\*\fldinst{HYPERLINK "https://www.paypal.com/donate/?hosted_button_id=AEV3EVJEUFM32"}}{\fldrslt{\ul
+Donate with PayPal
+}}}
+}\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 It is a donation, not a purchase: nothing is unlocked, nothing changes in the license, and no support is promised in exchange. The minimum is 5 EUR, for a practical reason \u8212- below that the PayPal fee takes most of it. The same button funds the other open-source work of mine (dxconvey, the scale collections), so one pointer covers all of it.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 License\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "LICENSE"}}{\fldrslt{\ul
 MIT
