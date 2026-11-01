@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.2
+// @version 0.7.3
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -35,6 +35,12 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.3 The control bar sits on the window's own black instead of a lighter
+//         strip, and its first cell starts on the plot's left edge -- one
+//         vertical line through the whole plugin. Two details: the caret
+//         brightens with its cell (it is the part that promises a list), and a
+//         hairline separates the five selectors from the two buttons, because
+//         one kind opens something and the other acts.
 //   0.7.2 The three metrics are columns, not a sentence. Messages, Motion and
 //         Timing now start at fixed x, and inside them the numbers are aligned
 //         at their right edge, so 6, 16 and 123 end on the same pixel and the
@@ -206,7 +212,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.2
+version: 0.7.3
 date: 2026-11-01
 
 // Import utility libraries
@@ -267,6 +273,7 @@ Y_LABEL_OFFSET = 26;     // px left of the plot: the left edge of the value labe
 // Seven cells at the top of the canvas: five selectors and two buttons. The
 // interaction needs no keyboard, because a JSFX cannot ask for one: click opens
 // the list, the wheel steps the value, a right click restores the default.
+PLOT_LEFT = 35;          // the plot's left edge: the bar starts on the same vertical
 CTRL_BAR_TOP = 6;        // gap between the top of the canvas and the bar
 CTRL_BAR_HEIGHT = 24;    // the bar itself
 CTRL_BAR_GAP = 8;        // between the bar and the plot
@@ -401,7 +408,7 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
                                                column_width, side_needed_width) (
 
   g_graph_start_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + CTRL_BAR_GAP;
-  g_graph_margin_left = 35;
+  g_graph_margin_left = PLOT_LEFT;
   g_graph_margin_right = 16;  // half of "now" when it is centred on the last line
   g_graph_margin_bottom = 10;
 
@@ -645,7 +652,7 @@ function ctl_item_text(i, v) (
  * not move its neighbours. Two tiers: with the key labels, and without them.
  */
 function layout_bar_cells() local(i, x, w, tw, th) (
-  x = CTRL_BAR_PAD;
+  x = PLOT_LEFT;
   i = 1;
   loop(7,
     ctl_key_text(i);
@@ -798,10 +805,13 @@ function draw_control_bar() local(i, x, w, y, tx, tw, th, hovered, is_on) (
   gfx_setfont(1, "Arial", BAR_FONT);
   y = CTRL_BAR_TOP;
 
-  // The band is darker than the plot panel, so the plot stays the subject
-  gfx_r = 0.075; gfx_g = 0.075; gfx_b = 0.085; gfx_a = 1;
+  // The band is the window's own black, not a lighter strip: the bar is then a
+  // row of small cells floating on the same background as the plot's margins,
+  // and only the cells carry an edge. The hairline under it separates the bar
+  // from the plot without drawing a second frame.
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
   gfx_rect(0, 0, gfx_w, y + CTRL_BAR_HEIGHT + 3, 1);
-  gfx_r = 0.12; gfx_g = 0.12; gfx_b = 0.14; gfx_a = 1;
+  gfx_r = 0.16; gfx_g = 0.16; gfx_b = 0.18; gfx_a = 1;
   gfx_rect(0, y + CTRL_BAR_HEIGHT + 3, gfx_w, 1, 1);
 
   i = 1;
@@ -845,12 +855,22 @@ function draw_control_bar() local(i, x, w, y, tx, tw, th, hovered, is_on) (
     gfx_x = tx;
     gfx_drawstr(#ctl_val);
 
-    // The caret is drawn, not typed: no font is guaranteed to have the glyph
+    // The caret is drawn, not typed: no font is guaranteed to have the glyph.
+    // It brightens with its cell, because it is the part that promises a list.
     ctl_is_selector(i) ? (
-      gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.55; gfx_a = 1;
+      (hovered || g_menu_open == i) ? ( gfx_r = 0.80; gfx_g = 0.80; gfx_b = 0.84; )
+                                    : ( gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.55; );
+      gfx_a = 1;
       gfx_triangle(x + w - 11, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
                    x + w - 5, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
                    x + w - 8, y + floor(CTRL_BAR_HEIGHT / 2) + 2);
+    );
+
+    // The five selectors open a list, the two buttons act: a hairline between
+    // them says so before the pointer finds out.
+    (i == 5) ? (
+      gfx_r = 0.16; gfx_g = 0.16; gfx_b = 0.18; gfx_a = 1;
+      gfx_rect(mem[MEM_CTL_X + 6] - floor(CTRL_CELL_GAP / 2), y + 3, 1, CTRL_BAR_HEIGHT - 6, 1);
     );
 
     i += 1;

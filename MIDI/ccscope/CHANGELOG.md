@@ -3,6 +3,20 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.7.3 — 2026-11-01
+
+- **The bar sits on the window's own black**, not on a lighter strip: the cells are what carry
+  an edge, and the plot's margins and the bar are now the same surface. A hairline under the
+  bar keeps the two apart without drawing a second frame.
+- **The first cell starts on the plot's left edge** (`PLOT_LEFT`, 35 px — measured: the cell
+  border and the plot frame land on the same pixel column). One vertical line runs from the
+  bar through the plot's frame, and the bar no longer starts 27 px to the left of everything
+  else.
+- **The caret brightens with its cell.** It is the part that promises a list, so it now answers
+  the pointer instead of staying dim while the cell lights up.
+- **A hairline separates selectors from buttons**: five cells open a list, two act. The gap
+  alone did not say that.
+
 ## 0.7.2 — 2026-11-01
 
 - **The metrics are three columns, not a sentence.** `Messages`, `Motion` and `Timing` start
