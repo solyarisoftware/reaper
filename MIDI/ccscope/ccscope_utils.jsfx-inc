@@ -11,6 +11,12 @@
 // - (CC#, Channel) pair data management
 // - Memory-safe data structures
 //
+// CHANGELOG (v0.6.2):
+// - build_visible_cc_channel_pair_list() replaces
+//   build_active_cc_channel_pair_list() + get_active_cc_channel_pair_by_cc()
+//   + count_cc_channels(): the CC filter and the new channel filter are applied
+//   once, while the list is built, so bars and graph cannot disagree
+//
 // CHANGELOG (v0.5.2):
 // - Fixed: the (CC, channel) key is now dense, (cc << 4) | channel, so the
 //   2048-slot value range is really enough (before, keys up to 32527 wrote
@@ -248,25 +254,38 @@ function is_cc_channel_active(cc_num, channel) (
 );
 
 /**
- * Builds a sorted list of all active (CC#, Channel) pairs
- * Pairs are sorted by CC# first, then by channel
- * Results stored in MEM_CC_SORTED array
- * @return Total count of active (CC#, Channel) pairs
+ * Builds the list of (CC#, Channel) pairs that are both ACTIVE and VISIBLE.
+ *
+ * The filters are applied HERE, while the list is built: the CC filter
+ * (cc_filter) and the channel filter (channel_filter) produce one list, and
+ * every later stage -- bars, graph, layout, status line -- walks that same
+ * list. Nothing downstream can then disagree about what is visible; the 0.5.2
+ * bug, where the bars ignored the CC filter, was a second list implied by a
+ * second code path.
+ *
+ * Pairs are sorted by CC# first, then by channel. The result goes to
+ * MEM_CC_SORTED, the count to MEM_PAIR_LIST_COUNT.
+ *
+ * @param cc_filter CC number to keep (0-127), 0 = every CC
+ * @param channel_filter MIDI channel to keep (1-16, as shown in the sliders),
+ *                       0 = every channel
+ * @return Number of visible (CC#, Channel) pairs, 0 if the filters match nothing
  */
-function build_active_cc_channel_pair_list() local(count, cc, channel, channel_mask)
+function build_visible_cc_channel_pair_list(cc_filter, channel_filter) local(count, cc, channel, channel_mask)
 (
   count = 0;
   
   cc = 0;
   loop(128,
-    mem[MEM_CC_ACTIVE + cc] == 1 ? (
-      // This CC# is active, check which channels
+    mem[MEM_CC_ACTIVE + cc] == 1 && (cc_filter == 0 || cc == cc_filter) ? (
+      // This CC# is active and passes the filter, check which channels
       channel_mask = mem[MEM_CC_CHANNEL_ACTIVE + cc];
       
       channel = 0;
       loop(16,
-        (channel_mask & (1 << channel)) ? (
-          // This channel is active for this CC#
+        // channel is 0-15, the slider says 1-16
+        (channel_mask & (1 << channel)) != 0 && (channel_filter == 0 || channel == channel_filter - 1) ? (
+          // This channel is active for this CC# and passes the filter
           mem[MEM_CC_SORTED + count] = make_cc_channel_key(cc, channel);
           count += 1;
         );
@@ -281,67 +300,17 @@ function build_active_cc_channel_pair_list() local(count, cc, channel, channel_m
 );
 
 /**
- * Gets a (CC#, Channel) pair from the sorted active list
- * @param index Index into sorted list (0 = first pair)
- * @return Combined key (CC#, Channel) or -1 if invalid
+ * Gets the index-th pair of the list built by build_visible_cc_channel_pair_list()
+ *
+ * The bars and the graph both walk the visible list through here, so they draw
+ * the same set by construction -- the filters are already applied upstream.
+ *
+ * @param index 0-based index into the visible list
+ * @return Combined key (CC#, Channel) or -1 if the index is past the end
  */
-function get_active_cc_channel_pair(index) local(count) (
+function get_visible_cc_channel_pair(index) local(count) (
   count = mem[MEM_PAIR_LIST_COUNT];
   index >= count ? -1 : mem[MEM_CC_SORTED + index]
-);
-
-/**
- * Gets a (CC#, Channel) pair filtered by CC# and channel index
- * Useful when slider1 is set to a specific CC#
- * @param cc_num CC number to filter by (0-127)
- * @param channel_idx Which channel (0-15) for this CC# (0 = first active channel)
- * @return Combined key (CC#, Channel) or -1 if not found
- */
-function get_active_cc_channel_pair_by_cc(cc_num, channel_idx) local(channel, channel_mask, found_count, key)
-(
-  // EEL2 has no early return: the result is accumulated and returned after
-  // the loop. Returning a value from inside loop() does nothing - the
-  // function returns its last evaluated expression instead.
-  key = -1;
-
-  mem[MEM_CC_ACTIVE + cc_num] != 0 ? (
-    channel_mask = mem[MEM_CC_CHANNEL_ACTIVE + cc_num];
-    found_count = 0;
-
-    channel = 0;
-    loop(16,
-      (channel_mask & (1 << channel)) ? (
-        found_count == channel_idx && key < 0 ? (
-          key = make_cc_channel_key(cc_num, channel);
-        );
-        found_count += 1;
-      );
-      channel += 1;
-    );
-  );
-
-  key
-);
-
-/**
- * Counts how many channels have a specific CC#
- * @param cc_num CC number to check (0-127)
- * @return Number of channels with this CC#
- */
-function count_cc_channels(cc_num) local(channel_mask, count, channel)
-(
-  mem[MEM_CC_ACTIVE + cc_num] == 0 ? 0 : (
-    channel_mask = mem[MEM_CC_CHANNEL_ACTIVE + cc_num];
-    count = 0;
-    
-    channel = 0;
-    loop(16,
-      (channel_mask & (1 << channel)) ? count += 1;
-      channel += 1;
-    );
-    
-    count
-  );
 );
 
 

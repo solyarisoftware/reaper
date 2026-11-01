@@ -10,12 +10,18 @@ metrics updating live. The static screenshot used by ReaPack is [`ccscope.png`](
 Two display modes: a scrolling time graph and one fader bar per active CC. Each CC number is
 tracked **per MIDI channel**, so the same CC from different channels is shown and measured
 separately — same hue per CC, a different shade per channel, and the row label carries the
-colour.
+colour. The CC filter and the channel filter are independent and combine: one CC, one
+channel, or one CC on one channel.
 
 - **Slider 1** — CC to monitor (`0` = all CCs, `1-127` = one CC)
 - **Slider 2** — Freeze: stops acquisition (MIDI still passes through) so a reading can be examined
 - **Slider 3** — time window, 1–30 s; the time axis is labelled from `-10s` to `now`
 - **Slider 4** — Clear history and metrics; it returns itself to `0`
+- **Slider 5** — dots on the traces: `Auto` (one every 12 px), `Every event`, `None`
+- **Slider 6** — MIDI channel to monitor (`0` = all channels, `1-16` = one channel). It
+  combines with slider 1, so *CC1 on channel 3*, *every CC on channel 3* and *CC1 on every
+  channel* are all selections; the two filters share one list, and the graph and the bars
+  read that list, so they cannot disagree about what is on screen.
 
 Three numbers per row, named after what they mean rather than how they are computed. Pointing at
 them explains them on screen:

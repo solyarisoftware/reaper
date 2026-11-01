@@ -3,6 +3,15 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.6.2 — 2026-11-01
+
+- **Channel filter (slider 6)**: `All` or one of the 16 channels, combining with the CC
+  filter — *CC1 on channel 3*, *every CC on channel 3*, or *CC1 on every channel*. The two
+  filters are applied while the visible (CC, channel) list is built, so the graph, the bars
+  and the `showing N of M pairs` line all read the same list and cannot disagree — the
+  failure mode of 0.5.2, when the bars ignored the CC filter.
+- The status line says what it is waiting for, channel included.
+
 ## 0.6.1 — 2026-11-01
 
 - **Fixes the packaging of 0.6.0**, which could not load: the package file was renamed

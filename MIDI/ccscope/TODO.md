@@ -29,10 +29,11 @@ announced there with the full change list:
 
 | issue | what it is |
 |---|---|
-| [#4](../../issues/4) | channel filter — the natural companion of per-channel tracking |
 | [#5](../../issues/5) | history is fixed at 2000 events; size it from the time window |
 | [#6](../../issues/6) | 14-bit CC pairs |
 | [#8](../../issues/8) | all pairs visible: bar area grows with the window, or moves beside the plot |
+
+Closed: [#4](../../issues/4) channel filter — done in 0.6.2, slider 6.
 
 ## Ideas, not issues yet
 

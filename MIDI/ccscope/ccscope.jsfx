@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.1
+// @version 0.6.2
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -9,9 +9,11 @@
 //   Each CC number is tracked per MIDI channel, so the same CC from different
 //   channels is displayed and measured separately.
 //
-//   Slider 1 selects the CC to monitor (0 = all CCs); slider 3 sets the time window
-//   in seconds (1-30). Metrics are computed over a 1-second window, filtered on
-//   read, so the numbers describe exactly the second they claim to.
+//   Slider 1 selects the CC to monitor (0 = all CCs) and slider 6 the MIDI channel
+//   (0 = all channels): the two filters combine, so "CC1 on channel 3" is a
+//   selection like any other. Slider 3 sets the time window in seconds (1-30).
+//   Metrics are computed over a 1-second window, filtered on read, so the numbers
+//   describe exactly the second they claim to.
 //
 //   Each (CC, channel) pair has its own colour shade, the bars carry it in the
 //   label, the time axis is labelled, and Freeze stops the acquisition so a
@@ -30,6 +32,10 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.6.2 Channel filter: slider 6 keeps one MIDI channel (or all), combining with
+//         the CC filter. Both filters are applied while the visible pair list is
+//         built, so the graph and the bars cannot disagree about what is on
+//         screen, and "showing N of M" counts the filtered set.
 //   0.6.1 Packaging fix: 0.6.0 was indexed with the includes under their old names
 //         (midi_cc_*.jsfx-inc), so it could not load. Everything is renamed after
 //         the package here. Use this version.
@@ -68,6 +74,8 @@
 // - Unique persistent color per CC from 12-color palette (shared across channels)
 // - Configurable time window (1-30 seconds)
 // - Monitor all CCs simultaneously or focus on a single CC
+// - Filter by MIDI channel (all channels, or one of the 16), combinable with the
+//   CC filter
 // - Full 0-127 value range with grid lines and axis labels
 // - Clean, minimal interface optimized for data clarity
 // - MULTI-CHANNEL SUPPORT: Visualizes same CC# from different MIDI channels
@@ -107,6 +115,7 @@
 // - Slider 3: Time Window in seconds (1-30)
 // - Slider 4: Clear history and metrics (resets itself to 0)
 // - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
+// - Slider 6: Channel to Monitor (0 = All channels, 1-16 = one MIDI channel)
 //
 // CHANGELOG (v0.6.0):
 // - One colour per (CC, channel): same hue per CC, different shade per channel
@@ -165,7 +174,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.6.1
+version: 0.6.2
 date: 2026-11-01
 
 // Import utility libraries
@@ -178,6 +187,7 @@ slider2:0<0,1,1>Freeze (stop acquiring)
 slider3:10<1,30,1>Time Window (seconds)
 slider4:0<0,1,1>Clear history and metrics
 slider5:0<0,2,1{Auto (12 px),Every event,None}>Dots on traces
+slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>Channel to Monitor (0=All)
 
 @init
 // ========== CONFIGURATION VARIABLES ==========
@@ -314,21 +324,6 @@ function calculate_time_window() local(current_time_sec) (
 
 
 /**
- * Returns the index-th (CC#, channel) pair of the VISIBLE selection: all active
- * pairs when slider1 is 0, otherwise only the channels carrying that CC#.
- *
- * The graph and the bars must both use this, or the two disagree: before
- * 0.5.2 the bars ignored slider1 entirely and the graph drew nothing.
- *
- * @param index 0-based index into the visible selection
- * @return Combined key (CC#, channel) or -1
- */
-function get_visible_cc_channel_pair(index) (
-  slider1 != 0 ? get_active_cc_channel_pair_by_cc(slider1, index)
-               : get_active_cc_channel_pair(index)
-);
-
-/**
  * Draws horizontal bars showing current CC values with performance metrics
  * 
  * For each active/filtered (CC#, Channel) pair:
@@ -341,7 +336,7 @@ function get_visible_cc_channel_pair(index) (
  * CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
  * 
  * CHANGES (unreleased, 0.5.2):
- * - Bars follow slider1 like the graph (get_visible_cc_channel_pair)
+ * - Bars follow the visible selection (get_visible_cc_channel_pair), filters and all
  * - Bar width is derived from g_available_width, computed once in the layout
  * - A pair that resolves to -1 is skipped instead of drawing garbage
  *
@@ -614,7 +609,7 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
                                                  last_dot_x) (
   history_count = get_history_count();
 
-  // Exactly the same selection the bars use (see get_visible_cc_channel_pair)
+  // Exactly the same selection the bars use: one filtered list, built upstream
   cc_idx = 0;
 
   loop(visible_count,
@@ -754,9 +749,17 @@ function draw_status_info(filtered_count, history_count) local() (
 
   filtered_count == 0 ? (
     slider1 != 0 ? (
-      gfx_printf("Waiting for CC%d data (any channel)...", slider1);
+      slider6 != 0 ? (
+        gfx_printf("Waiting for CC%d data on channel %d...", slider1, slider6);
+      ) : (
+        gfx_printf("Waiting for CC%d data (any channel)...", slider1);
+      );
     ) : (
-      gfx_drawstr("Send MIDI CC data to visualize.");
+      slider6 != 0 ? (
+        gfx_printf("Waiting for any CC on channel %d...", slider6);
+      ) : (
+        gfx_drawstr("Send MIDI CC data to visualize.");
+      );
     );
   ) : (
     gfx_printf("%d s window · 1 s metrics", slider3);
@@ -868,18 +871,11 @@ slider4 == 1 ? (
   g_last_prune_time = g_clock_sec;
 );
 
-// ========== BUILD SORTED LIST OF ACTIVE (CC#, Channel) PAIRS ==========
-active_count = build_active_cc_channel_pair_list();
-
-// ========== APPLY CC FILTER ==========
-filtered_count = 0;
-slider1 != 0 ? (
-  // Count how many channels have this CC#
-  filtered_count = count_cc_channels(slider1);
-) : (
-  // Show all active (CC#, Channel) pairs
-  filtered_count = active_count;
-);
+// ========== BUILD THE VISIBLE LIST (CC AND CHANNEL FILTERS APPLIED) ==========
+// The filters live inside the builder: the list the bars and the graph walk IS
+// the visible selection, and its count is what the layout and the status line
+// report. One list, so the two views cannot disagree.
+filtered_count = build_visible_cc_channel_pair_list(slider1, slider6);
 
 // ========== CALCULATE DYNAMIC LAYOUT ==========
 calculate_layout(filtered_count);
