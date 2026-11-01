@@ -22,7 +22,11 @@ inside your REAPER resource directory (on Windows `%APPDATA%\REAPER\Effects\MIDI
 
 ### CCScope — MIDI CC oscilloscope and fader bars
 
-![screenshot](MIDI/ccscope.png)
+![CCScope in REAPER: a controller being moved, one bar per CC](MIDI/ccscope.gif)
+
+Recorded in REAPER: one fader gesture, four CC streams (four shades of colour), the
+metrics updating live. The static screenshot used by ReaPack is
+[`ccscope.png`](MIDI/ccscope.png).
 
 An oscilloscope for MIDI CC: two display modes, a scrolling time graph and one fader bar per active CC. Each CC number is tracked
 **per MIDI channel**, so the same CC from different channels is shown and measured separately —
