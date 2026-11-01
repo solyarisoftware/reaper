@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.4
+// @version 0.6.5
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -190,7 +190,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.6.4
+version: 0.6.5
 date: 2026-11-01
 
 // Import utility libraries
@@ -670,7 +670,10 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
     t >= g_time_start ? (
       x_pos = g_graph_margin_left + ((t - g_time_start) / g_time_window) * g_graph_width;
 
-      x_pos >= g_graph_margin_left && x_pos <= g_graph_margin_left + g_graph_width ? (
+      // The frame already draws both vertical edges, solid. A tick landing on
+      // one would put dashes on top of the border: at "now" that reads as a
+      // double line, one straight and one broken, where there is only one edge.
+      x_pos > g_graph_margin_left && x_pos < g_graph_margin_left + g_graph_width - 1 ? (
         is_major = (k % label_interval) == 0;
 
         // Dashed like the horizontal guides, so the plot is one texture:

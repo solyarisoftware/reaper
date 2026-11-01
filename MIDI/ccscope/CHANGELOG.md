@@ -3,6 +3,14 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.6.5 — 2026-11-01
+
+- **The `now` edge is one line again.** The right border of the plot was solid, as it should
+  be, but the time ruler also drew a tick there — one pixel to its right, dashed. At "now"
+  the two read as a straight line with a broken line beside it. The ruler now skips the ticks
+  that land on the frame, at both edges: the border *is* the line, so the tick that would sit
+  on it has nothing to add. A 10 s window still shows its nine interior ticks.
+
 ## 0.6.4 — 2026-11-01
 
 - **Slider 7, `Pair list layout`: the list can sit beside the plot.** Requested in the
