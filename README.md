@@ -18,13 +18,13 @@ inside your REAPER resource directory (on Windows `%APPDATA%\REAPER\Effects\MIDI
 
 | Package | Type | Category | What it does |
 |---|---|---|---|
-| [MIDI CC Visualizer](MIDI/midi_cc_visualizer.jsfx) | JS effect | MIDI | Real-time graph and value bars of MIDI CC messages, per channel, with performance metrics |
+| [CCScope](MIDI/ccscope.jsfx) | JS effect | MIDI | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
 
-### MIDI CC Visualizer
+### CCScope — MIDI CC oscilloscope and fader bars
 
-![screenshot](MIDI/midi_cc_visualizer.png)
+![screenshot](MIDI/ccscope.png)
 
-Two display modes: a scrolling time graph and one bar per active CC. Each CC number is tracked
+An oscilloscope for MIDI CC: two display modes, a scrolling time graph and one fader bar per active CC. Each CC number is tracked
 **per MIDI channel**, so the same CC from different channels is shown and measured separately —
 same hue per CC, a different shade per channel, and the row label carries the colour.
 
