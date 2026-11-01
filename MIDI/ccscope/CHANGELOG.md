@@ -3,6 +3,14 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.7.1 — 2026-11-01
+
+- **No behavioural change: a packaging fix.** The ReaPack index publishes the `@changelog`
+  block inside the JSFX, not this file, and that block still started at 0.6.4 when 0.7.0 was
+  indexed — so 0.7.0 was published with the previous version's notes. The block is correct
+  now; this release exists so the index can carry it. (`reapack-index` does not re-index a
+  version it has already published: it reported `Nothing to do!`.)
+
 ## 0.7.0 — 2026-11-01
 
 - **The sliders are gone; the plugin draws its own controls.** Every slider is declared with a

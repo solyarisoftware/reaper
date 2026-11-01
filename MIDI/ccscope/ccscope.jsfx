@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.0
+// @version 0.7.1
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -35,6 +35,9 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.1 Identical to 0.7.0 in behaviour: the entry for 0.7.0 was published with
+//         the old changelog text, because the index publishes this block and it
+//         still started at 0.6.4 when that version was indexed.
 //   0.7.0 The plugin draws its own controls: the seven sliders are declared with a
 //         leading "-" in their name, so REAPER's strip disappears while the
 //         parameters keep working (automation, presets, the Param button) and the
@@ -196,7 +199,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.0
+version: 0.7.1
 date: 2026-11-01
 
 // Import utility libraries
