@@ -178,7 +178,7 @@ MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
 Y_AXIS_PADDING = 0.05;   // 5% padding top and bottom for Y-axis
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 4; // Gap between the graph area and the first bar
-DOT_RATE_MAX = 15;       // above this many messages/s, no dots on the traces
+DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
 
 // ========== GLOBAL LAYOUT VARIABLES ==========
 g_graph_height = 0;
@@ -563,7 +563,7 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
 function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_channel_pair,
                                                  cc_num, channel, first_point, prev_x, prev_y, hist_idx, base,
                                                  h_time, h_cc, h_channel, h_val, relative_time, x, y,
-                                                 draw_dots) (
+                                                 last_dot_x) (
   history_count = get_history_count();
 
   // Exactly the same selection the bars use (see get_visible_cc_channel_pair)
@@ -579,13 +579,9 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
       // Same colour family as the bar for this (CC, channel)
       get_cc_channel_color(cc_num, channel);
       
-      // A 2 px dot per event turns into a 4-5 px band once the events are less
-      // than a pixel apart: at 240 evt/s they are 0.37 px apart in a 10 s window.
-      // Dots belong to sparse data, where they are the only way to see a sample.
-      draw_dots = get_events_per_second_cc_channel(cc_num, channel) <= DOT_RATE_MAX;
-
       // Scan through history and draw this (CC, Channel) pair's data
       first_point = 1;
+      last_dot_x = -1000;
       prev_x = 0;
       prev_y = 0;
       
@@ -613,8 +609,13 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
                 gfx_line(prev_x, prev_y, x, y);
               );
               
-              // Dot only when the data is sparse enough for it to be a dot
-              draw_dots ? gfx_circle(x, y, 2, 1);
+              // A dot only when the previous one is far enough: the decision is
+              // made from the points themselves, not from the current rate, so
+              // the drawing cannot change when the transport stops.
+              (x - last_dot_x) >= DOT_MIN_SPACING ? (
+                gfx_circle(x, y, 2, 1);
+                last_dot_x = x;
+              );
               
               prev_x = x;
               prev_y = y;
