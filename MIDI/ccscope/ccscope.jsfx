@@ -35,6 +35,12 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.0 The plugin draws its own controls: the seven sliders are declared with a
+//         leading "-" in their name, so REAPER's strip disappears while the
+//         parameters keep working (automation, presets, the Param button) and the
+//         window gets back 190 px of height -- about eleven rows of pairs. A bar
+//         of cells at the top of the canvas takes their place: click opens the
+//         list, the wheel steps the value, a right click restores the default.
 //   0.6.4 Slider 7 (layout): the pair list can sit beside the plot instead of
 //         under it. In the column the rows keep the same 16 px, so a wide window
 //         shows about twice as many pairs as the same window with the list
