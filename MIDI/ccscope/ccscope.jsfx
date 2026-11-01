@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.2
+// @version 0.6.3
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -32,6 +32,11 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.6.3 Every pair gets a row: the bar area is no longer capped at 35% of the
+//         window, the plot has a floor instead, so extending the window shows
+//         more (CC, channel) pairs instead of only a taller graph. When rows
+//         still do not fit, the status line says so and says a taller window
+//         fits more.
 //   0.6.2 Channel filter: slider 6 keeps one MIDI channel (or all), combining with
 //         the CC filter. Both filters are applied while the visible pair list is
 //         built, so the graph and the bars cannot disagree about what is on
@@ -69,8 +74,9 @@
 //   * Events per second: MIDI message frequency (hardware resolution)
 //   * Rate (u/s): Value change velocity (playing intensity)
 //   * Jitter: Timing consistency (hardware quality indicator)
-// - Dynamic layout: graph area maximizes available space while bars
-//   automatically adjust height based on number of active CCs
+// - Dynamic layout: the bar rows take every pixel they need, and the plot
+//   keeps a minimum share of the window; a taller window therefore shows more
+//   (CC, channel) pairs instead of only a taller graph
 // - Unique persistent color per CC from 12-color palette (shared across channels)
 // - Configurable time window (1-30 seconds)
 // - Monitor all CCs simultaneously or focus on a single CC
@@ -195,7 +201,13 @@ FONT_SIZE = 16;          // Text size
 BAR_HEIGHT = 8;          // Height of each CC bar
 BAR_SPACING = 8;         // Space between bars
 MIN_BAR_SECTION = 80;    // Minimum height for bar section
-MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
+// The plot keeps at least this share of the window; the rows get the rest. The
+// rule used to be the other way round (bars capped at 35%), which made the cap
+// a percentage of the height: extending the window grew the plot and the bars
+// together, so the number of visible pairs never increased -- the exact
+// complaint that opened issue #8. A floor on the plot is the same constraint
+// seen from the other side, but it lets the rows grow until the pairs are gone.
+MIN_GRAPH_PROPORTION = 0.35;
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
 TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
@@ -262,15 +274,20 @@ PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
  * 
  * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
  */
-function calculate_layout(filtered_count) local(required_bar_height, max_bar_height, available_bar_space) (
+function calculate_layout(filtered_count) local(required_bar_height, max_bar_height,
+                                               min_graph_height, available_bar_space) (
 
   // Minimum height needed for the bar section: one row per (CC, channel)
   // pair, plus the status line and the gap under the graph.
   required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
   required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
 
-  // Ensure bars don't dominate the window (max 35% of total height)
-  max_bar_height = floor(gfx_h * MAX_BAR_PROPORTION);
+  // The plot keeps its minimum share of the window and the bars take what is
+  // left: one row per pair while they fit, which is the point of a taller
+  // window. Below the floor the graph stops being readable, so the rows beyond
+  // it are reported by the status line instead of drawn on top of the plot.
+  min_graph_height = floor(gfx_h * MIN_GRAPH_PROPORTION);
+  max_bar_height = gfx_h - min_graph_height;
   g_bars_height = min(required_bar_height, max_bar_height);
 
   // ========== GRAPH GETS ALL REMAINING SPACE (TOP) ==========
@@ -764,9 +781,11 @@ function draw_status_info(filtered_count, history_count) local() (
   ) : (
     gfx_printf("%d s window · 1 s metrics", slider3);
 
-    // Never hide bars silently
+    // Never hide bars silently, and say what to do about it: while rows are
+    // hidden a taller window always fits more of them, because the rows are
+    // what grows.
     filtered_count > g_visible_bars ? (
-      gfx_printf(" · showing %d of %d pairs", g_visible_bars, filtered_count);
+      gfx_printf(" · showing %d of %d pairs (taller window fits more)", g_visible_bars, filtered_count);
     );
 
     g_prev_freeze ? (

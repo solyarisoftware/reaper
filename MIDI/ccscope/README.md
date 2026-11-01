@@ -23,6 +23,11 @@ channel, or one CC on one channel.
   channel* are all selections; the two filters share one list, and the graph and the bars
   read that list, so they cannot disagree about what is on screen.
 
+One row per (CC, channel) pair, and the rows take the height they need: the plot keeps a
+minimum share of the window, so **a taller window shows more pairs** instead of only a taller
+graph. When even that is not enough the status line says how many are on screen and that a
+taller window fits more.
+
 Three numbers per row, named after what they mean rather than how they are computed. Pointing at
 them explains them on screen:
 

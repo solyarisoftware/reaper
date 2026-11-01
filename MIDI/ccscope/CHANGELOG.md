@@ -3,6 +3,17 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.6.3 — 2026-11-01
+
+- **A taller window shows more pairs.** The bar area used to be capped at 35% of the
+  height, a percentage: extending the window grew the plot and the bars together, so the
+  number of visible (CC, channel) rows never increased and the rest were unreachable. The
+  constraint is now a **floor on the plot** — the graph keeps at least 35% and the rows take
+  the rest — so the rows grow with the window until every pair has one. Measured on a
+  20-pair session in a 1016×958 window: 12 rows before, 20 after.
+- When rows still do not fit, the status line says so and says what to do:
+  `showing 8 of 20 pairs (taller window fits more)`.
+
 ## 0.6.2 — 2026-11-01
 
 - **Channel filter (slider 6)**: `All` or one of the 16 channels, combining with the CC
