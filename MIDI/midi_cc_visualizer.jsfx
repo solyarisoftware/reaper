@@ -511,7 +511,9 @@ function draw_graph_background() local(i, level, weight, y) (
     gfx_r = level == 64 ? 0.45 : 0.58;
     gfx_g = level == 64 ? 0.45 : 0.58;
     gfx_b = level == 64 ? 0.48 : 0.60; gfx_a = 1;
-    sprintf(#ylab, "%3d", level);
+    // No %3d padding: 127, 64 and 0 start on the same x as the CC rows, so the
+    // whole left column hangs from a single vertical
+    sprintf(#ylab, "%d", level);
     gfx_x = g_graph_margin_left - Y_LABEL_OFFSET;
     gfx_y = y;
     gfx_drawstr(#ylab);
