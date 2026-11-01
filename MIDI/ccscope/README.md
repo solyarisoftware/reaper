@@ -57,6 +57,15 @@ them explains them on screen:
 | **Motion** | how far the value (0–127) travels per second — how fast the gesture is; rated slow, moderate, brisk, fast |
 | **Timing** | how much the spacing between messages wobbles, in ms — rated steady, even, uneven, loose, erratic, and shown with the number of intervals it was computed on. Gaps (a pause, a loop jump) are not counted as jitter, and `n/a` means there were too few intervals to say |
 
+They are drawn as **three columns**, not as a sentence: each label starts at a fixed x and each
+number is aligned at its right edge, so `6`, `16` and `123` end on the same pixel and the quality
+words (`fast`, `moderate`, `erratic`) sit in a fixed-width field of their own instead of pushing
+what follows. A number that grows past its reserve grows to the left, into the gap, so the columns
+never move. In a narrow window the columns keep their alignment but lose their words, in the same
+order: `Messages 16/s   Motion 250 u/s   Timing ±0.0ms`, then `16/s   250 u/s   ±0.0ms`, then the
+count alone. The first form is what shows in the default layout; the third is what the column
+beside the plot uses, where 190 px hold the three numbers but no words.
+
 The window is exactly one second, filtered on read, so a rate of 240/s is what the plugin was
 measuring and not what happened to be in a buffer.
 

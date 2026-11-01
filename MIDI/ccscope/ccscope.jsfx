@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.1
+// @version 0.7.2
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -35,6 +35,13 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.2 The three metrics are columns, not a sentence. Messages, Motion and
+//         Timing now start at fixed x, and inside them the numbers are aligned
+//         at their right edge, so 6, 16 and 123 end on the same pixel and the
+//         quality words (slow/fast, steady/erratic) no longer push what follows
+//         them. Same four forms as before -- labels with quality, labels only,
+//         values only in the column beside the plot, count only -- now chosen by
+//         measuring the reserved fields instead of the text of a row.
 //   0.7.1 Identical to 0.7.0 in behaviour: the entry for 0.7.0 was published with
 //         the old changelog text, because the index publishes this block and it
 //         still started at 0.6.4 when that version was indexed.
@@ -199,7 +206,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.1
+version: 0.7.2
 date: 2026-11-01
 
 // Import utility libraries
@@ -306,6 +313,24 @@ g_bar_x = 0;
 g_bar_width = 0;
 g_value_x = 0;
 g_metrics_x = 0;
+
+// ========== THE THREE METRIC COLUMNS ==========
+// The numbers under Messages, Motion and Timing are written into fixed fields so
+// that rows read as a table: the same right edge for the same kind of number, and
+// a fixed width for every quality word. calculate_metric_columns() measures the
+// widest text each field can hold and decides which of the four forms fits.
+// The value and its unit are one string ("250 u/s") right-aligned at the column's
+// right edge: the suffix has a constant width, so the digits line up by
+// construction -- no per-digit padding, and no string that can push a column.
+g_metrics_tier = 3;      // 3 = labels + quality, 2 = labels, 1 = compact, 0 = count only
+g_col_msg_x = 0;         // left edge of the "Messages" label
+g_col_msg_r = 0;         // right edge of "N/s"
+g_col_mot_x = 0;         // left edge of the "Motion" label
+g_col_mot_r = 0;         // right edge of "N u/s"
+g_col_mot_q_r = 0;       // right edge of the motion quality word
+g_col_tmg_x = 0;         // left edge of the "Timing" label
+g_col_tmg_r = 0;         // right edge of "±N.Nms"
+g_col_tmg_q_r = 0;       // right edge of the timing quality word (and of the int count)
 
 // ========== CONTROL BAR STATE ==========
 // The geometry of the seven cells lives in mem[], in the two ranges declared in
@@ -458,6 +483,71 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   g_y_range_min = 0;
   g_y_range_max = 127;
   g_y_range_total = 127;
+
+);
+
+/**
+ * Places the three metric columns and decides which form fits
+ *
+ * The columns are fixed fields, measured from the widest text each one can hold,
+ * so a value changing never moves its neighbours. Four forms, from the widest to
+ * the shortest: labels + quality words, labels only, values only (what the column
+ * beside the plot uses), and the bare count.
+ *
+ * The reserve for a value is a realistic maximum, not a theoretical one: a wider
+ * number would grow to the LEFT of its right edge, into the gap, without shifting
+ * the columns after it. Alignment is what has to hold, not the gap.
+ */
+function calculate_metric_columns() local(
+    tw, th, wmsg, wmot, wtmg, wv_msg, wv_mot, wv_tmg, wq_mot, wq_tmg,
+    avail, gap, total) (
+  gap = 14;
+  avail = g_layout_side ? SIDE_METRICS_WIDTH : max(gfx_w - g_metrics_x - 8, 80);
+
+  gfx_measurestr("Messages", wmsg, th);
+  gfx_measurestr("Motion", wmot, th);
+  gfx_measurestr("Timing", wtmg, th);
+  gfx_measurestr("500/s", wv_msg, th);
+  gfx_measurestr("9999 u/s", wv_mot, th);
+  gfx_measurestr("±99.9ms", wv_tmg, th);
+  gfx_measurestr("moderate", wq_mot, th);
+  gfx_measurestr("erratic", wq_tmg, th);
+
+  // ========== THE WIDEST FORM: LABELS AND QUALITY WORDS ==========
+  g_metrics_tier = 3;
+  g_col_msg_x = g_metrics_x;
+  g_col_msg_r = g_col_msg_x + wmsg + 8 + wv_msg;
+  g_col_mot_x = g_col_msg_r + gap;
+  g_col_mot_r = g_col_mot_x + max(wmot, wmsg) + 8 + wv_mot;
+  g_col_mot_q_r = g_col_mot_r + 8 + wq_mot;
+  g_col_tmg_x = g_col_mot_q_r + gap;
+  g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
+  g_col_tmg_q_r = g_col_tmg_r + 8 + wq_tmg;
+  total = g_col_tmg_q_r - g_metrics_x;
+
+  // ========== WITHOUT THE QUALITY WORDS ==========
+  total > avail ? (
+    g_metrics_tier = 2;
+    g_col_mot_q_r = g_col_mot_r;
+    g_col_tmg_x = g_col_mot_r + gap;
+    g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
+    g_col_tmg_q_r = g_col_tmg_r;
+    total = g_col_tmg_r - g_metrics_x;
+  );
+
+  // ========== WITHOUT THE LABELS: THE COLUMN BESIDE THE PLOT ==========
+  total > avail ? (
+    g_metrics_tier = 1;
+    g_col_msg_r = g_metrics_x + wv_msg;
+    g_col_mot_r = g_col_msg_r + gap + wv_mot;
+    g_col_mot_q_r = g_col_mot_r;
+    g_col_tmg_r = g_col_mot_r + gap + wv_tmg;
+    g_col_tmg_q_r = g_col_tmg_r;
+    total = g_col_tmg_r - g_metrics_x;
+  );
+
+  // ========== THE COUNT AND NOTHING ELSE ==========
+  total > avail ? ( g_metrics_tier = 0; );
 );
 
 // ========== CONTROL BAR: WHAT EACH CELL DRIVES ==========
@@ -841,6 +931,113 @@ function calculate_time_window() local(current_time_sec) (
 
 
 /**
+ * Draws the metric columns of one row: three fixed fields, values right-aligned
+ *
+ * Each number travels with its unit in one string ("250 u/s") and is right-aligned
+ * at the column's right edge. The suffix is what lines up, and because it has a
+ * constant width the digits line up with it: 6, 123 and 500 end on the same pixel
+ * without any per-digit padding. The quality words are right-aligned in their own
+ * field, so "fast" and "moderate" also occupy the same column instead of pushing
+ * what comes after them.
+ *
+ * Which of the four forms is drawn was decided by calculate_metric_columns().
+ *
+ * @param events_ps events per second for this pair
+ * @param rate_ps   units per second for this pair
+ * @param rate_q    motion quality word
+ * @param jitter_ms timing jitter, negative when there are too few intervals
+ * @param jitter_q  timing quality word
+ * @param y_pos     row top
+ */
+function draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos)
+                          local(tw, th) (
+  gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+
+  events_ps <= 0 ? (
+    // Nothing arrived in the last second: one sentence instead of three empty
+    // columns, and short enough for the column beside the plot.
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    gfx_x = g_metrics_x;
+    g_layout_side ? gfx_drawstr("no activity") : gfx_drawstr("no activity in the last second");
+  ) : g_metrics_tier == 0 ? (
+    // Not even the columns fit: the count is the number the plugin exists for
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    sprintf(#mtf, "%d msg/s", events_ps);
+    gfx_x = g_metrics_x;
+    gfx_drawstr(#mtf);
+  ) : (
+    // ========== MESSAGES ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_msg_x;
+      gfx_drawstr("Messages");
+    );
+    gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+    sprintf(#mtf, "%d/s", events_ps);
+    gfx_measurestr(#mtf, tw, th);
+    gfx_x = g_col_msg_r - tw;
+    gfx_drawstr(#mtf);
+
+    // ========== MOTION ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_mot_x;
+      gfx_drawstr("Motion");
+    );
+    gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+    sprintf(#mtf, "%d u/s", rate_ps);
+    gfx_measurestr(#mtf, tw, th);
+    gfx_x = g_col_mot_r - tw;
+    gfx_drawstr(#mtf);
+
+    g_metrics_tier == 3 ? (
+      gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+      // The quality comes back as a string handle, not as a #variable: strcpy is
+      // what turns it into something gfx_measurestr/gfx_drawstr accept.
+      strcpy(#mtq, rate_q);
+      gfx_measurestr(#mtq, tw, th);
+      gfx_x = g_col_mot_q_r - tw;
+      gfx_drawstr(#mtq);
+    );
+
+    // ========== TIMING ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_tmg_x;
+      gfx_drawstr("Timing");
+    );
+    jitter_ms < 0 ? (
+      gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+      gfx_measurestr("n/a", tw, th);
+      gfx_x = g_col_tmg_r - tw;
+      gfx_drawstr("n/a");
+    ) : (
+      gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+      sprintf(#mtf, "±%.1fms", jitter_ms);
+      gfx_measurestr(#mtf, tw, th);
+      gfx_x = g_col_tmg_r - tw;
+      gfx_drawstr(#mtf);
+
+      g_metrics_tier == 3 ? (
+        gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+        strcpy(#mtq, jitter_q);
+        gfx_measurestr(#mtq, tw, th);
+        gfx_x = g_col_tmg_q_r - tw;
+        gfx_drawstr(#mtq);
+
+        // The sample size is shown only when it is small enough to matter: with
+        // 240 intervals the number speaks for itself, with 5 it does not. It is
+        // written after the field and never reserved, so the rows stay aligned.
+        g_jitter_intervals < 20 ? (
+          gfx_x = g_col_tmg_q_r + 6;
+          gfx_printf("(%d int)", g_jitter_intervals);
+        );
+      );
+    );
+  );
+);
+
+/**
  * Draws horizontal bars showing current CC values with performance metrics
  * 
  * For each active/filtered (CC#, Channel) pair:
@@ -919,69 +1116,8 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
       jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
 
-      gfx_x = g_metrics_x;
-      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
-      // In the column the width was reserved for the compact form, so there is
-      // nothing to measure: the text cannot shrink under the pointer while the
-      // numbers move, which is what made the row look like it was flickering.
-      avail = g_layout_side ? SIDE_METRICS_WIDTH : gfx_w - g_metrics_x - 8;
-
-      gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
-
-      events_ps <= 0 ? (
-        // In a 190 px column the sentence would be clipped, and the tooltip is
-        // still there to say what the row measures.
-        g_layout_side ? gfx_drawstr("no activity") : gfx_drawstr("no activity in the last second");
-      ) : (
-        // The sample size is shown only when it is small enough to matter: with
-        // 240 intervals the number speaks for itself, with 5 it does not.
-        jitter_ms < 0 ? (
-          #jit_full = "Timing n/a";
-        ) : g_jitter_intervals < 20 ? (
-          sprintf(#jit_full, "Timing ±%.1fms (%s, %d int)", jitter_ms, jitter_q, g_jitter_intervals);
-        ) : (
-          sprintf(#jit_full, "Timing ±%.1fms (%s)", jitter_ms, jitter_q);
-        );
-
-        jitter_ms < 0 ? (
-          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
-          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing n/a", events_ps, rate_ps);
-          sprintf(#m_short, "%d msg/s   %d mot   n/a", events_ps, rate_ps);
-        ) : (
-          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
-          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing ±%.1fms", events_ps, rate_ps, jitter_ms);
-          sprintf(#m_short, "%d msg/s   %d mot   ±%.1fms", events_ps, rate_ps, jitter_ms);
-        );
-        sprintf(#m_min, "%d msg/s", events_ps);
-
-        gfx_measurestr(#m_full, tw, th);
-        // The column reserved room for the compact form: use it, and fall back
-        // to the shortest one only if the reserve was too optimistic.
-        g_layout_side ? (
-          gfx_measurestr(#m_short, tw, th);
-          tw <= avail ? (
-            gfx_drawstr(#m_short);
-          ) : (
-            gfx_drawstr(#m_min);
-          );
-        ) : (
-          tw <= avail ? (
-            gfx_drawstr(#m_full);
-          ) : (
-            gfx_measurestr(#m_mid, tw, th);
-            tw <= avail ? (
-              gfx_drawstr(#m_mid);
-            ) : (
-              gfx_measurestr(#m_short, tw, th);
-              tw <= avail ? (
-                gfx_drawstr(#m_short);
-              ) : (
-                gfx_drawstr(#m_min);
-              );
-            );
-          );
-        );
-      );
+      // The three numbers, in three fixed columns: see draw_row_metrics().
+      draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos);
     );
 
     y_pos += BAR_HEIGHT + BAR_SPACING;
@@ -1435,6 +1571,10 @@ filtered_count = build_visible_cc_channel_pair_list(slider1, slider6);
 
 // ========== CALCULATE DYNAMIC LAYOUT ==========
 calculate_layout(filtered_count);
+
+// The three metric columns are placed from where the rows end, and the form the
+// columns take depends on how much width is left.
+calculate_metric_columns();
 
 // ========== CALCULATE TIME WINDOW ==========
 calculate_time_window();

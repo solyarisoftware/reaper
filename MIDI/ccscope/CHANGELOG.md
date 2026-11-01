@@ -3,6 +3,23 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.7.2 — 2026-11-01
+
+- **The metrics are three columns, not a sentence.** `Messages`, `Motion` and `Timing` start
+  at fixed x, and inside each field the number is aligned at its right edge: `6`, `16` and
+  `123` end on the same pixel, and `fast`/`moderate`/`erratic` sit in a fixed-width field of
+  their own instead of pushing everything after them. The old rows were one `sprintf` with
+  double spaces, and in a proportional font no number of spaces aligns anything.
+- **Each number travels with its unit** (`250 u/s`, `±20.7ms`) and is right-aligned as one
+  string. The suffix has a constant width, so the digits line up by construction — no
+  per-digit padding, and nothing that can shift a column when a value grows.
+- **The four forms are unchanged, and now chosen by measurement.** Labels + quality words,
+  labels only, values only (the column beside the plot), count only: the width of the reserved
+  fields decides, once per layout, instead of the text of one row deciding per row — which is
+  what used to make the same row change shape when a value crossed 99.
+- **A value wider than its reserve grows left**, into the gap, without moving the columns after
+  it: alignment is what has to hold, not the gap.
+
 ## 0.7.1 — 2026-11-01
 
 - **No behavioural change: a packaging fix.** The ReaPack index publishes the `@changelog`
