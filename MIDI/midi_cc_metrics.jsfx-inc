@@ -42,7 +42,7 @@
 // DISPLAY FORMAT:
 // CC1 (CH:01) [████████████████░░░░░░░░] 67  │ Events: 45/s │ Rate: 23 u/s (Gentle) │ Jitter: ±4ms (Excellent)
 //
-// CHANGELOG (unreleased, 0.5.2):
+// CHANGELOG (v0.5.2):
 // - Removed the deprecated single-channel shims (update_metrics_for_cc,
 //   get_events_per_second, get_rate_per_second, get_jitter_ms)
 // - Fixed: the per-pair block was 600 slots for a layout that needs 602

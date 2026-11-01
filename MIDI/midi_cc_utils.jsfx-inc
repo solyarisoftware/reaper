@@ -11,7 +11,7 @@
 // - (CC#, Channel) pair data management
 // - Memory-safe data structures
 //
-// CHANGELOG (unreleased, 0.5.2):
+// CHANGELOG (v0.5.2):
 // - Fixed: the (CC, channel) key is now dense, (cc << 4) | channel, so the
 //   2048-slot value range is really enough (before, keys up to 32527 wrote
 //   into the active-flag, colour, palette, history and metrics ranges)
