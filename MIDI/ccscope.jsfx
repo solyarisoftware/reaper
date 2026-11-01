@@ -1,0 +1,902 @@
+// @description CCScope
+// @author Giorgio Robino
+// @version 0.6.0
+// @about
+//   Real-time visualization of MIDI Continuous Controller (CC) messages with two
+//   display modes: a scrolling time graph and current-value bars, plus performance
+//   metrics for hardware testing and technique analysis (events/s, rate, jitter).
+//
+//   Each CC number is tracked per MIDI channel, so the same CC from different
+//   channels is displayed and measured separately.
+//
+//   Slider 1 selects the CC to monitor (0 = all CCs); slider 3 sets the time window
+//   in seconds (1-30). Metrics are computed over a 1-second window, filtered on
+//   read, so the numbers describe exactly the second they claim to.
+//
+//   Each (CC, channel) pair has its own colour shade, the bars carry it in the
+//   label, the time axis is labelled, and Freeze stops the acquisition so a
+//   reading can be examined without it moving.
+//
+//   The three numbers per pair are named after what they mean, not after how they
+//   are computed: Messages = how many times per second the controller sends;
+//   Motion = how far the value travels per second (gesture speed);
+//   Timing = how much the spacing between messages wobbles. Pointing at them
+//   says the same thing on screen.
+// @link
+//   GitHub https://github.com/solyarisoftware/reaper
+//   Issues https://github.com/solyarisoftware/reaper/issues
+// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope.png
+// @provides
+//   ccscope_utils.jsfx-inc
+//   ccscope_metrics.jsfx-inc
+// @changelog
+//   0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
+//         ccscope.jsfx: uninstall the old one, it is no longer in the repository).
+//         Readable: one colour per (CC, channel) instead of per CC, labelled time
+//         axis, metrics that degrade instead of running off the edge, plain value
+//         next to each bar, Freeze and Clear, exact 1 s window (counts were up to
+//         10% high), 500 events/s per pair instead of 200, jitter that ignores
+//         gaps, reports how many intervals it used, and says n/a when there are
+//         too few to mean anything.
+//   0.5.2 Correctness pass: the (CC, channel) key no longer overflows its memory
+//         range, slider 1 filters the graph and the bars together, bars can no
+//         longer be drawn under the status line, the metrics block and the
+//         event timestamps are sized and taken correctly (jitter was quantised
+//         to the audio block and offset by the callback's scheduling).
+//   0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+//   0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)
+
+// ===================================================================
+// CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
+// ===================================================================
+// Real-time visualization of MIDI Continuous Controller (CC) messages
+// with dual display modes: time-based graphs and current value bars
+// with integrated performance analysis metrics.
+//
+// FEATURES:
+// - Real-time scrolling XY graph showing CC value changes over time
+// - Horizontal bars displaying current CC values (0-127)
+// - Performance metrics for hardware testing and technique analysis:
+//   * Events per second: MIDI message frequency (hardware resolution)
+//   * Rate (u/s): Value change velocity (playing intensity)
+//   * Jitter: Timing consistency (hardware quality indicator)
+// - Dynamic layout: graph area maximizes available space while bars
+//   automatically adjust height based on number of active CCs
+// - Unique persistent color per CC from 12-color palette (shared across channels)
+// - Configurable time window (1-30 seconds)
+// - Monitor all CCs simultaneously or focus on a single CC
+// - Full 0-127 value range with grid lines and axis labels
+// - Clean, minimal interface optimized for data clarity
+// - MULTI-CHANNEL SUPPORT: Visualizes same CC# from different MIDI channels
+//
+// MULTI-CHANNEL SUPPORT (v0.5+):
+// - Each CC# can appear on multiple MIDI channels (1-16)
+// - Display format: "CC1 (CH:01)" shows CC number and MIDI channel
+// - Sorting: Grouped by CC# then by channel for easy comparison
+// - Color scheme: CC#-based coloring (same CC# = same color across channels)
+// - Metrics: Tracked independently per (CC#, Channel) pair
+// - History: Stores channel info with each data point
+//
+// PERFORMANCE METRICS EXPLAINED:
+//
+// Events per Second (Events: X/s):
+//   - How many MIDI CC messages arrive per second
+//   - High values (60+) = high-resolution controller
+//   - Low values (10-20) = coarse updates or slow movements
+//   - Useful for: Testing controller resolution and USB timing
+//
+// Rate (Rate: X u/s - units per second):
+//   - How fast CC values are changing (sum of value deltas per second)
+//   - Quality ratings: Gentle (0-15) | Moderate (16-40) | Active (41-70) | Aggressive (71+)
+//   - Useful for: Analyzing playing technique and gesture intensity
+//
+// Jitter (Jitter: ±Xms):
+//   - Timing consistency between MIDI events (standard deviation)
+//   - Quality ratings: Excellent (<5ms) | Very Good (6-15ms) | Good (16-30ms) | Fair (31-50ms) | Poor (>50ms)
+//   - Useful for: Hardware quality testing, detecting USB/timing issues
+//
+// DISPLAY FORMAT (per CC bar - v0.5.1+):
+// CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
+//
+// CONTROLS:
+// - Slider 1: CC to Monitor (0 = All CCs, 1-127 = specific CC)
+// - Slider 2: Freeze, stops acquisition (the MIDI keeps flowing through)
+// - Slider 3: Time Window in seconds (1-30)
+// - Slider 4: Clear history and metrics (resets itself to 0)
+// - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
+//
+// CHANGELOG (v0.6.0):
+// - One colour per (CC, channel): same hue per CC, different shade per channel
+// - The bar label is drawn in that colour, so the rows are their own legend
+// - Labelled time axis ("-8s ... now") with a tick interval that follows the window
+// - Metrics degrade to shorter forms instead of being clipped by the window edge
+// - The CC value is printed right after the bar, without a "Value:" prefix
+// - Freeze (slider 2) stops acquisition; Clear (slider 4) resets history and metrics
+// - The metrics window is exactly one second, filtered on read: counts were up to
+//   10% high because they counted whatever the 100 ms prune had not removed yet
+// - 500 events/s per pair (was 200); jitter shows n/a below 5 events in the window
+// - The numbers are named after what they mean: Messages (how often it sends),
+//   Motion (how fast the value moves), Timing (how much the spacing wobbles)
+// - Timing ignores gaps (an interval over 4x the shortest is a pause, not jitter)
+//   and says how many intervals it was computed on: "±0.4ms (steady, 240 int)"
+// - The quality words are for musicians: slow/moderate/brisk/fast, steady/even/
+//   uneven/loose/erratic
+// - The plot covers exactly 0..127: no empty band above the top or below the
+//   bottom, the frame itself is the scale
+// - Pointing at the numbers explains them in a small panel
+// - Slider 5 chooses the dots: Auto (one every 12 px, the default), Every event
+//   (the raw samples, heavier), None (plain lines)
+//
+// CHANGELOG (v0.5.2):
+// - Bars follow slider 1 like the graph (one shared visible selection)
+// - Fixed: every event of an audio block carried the same timestamp, so the
+//   reported jitter was quantised to the block length (10.7 ms at 512/48k).
+//   Events are now timed at block_start + offset/srate, on an audio-sample
+//   clock instead of the wall clock (which jitters with the callback).
+//
+// CHANGELOG (v0.5.1):
+// - Refactored draw_cc_bars() function for improved UI clarity
+// - Removed pipe separators (│) for cleaner single-line display
+// - Added explicit metric labels: "Events:", "Rate:", "Jitter:"
+// - Optimized spacing using natural gaps instead of visual dividers
+// - Metrics now immediately identifiable without referencing documentation
+//
+// CHANGELOG (v0.5):
+// - Added multi-channel MIDI support
+// - Data structure changed from (cc_num) to (cc_num, channel) pairs
+// - History buffer now stores: time, cc_num, channel, value
+// - Color assignment remains CC#-based for visual consistency
+// - Metrics tracked per (CC#, Channel) pair independently
+// - Display shows "CCn (CH:XX)" format in bar labels
+// - Bars sorted by CC# then by channel number
+// - Refactored utility functions to handle channel parameter
+// - Updated metric tracking to account for channel-specific streams
+//
+// ARCHITECTURE:
+// - Modular function-based design for maintainability
+// - Separate utility library (ccscope_utils.jsfx-inc) for data management
+// - Separate metrics library (ccscope_metrics.jsfx-inc) for performance analysis
+// - Efficient memory management for history buffer and metrics
+// - All metrics calculated over 1-second rolling window for real-time feedback
+// ===================================================================
+
+desc:CCScope (MIDI CC oscilloscope)
+author: Giorgio Robino
+version: 0.6.0
+date: 2026-11-01
+
+// Import utility libraries
+import ccscope_utils.jsfx-inc
+import ccscope_metrics.jsfx-inc
+
+options:no_meter
+slider1:0<0,127,1>CC to Monitor (0=All)
+slider2:0<0,1,1>Freeze (stop acquiring)
+slider3:10<1,30,1>Time Window (seconds)
+slider4:0<0,1,1>Clear history and metrics
+slider5:0<0,2,1{Auto (12 px),Every event,None}>Dots on traces
+
+@init
+// ========== CONFIGURATION VARIABLES ==========
+FONT_SIZE = 16;          // Text size
+BAR_HEIGHT = 8;          // Height of each CC bar
+BAR_SPACING = 8;         // Space between bars
+MIN_BAR_SECTION = 80;    // Minimum height for bar section
+MAX_BAR_PROPORTION = 0.35; // Bars take max 35% of window
+STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
+BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
+TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
+DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
+Y_LABEL_OFFSET = 26;     // px left of the plot: the left edge of the value labels,
+                         //  and of the bar rows, so all text hangs from one vertical
+
+// ========== GLOBAL LAYOUT VARIABLES ==========
+g_graph_height = 0;
+g_bars_height = 0;
+g_start_y = 0;
+g_label_width = 0;
+g_margin = 0;
+g_available_width = 0;
+g_max_bars = 0;
+g_visible_bars = 0;
+g_graph_start_y = 0;
+g_graph_margin_left = 0;
+g_graph_margin_right = 0;
+g_graph_margin_bottom = 0;
+g_graph_width = 0;
+g_graph_actual_height = 0;
+g_y_range_min = 0;
+g_y_range_max = 0;
+g_y_range_total = 0;
+
+// ========== TIME WINDOW VARIABLES ==========
+// One clock for the whole plugin: the audio timeline, advanced by samplesblock
+// in @block. time_precise() would be the wall clock at which the audio callback
+// happened to run, and that jitters by about a millisecond between callbacks --
+// which is the same order as the jitter this plugin reports (measured: a MIDI
+// item with events exactly 8.33 ms apart read 1 ms of jitter with the wall
+// clock). Events, the visible window and the metrics all use this clock.
+g_clock_sec = 0;         // end of the last processed block, in seconds
+
+g_prev_freeze = 0;       // slider2 edge detection
+g_freeze_time = 0;       // clock value when Freeze was engaged
+g_prev_clear = 0;        // slider4 edge detection
+
+g_time_window = 0;
+g_time_start = 0;
+g_time_end = 0;
+
+// ========== METRICS VARIABLES ==========
+g_last_prune_time = 0;
+PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
+
+// ========== FUNCTION DEFINITIONS ==========
+
+// The (CC, channel) key encoding has ONE definition, in
+// ccscope_utils.jsfx-inc: make_cc_channel_key(), key_to_cc(), key_to_channel().
+
+/**
+ * Calculates all layout dimensions for the UI with dynamic sizing
+ * 
+ * This function computes:
+ * - Bar section height based on number of active CCs (dynamic!)
+ * - Graph section gets ALL remaining space (maximized!)
+ * - Bar positioning and spacing (at bottom)
+ * - Graph margins and dimensions (at top)
+ * - Y-axis range with padding
+ * 
+ * Results are stored in global g_* variables for use by drawing functions
+ * 
+ * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
+ */
+function calculate_layout(filtered_count) local(required_bar_height, max_bar_height, available_bar_space) (
+
+  // Minimum height needed for the bar section: one row per (CC, channel)
+  // pair, plus the status line and the gap under the graph.
+  required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
+  required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
+
+  // Ensure bars don't dominate the window (max 35% of total height)
+  max_bar_height = floor(gfx_h * MAX_BAR_PROPORTION);
+  g_bars_height = min(required_bar_height, max_bar_height);
+
+  // ========== GRAPH GETS ALL REMAINING SPACE (TOP) ==========
+  g_graph_height = gfx_h - g_bars_height;
+
+  g_graph_start_y = 10;
+  g_graph_margin_left = 35;
+  g_graph_margin_right = 16;  // half of "now" when it is centred on the last line
+  g_graph_margin_bottom = 10;
+  g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
+  g_graph_actual_height = g_graph_height - g_graph_start_y;
+
+  // ========== BARS ARE PINNED TO THE BOTTOM, ABOVE THE STATUS LINE ==========
+  // The bar section starts where the graph ends (plus a small gap): no magic
+  // offsets, so the last bar cannot be drawn under the status text.
+  g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
+  g_label_width = FONT_SIZE * 6 + 8;  // "CCnn/CHnn" plus air before the bar
+  g_margin = 20;
+  g_available_width = gfx_w - g_label_width - g_margin * 2;
+
+  // How many bars really fit between the graph and the status line
+  available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
+  g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
+  g_visible_bars = min(filtered_count, g_max_bars);
+
+  // The plot covers exactly the CC range: 0 is the bottom edge, 127 the top.
+  // Any padding here is dead space that makes the scale look like it continues
+  // beyond the limits of a 7-bit controller.
+  g_y_range_min = 0;
+  g_y_range_max = 127;
+  g_y_range_total = 127;
+);
+
+/**
+ * Calculates the time window parameters in SECONDS
+ * 
+ * Sets:
+ * - g_time_window: Duration of visible time window (seconds)
+ * - g_time_start: Start time of visible window (seconds)
+ * - g_time_end: End time of visible window (seconds)
+ */
+function calculate_time_window() local(current_time_sec) (
+  // While frozen the window stops at the instant Freeze was engaged, so the
+  // graph and the numbers describe the same moment.
+  current_time_sec = g_prev_freeze ? g_freeze_time : g_clock_sec;
+  
+  g_time_window = slider3;
+  g_time_end = current_time_sec;
+  g_time_start = g_time_end - g_time_window;
+);
+
+
+/**
+ * Returns the index-th (CC#, channel) pair of the VISIBLE selection: all active
+ * pairs when slider1 is 0, otherwise only the channels carrying that CC#.
+ *
+ * The graph and the bars must both use this, or the two disagree: before
+ * 0.5.2 the bars ignored slider1 entirely and the graph drew nothing.
+ *
+ * @param index 0-based index into the visible selection
+ * @return Combined key (CC#, channel) or -1
+ */
+function get_visible_cc_channel_pair(index) (
+  slider1 != 0 ? get_active_cc_channel_pair_by_cc(slider1, index)
+               : get_active_cc_channel_pair(index)
+);
+
+/**
+ * Draws horizontal bars showing current CC values with performance metrics
+ * 
+ * For each active/filtered (CC#, Channel) pair:
+ * - Draws CC number and channel label
+ * - Draws colored bar proportional to CC value (0-127)
+ * - Draws "Value: X" label with clear metric identification
+ * - Draws performance metrics with explicit labels: Events, Rate, Jitter
+ * 
+ * DISPLAY FORMAT (v0.5.1):
+ * CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
+ * 
+ * CHANGES (unreleased, 0.5.2):
+ * - Bars follow slider1 like the graph (get_visible_cc_channel_pair)
+ * - Bar width is derived from g_available_width, computed once in the layout
+ * - A pair that resolves to -1 is skipped instead of drawing garbage
+ *
+ * CHANGES (v0.5.1):
+ * - Removed pipe separators (│) for cleaner appearance
+ * - Added "Value:" label to CC value display for clarity
+ * - Added explicit metric labels: "Events:", "Rate:", "Jitter:"
+ * - Optimized spacing using natural gaps instead of visual separators
+ * - Improved readability by clearly identifying each metric
+ * - Single-line format maintained for high CC count scenarios
+ * 
+ * Uses global layout variables set by calculate_layout()
+ */
+function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
+                               bar_x, bar_width, fill, metrics_x, avail,
+                               events_ps, rate_ps, rate_q, jitter_ms, jitter_q,
+                               tw, th) (
+  y_pos = g_start_y;
+  i = 0;
+
+  // The bar takes 30% of the row; the rest is the value plus the metrics, which
+  // degrade to whatever the window can hold instead of running off the edge.
+  bar_width = floor(g_available_width * 0.30);
+  bar_width = max(bar_width, 50);
+
+  loop(g_visible_bars,
+    cc_channel_pair = get_visible_cc_channel_pair(i);
+
+    cc_channel_pair >= 0 ? (
+      cc_num = key_to_cc(cc_channel_pair);
+      channel = key_to_channel(cc_channel_pair);
+      val = get_cc_channel_value(cc_num, channel);
+
+      // One colour per (CC, channel): the label is drawn in it, so the rows are
+      // their own legend and two channels of one CC stay distinguishable
+      get_cc_channel_color(cc_num, channel);
+
+      // The block starts on the same vertical as the 0 / 64 / 127 labels
+      gfx_x = g_graph_margin_left - Y_LABEL_OFFSET;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);
+
+      bar_x = g_graph_margin_left - Y_LABEL_OFFSET + g_label_width;
+      fill = (val / 127.0) * bar_width;
+      fill = max(fill, 2);
+      gfx_rect(bar_x, y_pos, fill, BAR_HEIGHT);
+
+      // The number is the bar written out: no "Value:" prefix
+      gfx_x = bar_x + bar_width + 8;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("%d", val);
+
+      events_ps = get_events_per_second_cc_channel(cc_num, channel);
+      rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
+      rate_q = get_rate_quality(rate_ps);
+      jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
+      jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
+
+      metrics_x = bar_x + bar_width + 32;
+      gfx_x = metrics_x;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      avail = gfx_w - metrics_x - 8;
+
+      gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+
+      events_ps <= 0 ? (
+        gfx_drawstr("no activity in the last second");
+      ) : (
+        // The sample size is shown only when it is small enough to matter: with
+        // 240 intervals the number speaks for itself, with 5 it does not.
+        jitter_ms < 0 ? (
+          #jit_full = "Timing n/a";
+        ) : g_jitter_intervals < 20 ? (
+          sprintf(#jit_full, "Timing ±%.1fms (%s, %d int)", jitter_ms, jitter_q, g_jitter_intervals);
+        ) : (
+          sprintf(#jit_full, "Timing ±%.1fms (%s)", jitter_ms, jitter_q);
+        );
+
+        jitter_ms < 0 ? (
+          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
+          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing n/a", events_ps, rate_ps);
+          sprintf(#m_short, "%d msg/s   %d mot   n/a", events_ps, rate_ps);
+        ) : (
+          sprintf(#m_full,  "Messages %d/s   Motion %d u/s (%s)   %s", events_ps, rate_ps, rate_q, #jit_full);
+          sprintf(#m_mid,   "Messages %d/s   Motion %d u/s   Timing ±%.1fms", events_ps, rate_ps, jitter_ms);
+          sprintf(#m_short, "%d msg/s   %d mot   ±%.1fms", events_ps, rate_ps, jitter_ms);
+        );
+        sprintf(#m_min, "%d msg/s", events_ps);
+
+        gfx_measurestr(#m_full, tw, th);
+        tw <= avail ? (
+          gfx_drawstr(#m_full);
+        ) : (
+          gfx_measurestr(#m_mid, tw, th);
+          tw <= avail ? (
+            gfx_drawstr(#m_mid);
+          ) : (
+            gfx_measurestr(#m_short, tw, th);
+            tw <= avail ? (
+              gfx_drawstr(#m_short);
+            ) : (
+              gfx_drawstr(#m_min);
+            );
+          );
+        );
+      );
+    );
+
+    y_pos += BAR_HEIGHT + BAR_SPACING;
+    i += 1;
+  );
+);
+
+
+
+
+/**
+ * Draws the graph grid lines without background
+ * 
+ * Creates:
+ * - Horizontal grid lines at CC values: 0, 32, 64, 96, 127
+ * - Y-axis value labels on the left side
+ * - Clean, minimal appearance without dark background
+ */
+function draw_graph_background() local(i, level, weight, y) (
+  // The plot area is a very slightly lighter panel: it defines the drawing area
+  // without a heavy frame, and the margins stay black
+  gfx_r = 0.025; gfx_g = 0.025; gfx_b = 0.03; gfx_a = 1;
+  gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 1);
+
+  // The frame is the scale: its top edge is 127, its bottom edge is 0. Drawing
+  // two more lines on top of them would only double the border.
+  gfx_r = 0.34; gfx_g = 0.34; gfx_b = 0.36; gfx_a = 1;
+  gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 0);
+
+  // Interior guidance at the quarter points, dashed and unlabelled: they help
+  // the eye estimate without competing with the bounds, which are the frame
+  // itself. 64 is the centre and slightly brighter than 32 and 96.
+  weight = 0;
+  i = 0;
+  loop(3,
+    level = i == 0 ? 32 : i == 1 ? 64 : 96;
+    y = g_graph_start_y + g_graph_actual_height
+        - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+
+    weight = level == 64 ? 0.30 : 0.24;
+    gfx_r = weight; gfx_g = weight; gfx_b = weight + 0.02; gfx_a = 1;
+    gfx_x = g_graph_margin_left;
+    loop(floor(g_graph_width / 8),
+      gfx_rect(gfx_x, y, 4, 1, 1);
+      gfx_x += 8;
+    );
+
+    i += 1;
+  );
+
+  // Labels in the margin, right-aligned, digits padded. The two bounds are
+  // kept inside the window: 127 sits just under the top edge, 0 just above the
+  // bottom one, the centre on its line.
+  gfx_setfont(1, "Arial", FONT_SIZE - 4);
+
+  i = 0;
+  loop(3,
+    level = i == 0 ? 0 : i == 1 ? 64 : 127;
+    y = g_graph_start_y + g_graph_actual_height
+        - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+
+    level == 127 ? ( y = g_graph_start_y + 1 ) :
+    level == 0   ? ( y = g_graph_start_y + g_graph_actual_height - (FONT_SIZE - 4) - 1 ) :
+                   ( y = y - (FONT_SIZE - 4) / 2 );
+
+    gfx_r = level == 64 ? 0.45 : 0.58;
+    gfx_g = level == 64 ? 0.45 : 0.58;
+    gfx_b = level == 64 ? 0.48 : 0.60; gfx_a = 1;
+    // No %3d padding: 127, 64 and 0 start on the same x as the CC rows, so the
+    // whole left column hangs from a single vertical
+    sprintf(#ylab, "%d", level);
+    gfx_x = g_graph_margin_left - Y_LABEL_OFFSET;
+    gfx_y = y;
+    gfx_drawstr(#ylab);
+
+    i += 1;
+  );
+
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+/**
+ * Draws vertical time grid lines and labels on X-axis
+ * 
+ * Creates tick marks every 1 second with time labels showing
+ * seconds relative to the oldest visible point in the window
+ */
+function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_major, tw, th) (
+  // A ruler: a faint line every second, a brighter one where there is a label.
+  // Ticks are counted *backwards from now*, so the labels read exactly -5s, -10s
+  // and stay aligned with the right edge while the window slides.
+  tick_interval = 1;
+  label_interval = slider3 <= 12 ? 1 : slider3 <= 24 ? 2 : 5;
+
+  k = 0;
+  loop(ceil(g_time_window / tick_interval) + 1,
+    t = g_time_end - (k * tick_interval);
+
+    t >= g_time_start ? (
+      x_pos = g_graph_margin_left + ((t - g_time_start) / g_time_window) * g_graph_width;
+
+      x_pos >= g_graph_margin_left && x_pos <= g_graph_margin_left + g_graph_width ? (
+        is_major = (k % label_interval) == 0;
+
+        // Dashed like the horizontal guides, so the plot is one texture:
+        // brighter where the label is, fainter in between
+        is_major ? (
+          gfx_r = 0.30; gfx_g = 0.30; gfx_b = 0.32;
+        ) : (
+          gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.22;
+        );
+        gfx_a = 1;
+        gfx_y = g_graph_start_y;
+        loop(ceil(g_graph_actual_height / 8),
+          gfx_rect(x_pos, gfx_y, 1, 4, 1);
+          gfx_y += 8;
+        );
+
+        // Labels on major ticks only, *outside* the plot like the value labels,
+        // centred under their tick (a ruler, not a tick with a caption), and
+        // never in the corner that belongs to "now"
+        (is_major && k > 0 && x_pos < g_graph_margin_left + g_graph_width - 38) ? (
+          gfx_setfont(1, "Arial", FONT_SIZE - 4);
+          gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.54;
+          sprintf(#tlab, "-%ds", k);
+          gfx_measurestr(#tlab, tw, th);
+          gfx_x = x_pos - (tw / 2);
+          gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
+          gfx_drawstr(#tlab);
+        );
+      );
+    );
+
+    k += 1;
+  );
+
+  // Right edge is the present: right-aligned on the border it names
+  gfx_setfont(1, "Arial", FONT_SIZE - 4);
+  gfx_r = 0.62; gfx_g = 0.62; gfx_b = 0.64;
+  gfx_measurestr("now", tw, th);
+  gfx_x = g_graph_margin_left + g_graph_width - (tw / 2);
+  gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
+  gfx_drawstr("now");
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+/**
+ * Draws CC data lines and points on the graph
+ * 
+ * For each active (CC#, Channel) pair (or selected CC#):
+ * - Scans through history buffer
+ * - Filters data within visible time window
+ * - Draws lines connecting consecutive points
+ * - Draws dots at each data point
+ * - Draws border around graph area
+ * 
+ * Uses color assigned to each CC number (shared across channels)
+ * 
+ * @param visible_count Number of (CC#, channel) pairs in the visible selection
+ */
+function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_channel_pair,
+                                                 cc_num, channel, first_point, prev_x, prev_y, hist_idx, base,
+                                                 h_time, h_cc, h_channel, h_val, relative_time, x, y,
+                                                 last_dot_x) (
+  history_count = get_history_count();
+
+  // Exactly the same selection the bars use (see get_visible_cc_channel_pair)
+  cc_idx = 0;
+
+  loop(visible_count,
+    cc_channel_pair = get_visible_cc_channel_pair(cc_idx);
+
+    cc_channel_pair >= 0 ? (
+      cc_num = key_to_cc(cc_channel_pair);
+      channel = key_to_channel(cc_channel_pair);
+      
+      // Same colour family as the bar for this (CC, channel)
+      get_cc_channel_color(cc_num, channel);
+      
+      // Scan through history and draw this (CC, Channel) pair's data
+      first_point = 1;
+      last_dot_x = -1000;
+      prev_x = 0;
+      prev_y = 0;
+      
+      hist_idx = 0;
+      loop(history_count,
+        base = get_history(hist_idx);
+        base >= 0 ? (
+          h_time = mem[base];
+          h_cc = mem[base + 1];
+          h_channel = mem[base + 2];
+          h_val = mem[base + 3];
+          
+          // Check if this entry matches current (CC, Channel) pair and is within time window
+          h_cc == cc_num && h_channel == channel && h_time >= g_time_start && h_time <= g_time_end ? (
+            g_time_window > 0 ? (
+              // Calculate X position using RELATIVE time from window start
+              relative_time = h_time - g_time_start;
+              x = g_graph_margin_left + (relative_time / g_time_window) * g_graph_width;
+              
+              // Calculate Y position with padding
+              y = g_graph_start_y + g_graph_actual_height - ((h_val - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+              
+              // Draw line from previous point
+              first_point == 0 ? (
+                gfx_line(prev_x, prev_y, x, y);
+              );
+              
+              // Dots: Auto draws one every DOT_MIN_SPACING pixels, decided from
+              // the points themselves (so the drawing cannot change when the
+              // transport stops); Every event is the raw picture, and it is the
+              // expensive one; None is a plain line.
+              slider5 != 2 ? (
+                slider5 == 1 ? (
+                  gfx_circle(x, y, 2, 1);
+                ) : (
+                  (x - last_dot_x) >= DOT_MIN_SPACING ? (
+                    gfx_circle(x, y, 2, 1);
+                    last_dot_x = x;
+                  );
+                );
+              );
+              
+              prev_x = x;
+              prev_y = y;
+              first_point = 0;
+            );
+          );
+        );
+        hist_idx += 1;
+      );
+    );
+    
+    cc_idx += 1;
+  );
+  
+);
+
+/**
+ * Draws status information text at the bottom of the UI
+ * 
+ * Displays:
+ * - Waiting message if no data received
+ * - Time window settings and history point count
+ * 
+ * @param filtered_count Number of active/filtered (CC#, Channel) pairs
+ * @param history_count Number of points in history buffer
+ */
+/**
+ * Explains the three numbers, but only where they are: with the pointer over the
+ * metrics of a row, a small box says what Messages, Motion and Timing are. The
+ * window stays clean the rest of the time, and nothing has to be read in the
+ * README before the numbers make sense.
+ */
+function draw_metric_tooltip() local(i, y_pos, hit, metrics_x, bx, by, bw, bh, lh) (
+  hit = 0;
+  y_pos = g_start_y;
+  i = 0;
+  loop(g_visible_bars,
+    (mouse_y >= y_pos - 2 && mouse_y <= y_pos + BAR_HEIGHT + BAR_SPACING) ? (
+      metrics_x = g_margin + g_label_width + floor(g_available_width * 0.30) + 40;
+      (mouse_x >= metrics_x) ? hit = 1;
+    );
+    y_pos += BAR_HEIGHT + BAR_SPACING;
+    i += 1;
+  );
+
+  hit && mouse_x > 0 && mouse_y > 0 ? (
+    bw = 520; bh = 62;
+    bx = min(mouse_x + 16, gfx_w - bw - 6);
+    bx = max(bx, 6);
+    by = mouse_y - bh - 14;
+    by < 6 ? by = mouse_y + 22;
+    by = min(by, gfx_h - bh - 6);
+
+    // Opaque panel: the rows underneath must not show through. gfx_r/gfx_g/gfx_b/
+    // gfx_a is the idiom that works here -- gfx_set(...,1,0,0) left the panel
+    // translucent in REAPER 7.82.
+    gfx_r = 0.09; gfx_g = 0.09; gfx_b = 0.12; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 0);
+
+    gfx_setfont(1, "Arial", FONT_SIZE - 4);
+    gfx_r = 0.9; gfx_g = 0.9; gfx_b = 0.9; gfx_a = 1;
+    // gfx_drawstr advances gfx_x: every line has to set it again
+    gfx_x = bx + 8; gfx_y = by + 6;
+    gfx_drawstr("Messages  times per second the controller sends");
+    gfx_x = bx + 8; gfx_y = by + 23;
+    gfx_drawstr("Motion    how far the value travels per second");
+    gfx_x = bx + 8; gfx_y = by + 40;
+    gfx_drawstr("Timing    how much the spacing between events wobbles");
+
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
+);
+
+function draw_status_info(filtered_count, history_count) local() (
+  gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
+  gfx_x = 10;
+  gfx_y = gfx_h - STATUS_TEXT_MARGIN + 5;
+
+  filtered_count == 0 ? (
+    slider1 != 0 ? (
+      gfx_printf("Waiting for CC%d data (any channel)...", slider1);
+    ) : (
+      gfx_drawstr("Send MIDI CC data to visualize.");
+    );
+  ) : (
+    gfx_printf("%d s window · 1 s metrics", slider3);
+
+    // Never hide bars silently
+    filtered_count > g_visible_bars ? (
+      gfx_printf(" · showing %d of %d pairs", g_visible_bars, filtered_count);
+    );
+
+    g_prev_freeze ? (
+      gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2;
+      gfx_printf("   FROZEN");
+    );
+  );
+);
+
+/**
+ * Processes incoming MIDI messages in the audio block
+ * 
+ * Handles CC messages (0xB0):
+ * - Extracts MIDI channel from message
+ * - Assigns color to new CCs (based on CC number only)
+ * - Stores current CC values per (CC#, Channel) pair
+ * - Adds timestamped entries to history buffer with channel info
+ * - Updates performance metrics per (CC#, Channel) pair
+ * - Passes all MIDI through unchanged
+ */
+function process_midi_messages() local(offset, msg1, msg2, msg3, status, cc_num, cc_val,
+                                        midi_channel, block_start_sec, event_time_sec) (
+  // The audio clock: block_start is the time of this block's first sample and
+  // advances by exactly samplesblock/srate per block, so consecutive blocks are
+  // evenly spaced even when the audio callback is scheduled late. midirecv()'s
+  // offset is in samples from block_start, so an event's time is
+  // block_start + offset/srate -- the same timebase the visible window uses.
+  block_start_sec = g_clock_sec;
+  g_clock_sec += samplesblock / srate;
+
+  // Process MIDI messages
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    status = msg1 & 0xF0;
+
+    // Timestamp of THIS event, not of the block
+    event_time_sec = block_start_sec + offset / srate;
+    
+    // Check if this is a CC message (0xB0)
+    status == 0xB0 ? (
+      cc_num = msg2 & 0x7F;
+      cc_val = msg3 & 0x7F;
+      midi_channel = msg1 & 0x0F;  // Extract MIDI channel (0-15)
+      
+      // Assign color IMMEDIATELY when CC is first received (based on CC number only)
+      is_cc_active(cc_num) == 0 ? (
+        assign_color_to_cc(cc_num);
+      );
+      
+      // Freeze stops acquisition, not the MIDI stream: what is on screen stays
+      // on screen, byte for byte, while the pass-through keeps working.
+      slider2 == 0 ? (
+        store_cc_channel_value(cc_num, midi_channel, cc_val);
+        add_to_history_with_channel(event_time_sec, cc_num, midi_channel, cc_val);
+        update_metrics_for_cc_channel(cc_num, midi_channel, cc_val, event_time_sec);
+      );
+    );
+    
+    // Pass MIDI through
+    midisend(offset, msg1, msg2, msg3);
+  );
+  
+  // Periodically prune old metrics (every 100ms). Not while frozen: the events
+  // the frozen window shows must survive.
+  slider2 == 0 ? (
+    block_start_sec - g_last_prune_time > PRUNE_INTERVAL ? (
+      prune_old_metrics(block_start_sec);
+      g_last_prune_time = block_start_sec;
+    );
+  );
+);
+
+@block
+// Process all MIDI messages in this audio block
+process_midi_messages();
+
+@sample
+// No per-sample processing needed
+
+@gfx 1000 720
+// ========== MAIN RENDERING PIPELINE ==========
+
+// Clear background
+gfx_clear = 0;
+gfx_mode = 0;
+
+// Set font size
+gfx_setfont(1, "Arial", FONT_SIZE);
+
+// ========== SLIDER EDGES ==========
+// Freeze: remember the instant, so the window and the numbers describe it
+slider2 != g_prev_freeze ? (
+  g_prev_freeze = slider2;
+  slider2 ? g_freeze_time = g_clock_sec;
+);
+
+// Clear: one-shot slider, resets to 0 by itself
+slider4 == 1 ? (
+  slider4 = 0;
+  clear_history();
+  init_metrics();
+  clear_all_cc_values();
+  g_last_prune_time = g_clock_sec;
+);
+
+// ========== BUILD SORTED LIST OF ACTIVE (CC#, Channel) PAIRS ==========
+active_count = build_active_cc_channel_pair_list();
+
+// ========== APPLY CC FILTER ==========
+filtered_count = 0;
+slider1 != 0 ? (
+  // Count how many channels have this CC#
+  filtered_count = count_cc_channels(slider1);
+) : (
+  // Show all active (CC#, Channel) pairs
+  filtered_count = active_count;
+);
+
+// ========== CALCULATE DYNAMIC LAYOUT ==========
+calculate_layout(filtered_count);
+
+// ========== CALCULATE TIME WINDOW ==========
+calculate_time_window();
+
+// The metrics measure against the same "now" the window shows: the buffers are
+// pruned every 100 ms, so counting what is buffered would overstate the rate.
+g_metrics_now = g_time_end;
+
+// ========== DRAW UI ELEMENTS ==========
+draw_graph_background();
+draw_time_grid();
+draw_cc_data_lines(filtered_count);
+draw_cc_bars();
+
+// Get history count for status display
+history_count = get_history_count();
+draw_status_info(filtered_count, history_count);
+
+// On top of everything: the explanation of the numbers under the pointer
+draw_metric_tooltip();
