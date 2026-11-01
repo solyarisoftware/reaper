@@ -1,0 +1,15 @@
+# Funding links for this repository: they feed the "Sponsor" button in the
+# repository header. GitHub reads this file from the default branch only, and
+# accepts up to four `custom` URLs.
+#
+# House rule: only funding links belong here (GitHub: no advertising, no
+# political/community/charity groups).
+#
+# PayPal "Donate" hosted button, EUR, minimum 5. It is a donation, not a
+# purchase: nothing is unlocked and nothing changes in the license. Canonical
+# form of the URL, with the button ID PayPal issued: the `?token=` variant is a
+# session handle and can expire.
+#
+# The same button funds the other open-source work (dxconvey, the scale
+# collections): one pointer, updated in one place at PayPal.
+custom: ["https://www.paypal.com/donate/?hosted_button_id=AEV3EVJEUFM32"]

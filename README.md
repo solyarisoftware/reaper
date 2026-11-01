@@ -43,6 +43,22 @@ The scale collections are separate projects, each with its own documentation:
 - [Alexander-Scriabin-Scales](https://github.com/solyarisoftware/Alexander-Scriabin-Scales)
 - [Olivier-Messiaen-Modes](https://github.com/solyarisoftware/Olivier-Messiaen-Modes)
 
+## Support
+
+**IF YOU LIKE THE PROJECT, PLEASE ⭐️STAR THIS REPOSITORY TO SHOW YOUR SUPPORT!**
+
+A star costs nothing, and it is the only signal GitHub shows to whoever is looking for a tool
+like this one: the count is what makes a repository look alive.
+
+If you want to go further, there is a donate button in the **Sponsor** menu of this repository:
+
+- **[Donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=AEV3EVJEUFM32)**
+
+It is a donation, not a purchase: nothing is unlocked, nothing changes in the license, and no
+support is promised in exchange. The minimum is 5 EUR, for a practical reason — below that the
+PayPal fee takes most of it. The same button funds the other open-source work of mine
+(dxconvey, the scale collections), so one pointer covers all of it.
+
 ## License
 
 [MIT](LICENSE) — Copyright (c) 2025-2026 Giorgio Robino.
