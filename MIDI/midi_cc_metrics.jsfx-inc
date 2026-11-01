@@ -42,6 +42,15 @@
 // DISPLAY FORMAT:
 // CC1 (CH:01) [████████████████░░░░░░░░] 67  │ Events: 45/s │ Rate: 23 u/s (Gentle) │ Jitter: ±4ms (Excellent)
 //
+// CHANGELOG (v0.5.2):
+// - Removed the deprecated single-channel shims (update_metrics_for_cc,
+//   get_events_per_second, get_rate_per_second, get_jitter_ms)
+// - Fixed: the per-pair block was 600 slots for a layout that needs 602
+//   (2 header slots + 200 events * 3). The 200th event of a pair overwrote
+//   the event count and last value of the NEXT pair, so that pair stopped
+//   recording and the pruning loop started walking other blocks' data.
+//   CC_BLOCK_SIZE is now derived from the layout, not typed by hand.
+//
 // CHANGELOG (v0.5):
 // - Added multi-channel metrics tracking
 // - Each (CC#, Channel) pair maintains independent metrics
@@ -59,7 +68,8 @@
 // MEMORY LAYOUT (per CC per Channel):
 // - Event buffer: stores timestamps and values for last 1 second
 // - Each event: 3 floats (timestamp, value, delta)
-// - Max ~200 events per (CC#, Channel) pair
+// - Max 200 events per (CC#, Channel) pair (= 200 evt/s; further events in the
+//   same window are dropped, the counters saturate)
 // ===================================================================
 
 @init
@@ -75,13 +85,16 @@ MAX_EVENTS_PER_CC = 200;       // Buffer size per CC (supports up to 200 evt/s)
 
 metrics_base = 30000;
 
-// Per-(CC#, Channel) memory structure (each uses 600 slots):
+// Per-(CC#, Channel) memory structure, CC_BLOCK_SIZE slots:
 // [0]: event_count (number of events in buffer)
 // [1]: last_value (previous CC value for rate calculation)
-// [2-601]: event buffer (200 events × 3 slots each)
+// [2 .. 2 + MAX_EVENTS_PER_CC*3 - 1]: event buffer, 3 slots per event
 //   Each event: [timestamp, value, delta]
 
-CC_BLOCK_SIZE = 600;
+// 602, not 600: two header slots plus the events. The block size follows from
+// the layout above; typing a round number here is what corrupted the next
+// pair's header on every 200th event. tools/jsfx_memmap_check.py verifies it.
+CC_BLOCK_SIZE = 2 + (MAX_EVENTS_PER_CC * 3);
 CHANNELS_PER_CC = 16;
 CC_METRICS_BLOCKS = 128 * CHANNELS_PER_CC;  // 2048 total blocks
 
@@ -148,14 +161,6 @@ function update_metrics_for_cc_channel(cc_num, channel, value, time_sec)
 );
 
 /**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use update_metrics_for_cc_channel() instead
- */
-function update_metrics_for_cc(cc_num, value, time_sec) (
-  update_metrics_for_cc_channel(cc_num, 0, value, time_sec);
-);
-
-/**
  * Removes events older than METRICS_WINDOW_SEC from all (CC#, Channel) buffers
  * @param current_time_sec Current time in seconds
  */
@@ -218,14 +223,6 @@ function get_events_per_second_cc_channel(cc_num, channel) local(base) (
 );
 
 /**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_events_per_second_cc_channel() instead
- */
-function get_events_per_second(cc_num) (
-  get_events_per_second_cc_channel(cc_num, 0)
-);
-
-/**
  * Calculates rate (value change per second) for a (CC#, Channel) pair
  * @param cc_num CC number (0-127)
  * @param channel MIDI channel (0-15)
@@ -247,14 +244,6 @@ function get_rate_per_second_cc_channel(cc_num, channel)
   );
   
   total_delta
-);
-
-/**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_rate_per_second_cc_channel() instead
- */
-function get_rate_per_second(cc_num) (
-  get_rate_per_second_cc_channel(cc_num, 0)
 );
 
 /**
@@ -314,14 +303,6 @@ function get_jitter_ms_cc_channel(cc_num, channel)
     stddev = sqrt(variance) * 1000;
     stddev
   );
-);
-
-/**
- * Legacy function for backward compatibility (uses channel 0)
- * @deprecated Use get_jitter_ms_cc_channel() instead
- */
-function get_jitter_ms(cc_num) (
-  get_jitter_ms_cc_channel(cc_num, 0)
 );
 
 /**
