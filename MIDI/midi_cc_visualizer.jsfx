@@ -101,6 +101,7 @@
 // - Slider 2: Freeze, stops acquisition (the MIDI keeps flowing through)
 // - Slider 3: Time Window in seconds (1-30)
 // - Slider 4: Clear history and metrics (resets itself to 0)
+// - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
 //
 // CHANGELOG (v0.6.0):
 // - One colour per (CC, channel): same hue per CC, different shade per channel
@@ -119,6 +120,8 @@
 // - The quality words are for musicians: slow/moderate/brisk/fast, steady/even/
 //   uneven/loose/erratic
 // - Pointing at the numbers explains them in a small panel
+// - Slider 5 chooses the dots: Auto (one every 12 px, the default), Every event
+//   (the raw samples, heavier), None (plain lines)
 //
 // CHANGELOG (v0.5.2):
 // - Bars follow slider 1 like the graph (one shared visible selection)
@@ -167,6 +170,7 @@ slider1:0<0,127,1>CC to Monitor (0=All)
 slider2:0<0,1,1>Freeze (stop acquiring)
 slider3:10<1,30,1>Time Window (seconds)
 slider4:0<0,1,1>Clear history and metrics
+slider5:0<0,2,1{Auto (12 px),Every event,None}>Dots on traces
 
 @init
 // ========== CONFIGURATION VARIABLES ==========
@@ -609,12 +613,19 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
                 gfx_line(prev_x, prev_y, x, y);
               );
               
-              // A dot only when the previous one is far enough: the decision is
-              // made from the points themselves, not from the current rate, so
-              // the drawing cannot change when the transport stops.
-              (x - last_dot_x) >= DOT_MIN_SPACING ? (
-                gfx_circle(x, y, 2, 1);
-                last_dot_x = x;
+              // Dots: Auto draws one every DOT_MIN_SPACING pixels, decided from
+              // the points themselves (so the drawing cannot change when the
+              // transport stops); Every event is the raw picture, and it is the
+              // expensive one; None is a plain line.
+              slider5 != 2 ? (
+                slider5 == 1 ? (
+                  gfx_circle(x, y, 2, 1);
+                ) : (
+                  (x - last_dot_x) >= DOT_MIN_SPACING ? (
+                    gfx_circle(x, y, 2, 1);
+                    last_dot_x = x;
+                  );
+                );
               );
               
               prev_x = x;
