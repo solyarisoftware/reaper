@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="7afdb2b69e3177ba76b4beae980584f5834fe940">
+<index version="1" name="solyarisoftware reaper" commit="a0d50cc131c628ceb0dcc1e6fbf49340fb361c73">
   <category name="MIDI/ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -9,7 +9,7 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 Real-time visualization of MIDI Continuous Controller (CC) messages with two display modes: a scrolling time graph and current-value bars, plus performance metrics for hardware testing and technique analysis (events/s, rate, jitter).\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Each CC number is tracked per MIDI channel, so the same CC from different channels is displayed and measured separately.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Slider 1 selects the CC to monitor (0 = all CCs); slider 3 sets the time window in seconds (1-30). Metrics are computed over a 1-second window, filtered on read, so the numbers describe exactly the second they claim to.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Slider 1 selects the CC to monitor (0 = all CCs) and slider 6 the MIDI channel (0 = all channels): the two filters combine, so "CC1 on channel 3" is a selection like any other. Slider 3 sets the time window in seconds (1-30). Metrics are computed over a 1-second window, filtered on read, so the numbers describe exactly the second they claim to.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Each (CC, channel) pair has its own colour shade, the bars carry it in the label, the time axis is labelled, and Freeze stops the acquisition so a reading can be examined without it moving.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The three numbers per pair are named after what they mean, not after how they are computed: Messages = how many times per second the controller sends; Motion = how far the value travels per second (gesture speed); Timing = how much the spacing between messages wobbles. Pointing at them says the same thing on screen.\par}
 }
@@ -40,6 +40,33 @@
         <source>https://github.com/solyarisoftware/reaper/raw/7afdb2b69e3177ba76b4beae980584f5834fe940/MIDI/ccscope/ccscope.jsfx</source>
         <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7afdb2b69e3177ba76b4beae980584f5834fe940/MIDI/ccscope/ccscope_utils.jsfx-inc</source>
         <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7afdb2b69e3177ba76b4beae980584f5834fe940/MIDI/ccscope/ccscope_metrics.jsfx-inc</source>
+      </version>
+      <version name="0.6.2" author="Giorgio Robino" time="2026-11-01T14:14:44Z">
+        <changelog><![CDATA[0.6.2 Channel filter: slider 6 keeps one MIDI channel (or all), combining with
+      the CC filter. Both filters are applied while the visible pair list is
+      built, so the graph and the bars cannot disagree about what is on
+      screen, and "showing N of M" counts the filtered set.
+0.6.1 Packaging fix: 0.6.0 was indexed with the includes under their old names
+      (midi_cc_*.jsfx-inc), so it could not load. Everything is renamed after
+      the package here. Use this version.
+0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
+      ccscope.jsfx: uninstall the old one, it is no longer in the repository).
+      Readable: one colour per (CC, channel) instead of per CC, labelled time
+      axis, metrics that degrade instead of running off the edge, plain value
+      next to each bar, Freeze and Clear, exact 1 s window (counts were up to
+      10% high), 500 events/s per pair instead of 200, jitter that ignores
+      gaps, reports how many intervals it used, and says n/a when there are
+      too few to mean anything.
+0.5.2 Correctness pass: the (CC, channel) key no longer overflows its memory
+      range, slider 1 filters the graph and the bars together, bars can no
+      longer be drawn under the status line, the metrics block and the
+      event timestamps are sized and taken correctly (jitter was quantised
+      to the audio block and offset by the callback's scheduling).
+0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/a0d50cc131c628ceb0dcc1e6fbf49340fb361c73/MIDI/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a0d50cc131c628ceb0dcc1e6fbf49340fb361c73/MIDI/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a0d50cc131c628ceb0dcc1e6fbf49340fb361c73/MIDI/ccscope/ccscope_metrics.jsfx-inc</source>
       </version>
     </reapack>
   </category>
