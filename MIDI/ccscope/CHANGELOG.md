@@ -3,6 +3,25 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.7.4 — 2026-11-01
+
+- **The bar spans the plot.** The selectors start on the plot's left edge and `FREEZE`/`CLEAR`
+  sit flush with its right edge, so the bar occupies exactly the same two vertical lines as the
+  frame — measured: cell border and frame column land on the same pixel, 43 and 991 in a
+  1016 px window. In a narrow window the two buttons stop being flush and follow the selectors,
+  because there is no longer room for a gap that big.
+- **The cells have their corners cut.** JSFX has no rounded rectangle; the body is two
+  overlapping rectangles and the border follows the cut with one pixel on each diagonal. At
+  24 px of height, a two-pixel chamfer is what the eye reads as a corner.
+- **The engaged button turns amber altogether**, border included: `FROZEN` was a filled cell
+  with a grey edge, which read as two different states at once.
+- **With the labels on, the value sits against the caret** (four pixels of air), so a cell whose
+  value grows — `all` → `127` — keeps its text where the eye left it, and the air goes into the
+  gap after the label. Without labels the value *is* the cell and stays on the left.
+- **The rule under the bar is gone**, and so is the hairline between selectors and buttons: the
+  top edge of the plot's frame is already the line, and the gap between the two groups is now
+  wide enough to say what the hairline said.
+
 ## 0.7.3 — 2026-11-01
 
 - **The bar sits on the window's own black**, not on a lighter strip: the cells are what carry

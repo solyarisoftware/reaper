@@ -31,8 +31,8 @@ channel, or one CC on one channel.
 
   In a narrow window the cell labels are dropped first, and `FREEZE`/`CLEAR` keep theirs; below
   ~460 px of width the last cells are clipped, and at that size the plot is not much of a plot
-  either. The bar sits on the window's black and its first cell starts on the plot's left edge,
-  so one vertical line runs from the controls down through the plot's frame.
+  either. The bar spans the plot: the selectors start on its left edge and the two buttons sit
+  flush with its right edge, so one vertical line runs from the controls down through the frame.
 - The two filters (which CC, which channel) combine, so *CC1 on channel 3*, *every CC on
   channel 3* and *CC1 on every channel* are all selections; they share one list, and the graph
   and the bars read that list, so they cannot disagree about what is on screen.
