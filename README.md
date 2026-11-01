@@ -60,6 +60,11 @@ is installed as `Effects/MIDI/<file>` and shows up under the *MIDI* category in 
 [reapack-index](https://github.com/cfillion/reapack-index) running in GitHub Actions — do not
 edit it by hand.
 
+## Changelog and roadmap
+
+- [CHANGELOG.md](CHANGELOG.md) — what changed, release by release
+- [TODO.md](TODO.md) — what is missing: the issues, the forum requests, the ideas
+
 ## Related repositories
 
 The scale collections are separate projects, each with its own documentation:
