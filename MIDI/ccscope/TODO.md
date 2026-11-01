@@ -1,7 +1,12 @@
 # TODO — what is missing
 
-Bugs and concrete requests are GitHub [issues](../../issues); this page is the map,
-including the ideas that are not issues yet.
+Two trackers, on purpose:
+
+- **bugs** live in the GitHub [issues](../../issues), labelled `bug`: something that is
+  wrong and has to stay visible until it is fixed;
+- **feature requests** are the roadmap below. The ones that deserve a thread are issues too,
+  labelled `enhancement` — `label:bug` gives the faults, `label:enhancement` gives the plans —
+  and everything else is written down here.
 
 ## From the Cockos forum thread
 
@@ -28,40 +33,42 @@ announced there with the full change list:
   500 events/s per pair with an exact one-second window.
 - **The bottom row of text overlapped the CC rows**: fixed in 0.5.2.
 
-## Decided, not yet done
+## Feature requests — decided, not written as issues
 
-- **The control bar replaced REAPER's sliders in 0.7.0**, and it is deliberately one simple
+- **An overlay panel for the parameters.** The control bar (0.7.0) is deliberately one simple
   widget: click opens a list, the wheel steps, a right click resets. What it cannot do is take
-  a value typed from the keyboard (a JSFX has no text input without a library), and with 128
-  controllers the `CC` list is long enough to need scrolling. Both point at the same thing: an
-  overlay panel with `−`/`+` steppers and a value in clear, opened by a button — the "redbox"
-  idea — to be done when the bar starts to feel tight.
+  a value typed from the keyboard — a JSFX has no text input without a library — and with 128
+  controllers the `CC` list is long enough to scroll. Both point at the same thing: a panel
+  with `−`/`+` steppers and the value in clear, opened by a button (the "redbox" idea), to be
+  done when the bar starts to feel tight.
 - **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` is
-  permissively licensed (*"free as in free beer… share your plugins for free too"*) but it ships
+  permissively licensed (*"free as in free beer… share your plugins for free too"*) but ships
   knobs, buttons and meters — no dropdowns, which is exactly what the three enum parameters
   need. Geraint Luff's `ui-lib.jsfx-inc` does have selectors and text input, but declares no
-  license, so it cannot be vendored into this MIT repository without asking him first. The
-  bar is ~200 lines of our own code and needs neither.
-- **The README GIF and screenshot are from 0.6**, recorded when the parameters were REAPER
-  sliders. They need re-recording with the bar; until then the caption says so.
+  license, so it cannot be vendored into this MIT repository without asking him first. The bar
+  is ~200 lines of our own code and needs neither.
 
-## Open issues
+## Bugs
 
 | issue | what it is |
 |---|---|
 | [#5](../../issues/5) | history is fixed at 2000 events; size it from the time window |
-| [#6](../../issues/6) | 14-bit CC pairs |
-| [#8](../../issues/8) | all pairs visible: **done** — rows grow with the window (0.6.3) and the list can sit beside the plot (0.6.4); the issue can be closed |
 
-Closed: [#4](../../issues/4) channel filter — done in 0.6.2, slider 6.
+Closed: [#7](../../issues/7) rates read up to 10% high; [#3](../../issues/3) jitter over one
+interval; [#2](../../issues/2) metrics saturating above 200 events/s; [#4](../../issues/4)
+channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0.6.4.
 
-## Ideas, not issues yet
+## Feature requests — the roadmap
+
+| issue | what it is |
+|---|---|
+| [#6](../../issues/6) | 14-bit CC pairs (MSB/LSB, CC n with CC n+32). Today the two halves are drawn as two independent 7-bit streams, so one gesture reads as two jumps |
+
+## Ideas, not decided yet
 
 - **peak hold / min-max per pair** — the instant tells you little when you are measuring
   resolution; the extremes of the last second tell more.
 - **export** — JSFX cannot write files. Publishing the metrics on `gmem` and shipping a
   small ReaScript that writes a CSV would turn the display into an instrument.
-- **bar area** — a background or zebra rows, so the rows read as a table instead of
-  floating text on black.
 - **presets** — none today. Two starting points (*hardware test*, *gesture analysis*)
   would save the first five minutes.
