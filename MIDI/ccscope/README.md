@@ -45,6 +45,13 @@ controller actually send?** That is `Messages/s` per CC and per channel, and it 
 makes the plugin useful beyond faders — to check a rate limit in a JSFX of your own, for
 example.
 
+## Discussion
+
+Reports, questions and announcements happen in the REAPER forum thread, where the plugin
+started: [CCScope — MIDI CC oscilloscope](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
+Bugs and trackable requests are better as [issues](https://github.com/solyarisoftware/reaper/issues),
+because a thread grows and forgets.
+
 ## Changelog and roadmap
 
 - [CHANGELOG.md](CHANGELOG.md) — what changed, release by release

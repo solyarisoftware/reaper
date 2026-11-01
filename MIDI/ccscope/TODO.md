@@ -6,7 +6,9 @@ including the ideas that are not issues yet.
 ## From the Cockos forum thread
 
 The plugin began as a post in the REAPER forum
-([thread 304766](https://forum.cockos.com/showthread.php?t=304766)).
+([thread 304766](https://forum.cockos.com/showthread.php?t=304766)). The 0.6 release was
+announced there with the full change list:
+[post #21](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
 
 - **The rate per CC per channel is the reason it exists.** X-Raym, using it to debug a
   DMX-lights JSFX, put it plainly: no MIDI logger shows a MIDI rate per CC per channel, so
