@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="d9b6be66cebed4a7fedeebe47cb3f0463241bb40">
+<index version="1" name="solyarisoftware reaper" commit="c73eb6c46ef2c51832f46228ede2bb8927a09ad3">
   <category name="MIDI">
     <reapack name="midi_cc_visualizer.jsfx" type="effect" desc="MIDI CC Visualizer">
       <metadata>
@@ -22,6 +22,18 @@
         <source file="midi_cc_visualizer.jsfx">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_visualizer.jsfx</source>
         <source file="midi_cc_utils.jsfx-inc">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_utils.jsfx-inc</source>
         <source file="midi_cc_metrics.jsfx-inc">https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/midi_cc_metrics.jsfx-inc</source>
+      </version>
+      <version name="0.5.2" author="Giorgio Robino" time="2026-11-01T10:23:14Z">
+        <changelog><![CDATA[0.5.2 Correctness pass: the (CC, channel) key no longer overflows its memory
+      range, slider 1 filters the graph and the bars together, bars can no
+      longer be drawn under the status line, the metrics block and the
+      event timestamps are sized and taken correctly (jitter was quantised
+      to the audio block and offset by the callback's scheduling).
+0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/97de1cc436a0fbc0a9d5cc515da446ae647f38ca/MIDI/midi_cc_visualizer.jsfx</source>
+        <source file="midi_cc_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/97de1cc436a0fbc0a9d5cc515da446ae647f38ca/MIDI/midi_cc_utils.jsfx-inc</source>
+        <source file="midi_cc_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/97de1cc436a0fbc0a9d5cc515da446ae647f38ca/MIDI/midi_cc_metrics.jsfx-inc</source>
       </version>
     </reapack>
   </category>
