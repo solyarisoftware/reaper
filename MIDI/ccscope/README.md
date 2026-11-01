@@ -4,10 +4,10 @@ A JSFX effect for REAPER 6.37 or newer.
 
 ![CCScope in REAPER: a controller being moved, one bar per CC](ccscope.gif)
 
-Recorded in REAPER: one fader gesture, four CC streams (four shades of colour), the
-metrics updating live. The static screenshot used by ReaPack is [`ccscope.png`](ccscope.png).
-Both were recorded on 0.6, when the parameters were REAPER sliders in a strip above the plot;
-the same readings, with the controls now drawn by the plugin, are in the bar at the top.
+Recorded in REAPER, real hardware: four faders (CC 1, 11, 17, 21) moved by hand, one colour
+per CC, the metrics updating live and the columns staying aligned while the numbers change.
+The static screenshot used by ReaPack is [`ccscope.png`](ccscope.png), a frame from the same
+take.
 
 Two display modes: a scrolling time graph and one fader bar per active CC. Each CC number is
 tracked **per MIDI channel**, so the same CC from different channels is shown and measured
