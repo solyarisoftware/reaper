@@ -3,6 +3,13 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.6.1 — 2026-11-01
+
+- **Fixes the packaging of 0.6.0**, which could not load: the package file was renamed
+  before the two includes, so the release pointed at a `ccscope.jsfx` that imports
+  `ccscope_utils.jsfx-inc` while the files were still `midi_cc_*.jsfx-inc`. Everything
+  is renamed consistently from this version on. **Use 0.6.1.**
+
 ## 0.6.0 — 2026-11-01
 
 - **Renamed to CCScope** (was "MIDI CC Visualizer"). Everything is new: the package

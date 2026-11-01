@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.0
+// @version 0.6.1
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -30,6 +30,9 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.6.1 Packaging fix: 0.6.0 was indexed with the includes under their old names
+//         (midi_cc_*.jsfx-inc), so it could not load. Everything is renamed after
+//         the package here. Use this version.
 //   0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
 //         ccscope.jsfx: uninstall the old one, it is no longer in the repository).
 //         Readable: one colour per (CC, channel) instead of per CC, labelled time
@@ -162,7 +165,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.6.0
+version: 0.6.1
 date: 2026-11-01
 
 // Import utility libraries
