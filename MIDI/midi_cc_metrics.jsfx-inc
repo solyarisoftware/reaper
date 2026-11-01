@@ -79,6 +79,7 @@
 // ========== CONFIGURATION ==========
 METRICS_WINDOW_SEC = 1.0;      // Rolling window duration
 MIN_JITTER_INTERVALS = 4;      // below this, jitter is reported as -1 (n/a)
+GAP_FACTOR = 4;               // an interval this many times the shortest is a gap, not jitter
 MAX_EVENTS_PER_CC = 500;       // events held per (CC, channel); 500 evt/s at 1 s
 
 // ========== MEMORY ALLOCATION ==========
@@ -288,20 +289,36 @@ function get_rate_quality(rate_value) (
  * @param channel MIDI channel (0-15)
  * @return Jitter in milliseconds (±)
  */
+// Number of intervals the last jitter computation used. The display shows it:
+// a standard deviation over four intervals and one over two hundred are not the
+// same claim, and the reader cannot tell from the value alone.
+g_jitter_intervals = 0;
+
+/**
+ * Calculates jitter (timing consistency) for a (CC#, Channel) pair
+ * Returns the standard deviation of the inter-arrival intervals in the window,
+ * ignoring the gapped ones: an interval longer than GAP_FACTOR times the
+ * shortest is a pause (or a loop jump, or a stale event), not jitter. Without
+ * that filter a single gap turned a steady stream into "Poor".
+ * @param cc_num CC number (0-127)
+ * @param channel MIDI channel (0-15)
+ * @return Jitter in milliseconds, or -1 when the window has fewer than
+ *         MIN_JITTER_INTERVALS usable intervals (count in g_jitter_intervals)
+ */
 function get_jitter_ms_cc_channel(cc_num, channel)
-  local(base, count, i, ptr, cutoff, first_time, prev_time, curr_time, interval,
-        used, sum_intervals, mean_interval, sum_squared_diff, variance) (
+  local(base, count, i, ptr, cutoff, prev_time, curr_time, interval, first_time,
+        min_interval, limit, used, sum_intervals, mean_interval,
+        sum_squared_diff, variance) (
 
   base = get_cc_channel_metrics_base(cc_num, channel);
   count = mem[base];
   cutoff = g_metrics_now - METRICS_WINDOW_SEC;
+  g_jitter_intervals = 0;
 
-  // One interval is not a distribution: below MIN_JITTER_INTERVALS intervals
-  // the answer is -1 ("not measurable") and the display says so, instead of
-  // turning a single irregular gap into "Poor".
-  sum_intervals = 0;
-  used = 0;
+  // pass 1: shortest interval in the window
+  min_interval = 0;
   prev_time = 0;
+  used = 0;
   i = 0;
   loop(count,
     ptr = base + 2 + (i * 3);
@@ -309,7 +326,8 @@ function get_jitter_ms_cc_channel(cc_num, channel)
       used == 0 ? (
         prev_time = mem[ptr];
       ) : (
-        sum_intervals += mem[ptr] - prev_time;
+        interval = mem[ptr] - prev_time;
+        (min_interval == 0 || interval < min_interval) ? min_interval = interval;
         prev_time = mem[ptr];
       );
       used += 1;
@@ -317,12 +335,11 @@ function get_jitter_ms_cc_channel(cc_num, channel)
     i += 1;
   );
 
-  used < MIN_JITTER_INTERVALS + 1 ? (
-    -1
-  ) : (
-    mean_interval = sum_intervals / (used - 1);
+  used < MIN_JITTER_INTERVALS + 1 ? ( -1 ) : (
+    limit = min_interval * GAP_FACTOR;
 
-    sum_squared_diff = 0;
+    // pass 2: mean of the intervals that are not gaps
+    sum_intervals = 0;
     used = 0;
     prev_time = 0;
     i = 0;
@@ -331,18 +348,49 @@ function get_jitter_ms_cc_channel(cc_num, channel)
       mem[ptr] >= cutoff ? (
         used == 0 ? (
           prev_time = mem[ptr];
+          used = 1;
         ) : (
           interval = mem[ptr] - prev_time;
-          sum_squared_diff += (interval - mean_interval) * (interval - mean_interval);
           prev_time = mem[ptr];
+          interval <= limit ? (
+            sum_intervals += interval;
+            used += 1;
+          );
         );
-        used += 1;
       );
       i += 1;
     );
 
-    variance = sum_squared_diff / (used - 1);
-    sqrt(variance) * 1000
+    used < MIN_JITTER_INTERVALS + 1 ? ( -1 ) : (
+      g_jitter_intervals = used - 1;
+      mean_interval = sum_intervals / (used - 1);
+
+      // pass 3: variance of the same intervals
+      sum_squared_diff = 0;
+      used = 0;
+      prev_time = 0;
+      i = 0;
+      loop(count,
+        ptr = base + 2 + (i * 3);
+        mem[ptr] >= cutoff ? (
+          used == 0 ? (
+            prev_time = mem[ptr];
+            used = 1;
+          ) : (
+            interval = mem[ptr] - prev_time;
+            prev_time = mem[ptr];
+            interval <= limit ? (
+              sum_squared_diff += (interval - mean_interval) * (interval - mean_interval);
+              used += 1;
+            );
+          );
+        );
+        i += 1;
+      );
+
+      variance = sum_squared_diff / (used - 1);
+      sqrt(variance) * 1000
+    );
   );
 );
 
