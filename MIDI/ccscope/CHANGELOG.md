@@ -3,6 +3,24 @@
 Notable changes only — what someone using the plugin would notice. For the full
 history, including every intermediate step, `git log`.
 
+## 0.6.4 — 2026-11-01
+
+- **Slider 7, `Pair list layout`: the list can sit beside the plot.** Requested in the
+  forum thread (*"a mode to list the chart on the right of the graph, this will leave you
+  plenty of vertical room for a lot of CC"*). The column takes the right edge, the rows keep
+  the 16 px they have below the plot, and the plot keeps the whole window height. Measured on
+  the 20-pair demo at 1016×600: **10 pairs visible with the list below, 18 beside** — which
+  is the point, because with the list below it is the plot's floor that caps the rows.
+- **The metrics in the column are the compact form** (`125 msg/s   247 mot   ±20.7ms`).
+  Two-line rows were measured and rejected: at 34 px per row the column would show *fewer*
+  pairs (19 instead of 41 at 1016×958) than the layout it replaces.
+- **A narrow window falls back and says so.** The column needs ~717 px of width to leave the
+  plot at least 240 px; below that the rows go back under the plot and the status line reads
+  `rows beside need a wider window`, instead of the plugin quietly ignoring the slider.
+- Row geometry now has one definition: `calculate_layout()` computes where the label, the
+  bar, the value and the metrics start, and the bars, the tooltip hit test and both layouts
+  read those coordinates instead of recomputing them.
+
 ## 0.6.3 — 2026-11-01
 
 - **A taller window shows more pairs.** The bar area used to be capped at 35% of the

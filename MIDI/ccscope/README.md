@@ -22,11 +22,18 @@ channel, or one CC on one channel.
   combines with slider 1, so *CC1 on channel 3*, *every CC on channel 3* and *CC1 on every
   channel* are all selections; the two filters share one list, and the graph and the bars
   read that list, so they cannot disagree about what is on screen.
+- **Slider 7** — where the pair list lives: **Rows below** the plot (default) or **Rows
+  beside** it, as a column on the right. The column uses the whole window height and keeps
+  the same 16 px per row, so one window shows more pairs than with the list below — measured
+  at 1016×600: 10 pairs below, 18 beside. Below ~720 px of window width the plot would be
+  too narrow to be a plot, so the layout falls back to the rows below and the status line
+  says `rows beside need a wider window`.
 
-One row per (CC, channel) pair, and the rows take the height they need: the plot keeps a
-minimum share of the window, so **a taller window shows more pairs** instead of only a taller
-graph. When even that is not enough the status line says how many are on screen and that a
-taller window fits more.
+One row per (CC, channel) pair. With the list **below**, the rows take the height they need:
+the plot keeps a minimum share of the window, so a taller window shows more pairs instead of
+only a taller graph. With the list **beside**, the window height feeds the column and the plot
+keeps the full height. In both cases, when rows still do not fit the status line says how
+many are on screen and what to do about it.
 
 Three numbers per row, named after what they mean rather than how they are computed. Pointing at
 them explains them on screen:

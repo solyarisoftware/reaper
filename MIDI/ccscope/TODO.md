@@ -18,13 +18,12 @@ announced there with the full change list:
   them in the MIDI editor and in ReaControlMIDI. Here the two halves are still drawn as two
   independent 7-bit streams, so a 14-bit change reads as two jumps.
   → [#6](../../issues/6)
-- **See every pair when the window grows**: the cap that hid rows is gone in 0.6.3 — the bar
-  area is no longer a fraction of the height (35%) but whatever the rows need, with a floor
-  under the plot, so extending the window now adds rows. What remains is the *other* half of
-  [#8](../../issues/8): a layout where the list sits **beside** the plot, for windows that are
-  wide and short, where no amount of height helps. It costs two-line labels (the metrics block
-  is ~390 px wide and cannot share a narrow column with the bar) and therefore ~24-36 px per
-  pair against the 16 px of the rows below the plot — worth it only in a wide window.
+- **See every pair when the window grows**: both halves are done. 0.6.3 made the bar area
+  grow with the window instead of being a fraction of it; 0.6.4 added the layout where the
+  list sits **beside** the plot, for windows that are wide and short, where no amount of
+  height helps. The two-line labels the issue expected turned out to be a bad trade —
+  measured, two-line rows show *fewer* pairs than the layout they would replace, so the
+  column keeps one line and the compact metrics.
 - **The buffer could hold more** (200 events per pair was the cap): addressed in 0.6.0,
   500 events/s per pair with an exact one-second window.
 - **The bottom row of text overlapped the CC rows**: fixed in 0.5.2.
@@ -35,7 +34,7 @@ announced there with the full change list:
 |---|---|
 | [#5](../../issues/5) | history is fixed at 2000 events; size it from the time window |
 | [#6](../../issues/6) | 14-bit CC pairs |
-| [#8](../../issues/8) | all pairs visible: the rows growing with the window is done (0.6.3), the column layout beside the plot is not |
+| [#8](../../issues/8) | all pairs visible: **done** — rows grow with the window (0.6.3) and the list can sit beside the plot (0.6.4); the issue can be closed |
 
 Closed: [#4](../../issues/4) channel filter — done in 0.6.2, slider 6.
 

@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.6.3
+// @version 0.6.4
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -12,6 +12,9 @@
 //   Slider 1 selects the CC to monitor (0 = all CCs) and slider 6 the MIDI channel
 //   (0 = all channels): the two filters combine, so "CC1 on channel 3" is a
 //   selection like any other. Slider 3 sets the time window in seconds (1-30).
+//   Slider 7 chooses where the pair list lives: under the plot (rows take height
+//   from the graph) or beside it, as a column on the right that uses the whole
+//   window height, which is what makes a short, wide window show every pair.
 //   Metrics are computed over a 1-second window, filtered on read, so the numbers
 //   describe exactly the second they claim to.
 //
@@ -32,6 +35,11 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.6.4 Slider 7 (layout): the pair list can sit beside the plot instead of
+//         under it. In the column the rows keep the same 16 px, so a wide window
+//         shows about twice as many pairs as the same window with the list
+//         below, and the plot keeps the whole height. Too narrow a window for
+//         the column falls back to the list below and says so.
 //   0.6.3 Every pair gets a row: the bar area is no longer capped at 35% of the
 //         window, the plot has a floor instead, so extending the window shows
 //         more (CC, channel) pairs instead of only a taller graph. When rows
@@ -74,9 +82,10 @@
 //   * Events per second: MIDI message frequency (hardware resolution)
 //   * Rate (u/s): Value change velocity (playing intensity)
 //   * Jitter: Timing consistency (hardware quality indicator)
-// - Dynamic layout: the bar rows take every pixel they need, and the plot
-//   keeps a minimum share of the window; a taller window therefore shows more
-//   (CC, channel) pairs instead of only a taller graph
+// - Dynamic layout: the pair list can sit under the plot (rows take height from
+//   the graph) or beside it (a column that uses the whole window height, so a
+//   short, wide window still shows every pair); the plot keeps a minimum share
+//   of the window in the first case and the full height in the second
 // - Unique persistent color per CC from 12-color palette (shared across channels)
 // - Configurable time window (1-30 seconds)
 // - Monitor all CCs simultaneously or focus on a single CC
@@ -122,6 +131,7 @@
 // - Slider 4: Clear history and metrics (resets itself to 0)
 // - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
 // - Slider 6: Channel to Monitor (0 = All channels, 1-16 = one MIDI channel)
+// - Slider 7: Pair list layout, rows below the plot or a column beside it
 //
 // CHANGELOG (v0.6.0):
 // - One colour per (CC, channel): same hue per CC, different shade per channel
@@ -180,7 +190,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.6.2
+version: 0.6.4
 date: 2026-11-01
 
 // Import utility libraries
@@ -194,6 +204,7 @@ slider3:10<1,30,1>Time Window (seconds)
 slider4:0<0,1,1>Clear history and metrics
 slider5:0<0,2,1{Auto (12 px),Every event,None}>Dots on traces
 slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>Channel to Monitor (0=All)
+slider7:0<0,1,1{Rows below,Rows beside}>Pair list layout
 
 @init
 // ========== CONFIGURATION VARIABLES ==========
@@ -208,6 +219,22 @@ MIN_BAR_SECTION = 80;    // Minimum height for bar section
 // complaint that opened issue #8. A floor on the plot is the same constraint
 // seen from the other side, but it lets the rows grow until the pairs are gone.
 MIN_GRAPH_PROPORTION = 0.35;
+
+// Beside the plot the list is a column: one line per pair, the same 16 px as the
+// rows below the plot, so the whole window height is available for pairs. The
+// width is fixed by what a row has to hold -- label, bar, value and the compact
+// metrics -- because a column that adapts its width would move the plot while
+// the data changes. Measured in REAPER at FONT_SIZE 16 (Arial): label 67 px,
+// compact metrics 175 px; the reserves below are those numbers plus air.
+SIDE_PAD = 8;             // px between the column content and the window edge
+SIDE_COLUMN_GAP = 16;     // px between the plot and the column
+SIDE_LABEL_WIDTH = 76;    // "CCnn/CHnn" plus air
+SIDE_BAR_WIDTH = 90;      // the bar itself: narrower than below the plot, on purpose
+SIDE_VALUE_WIDTH = 30;    // the 3-digit value, right after the bar
+SIDE_METRICS_WIDTH = 190; // compact metrics: "125 msg/s   247 mot   ±20.7ms"
+MIN_PLOT_WIDTH = 240;     // below this the plot stops being a plot: fall back
+SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ... "now")
+
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
 TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
@@ -233,6 +260,24 @@ g_graph_actual_height = 0;
 g_y_range_min = 0;
 g_y_range_max = 0;
 g_y_range_total = 0;
+
+// ========== WHERE THE PAIR LIST LIVES ==========
+// g_layout_side is the EFFECTIVE mode (slider 7 and a window wide enough);
+// g_side_fallback says the slider asked for the column but the window cannot
+// hold it, so the status line can explain the difference instead of the plugin
+// silently ignoring the slider.
+g_layout_side = 0;
+g_side_fallback = 0;
+g_column_x = 0;
+g_column_width = 0;
+
+// Row geometry, computed once in calculate_layout(): the bars function and the
+// tooltip hit test read these, so there is one definition of where a row starts.
+g_label_x = 0;
+g_bar_x = 0;
+g_bar_width = 0;
+g_value_x = 0;
+g_metrics_x = 0;
 
 // ========== TIME WINDOW VARIABLES ==========
 // One clock for the whole plugin: the audio timeline, advanced by samplesblock
@@ -275,43 +320,85 @@ PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
  * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
  */
 function calculate_layout(filtered_count) local(required_bar_height, max_bar_height,
-                                               min_graph_height, available_bar_space) (
-
-  // Minimum height needed for the bar section: one row per (CC, channel)
-  // pair, plus the status line and the gap under the graph.
-  required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
-  required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
-
-  // The plot keeps its minimum share of the window and the bars take what is
-  // left: one row per pair while they fit, which is the point of a taller
-  // window. Below the floor the graph stops being readable, so the rows beyond
-  // it are reported by the status line instead of drawn on top of the plot.
-  min_graph_height = floor(gfx_h * MIN_GRAPH_PROPORTION);
-  max_bar_height = gfx_h - min_graph_height;
-  g_bars_height = min(required_bar_height, max_bar_height);
-
-  // ========== GRAPH GETS ALL REMAINING SPACE (TOP) ==========
-  g_graph_height = gfx_h - g_bars_height;
+                                               min_graph_height, available_bar_space,
+                                               column_width, side_needed_width) (
 
   g_graph_start_y = 10;
   g_graph_margin_left = 35;
   g_graph_margin_right = 16;  // half of "now" when it is centred on the last line
   g_graph_margin_bottom = 10;
-  g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
-  g_graph_actual_height = g_graph_height - g_graph_start_y;
 
-  // ========== BARS ARE PINNED TO THE BOTTOM, ABOVE THE STATUS LINE ==========
-  // The bar section starts where the graph ends (plus a small gap): no magic
-  // offsets, so the last bar cannot be drawn under the status text.
-  g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
-  g_label_width = FONT_SIZE * 6 + 8;  // "CCnn/CHnn" plus air before the bar
-  g_margin = 20;
-  g_available_width = gfx_w - g_label_width - g_margin * 2;
+  // ========== WHICH LAYOUT: BESIDE IF ASKED AND IF IT FITS ==========
+  // The column has a fixed width, so "does it fit" is a subtraction: the plot
+  // keeps at least MIN_PLOT_WIDTH, and below that the layout falls back to the
+  // rows under the plot rather than drawing a column of text over a sliver of
+  // graph. The slider still says what was asked, so the status line can say why
+  // it is not what happened.
+  column_width = SIDE_PAD * 2 + SIDE_LABEL_WIDTH + SIDE_BAR_WIDTH
+                 + SIDE_VALUE_WIDTH + SIDE_METRICS_WIDTH;
+  side_needed_width = g_graph_margin_left + MIN_PLOT_WIDTH + g_graph_margin_right
+                      + SIDE_COLUMN_GAP + column_width + SIDE_PAD;
+  g_layout_side = (slider7 == 1 && gfx_w >= side_needed_width) ? 1 : 0;
+  g_side_fallback = (slider7 == 1 && g_layout_side == 0) ? 1 : 0;
 
-  // How many bars really fit between the graph and the status line
-  available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
-  g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
-  g_visible_bars = min(filtered_count, g_max_bars);
+  g_layout_side ? (
+    // ========== BESIDE: THE COLUMN OWNS THE RIGHT EDGE, THE PLOT KEEPS HEIGHT ==========
+    g_column_width = column_width;
+    g_column_x = gfx_w - column_width - SIDE_PAD;
+    g_graph_width = g_column_x - SIDE_COLUMN_GAP - g_graph_margin_left;
+    g_graph_actual_height = max(gfx_h - g_graph_start_y - STATUS_TEXT_MARGIN - SIDE_TIME_LABEL_BAND, 40);
+    g_graph_height = g_graph_start_y + g_graph_actual_height;
+    g_bars_height = gfx_h - STATUS_TEXT_MARGIN - g_graph_start_y;
+
+    // Rows start at the top of the window, beside the plot, and run down to the
+    // status line: the list uses the whole height, which is the whole point.
+    g_start_y = g_graph_start_y;
+
+    g_label_x = g_column_x + SIDE_PAD;
+    g_bar_x = g_label_x + SIDE_LABEL_WIDTH;
+    g_bar_width = SIDE_BAR_WIDTH;
+    g_value_x = g_bar_x + g_bar_width + 8;
+    g_metrics_x = g_value_x + SIDE_VALUE_WIDTH;
+
+    g_max_bars = max(floor((gfx_h - g_start_y - STATUS_TEXT_MARGIN) / (BAR_HEIGHT + BAR_SPACING)), 0);
+    g_visible_bars = min(filtered_count, g_max_bars);
+  ) : (
+    // ========== BELOW: THE ROWS TAKE HEIGHT FROM THE PLOT ==========
+    // Minimum height needed for the bar section: one row per (CC, channel)
+    // pair, plus the status line and the gap under the graph.
+    required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
+    required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
+
+    // The plot keeps its minimum share of the window and the bars take what is
+    // left: one row per pair while they fit, which is the point of a taller
+    // window. Below the floor the graph stops being readable, so the rows beyond
+    // it are reported by the status line instead of drawn on top of the plot.
+    min_graph_height = floor(gfx_h * MIN_GRAPH_PROPORTION);
+    max_bar_height = gfx_h - min_graph_height;
+    g_bars_height = min(required_bar_height, max_bar_height);
+
+    g_graph_height = gfx_h - g_bars_height;
+    g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
+    g_graph_actual_height = g_graph_height - g_graph_start_y;
+
+    // The bar section starts where the graph ends (plus a small gap): no magic
+    // offsets, so the last bar cannot be drawn under the status text.
+    g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
+    g_label_width = FONT_SIZE * 6 + 8;  // "CCnn/CHnn" plus air before the bar
+    g_margin = 20;
+    g_available_width = gfx_w - g_label_width - g_margin * 2;
+
+    g_label_x = g_graph_margin_left - Y_LABEL_OFFSET;
+    g_bar_x = g_label_x + g_label_width;
+    g_bar_width = max(floor(g_available_width * 0.30), 50);
+    g_value_x = g_bar_x + g_bar_width + 8;
+    g_metrics_x = g_bar_x + g_bar_width + 32;
+
+    // How many bars really fit between the graph and the status line
+    available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
+    g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
+    g_visible_bars = min(filtered_count, g_max_bars);
+  );
 
   // The plot covers exactly the CC range: 0 is the bottom edge, 127 the top.
   // Any padding here is dead space that makes the scale look like it continues
@@ -368,16 +455,11 @@ function calculate_time_window() local(current_time_sec) (
  * Uses global layout variables set by calculate_layout()
  */
 function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
-                               bar_x, bar_width, fill, metrics_x, avail,
+                               fill, avail,
                                events_ps, rate_ps, rate_q, jitter_ms, jitter_q,
                                tw, th) (
   y_pos = g_start_y;
   i = 0;
-
-  // The bar takes 30% of the row; the rest is the value plus the metrics, which
-  // degrade to whatever the window can hold instead of running off the edge.
-  bar_width = floor(g_available_width * 0.30);
-  bar_width = max(bar_width, 50);
 
   loop(g_visible_bars,
     cc_channel_pair = get_visible_cc_channel_pair(i);
@@ -391,18 +473,30 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       // their own legend and two channels of one CC stay distinguishable
       get_cc_channel_color(cc_num, channel);
 
-      // The block starts on the same vertical as the 0 / 64 / 127 labels
-      gfx_x = g_graph_margin_left - Y_LABEL_OFFSET;
+      // Row geometry comes from calculate_layout() and nowhere else: below the
+      // plot the labels hang from the 0 / 64 / 127 vertical, beside the plot
+      // they hang from the column edge. One place to change, both layouts move.
+      gfx_x = g_label_x;
       gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
       gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);
 
-      bar_x = g_graph_margin_left - Y_LABEL_OFFSET + g_label_width;
-      fill = (val / 127.0) * bar_width;
+      // In the column the bar gets a track. Below the plot the bar area is wide
+      // enough that a short bar still reads as "a bar starting here"; in a 90 px
+      // column a value of 5 draws 4 pixels and the row looks like a dot. The
+      // track makes the rows a table. The colour has to be restored after it,
+      // because the fill is drawn in the (CC, channel) colour.
+      g_layout_side ? (
+        gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.15; gfx_a = 1;
+        gfx_rect(g_bar_x, y_pos, g_bar_width, BAR_HEIGHT, 1);
+        get_cc_channel_color(cc_num, channel);
+      );
+
+      fill = (val / 127.0) * g_bar_width;
       fill = max(fill, 2);
-      gfx_rect(bar_x, y_pos, fill, BAR_HEIGHT);
+      gfx_rect(g_bar_x, y_pos, fill, BAR_HEIGHT);
 
       // The number is the bar written out: no "Value:" prefix
-      gfx_x = bar_x + bar_width + 8;
+      gfx_x = g_value_x;
       gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
       gfx_printf("%d", val);
 
@@ -412,15 +506,19 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
       jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
 
-      metrics_x = bar_x + bar_width + 32;
-      gfx_x = metrics_x;
+      gfx_x = g_metrics_x;
       gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
-      avail = gfx_w - metrics_x - 8;
+      // In the column the width was reserved for the compact form, so there is
+      // nothing to measure: the text cannot shrink under the pointer while the
+      // numbers move, which is what made the row look like it was flickering.
+      avail = g_layout_side ? SIDE_METRICS_WIDTH : gfx_w - g_metrics_x - 8;
 
       gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
 
       events_ps <= 0 ? (
-        gfx_drawstr("no activity in the last second");
+        // In a 190 px column the sentence would be clipped, and the tooltip is
+        // still there to say what the row measures.
+        g_layout_side ? gfx_drawstr("no activity") : gfx_drawstr("no activity in the last second");
       ) : (
         // The sample size is shown only when it is small enough to matter: with
         // 240 intervals the number speaks for itself, with 5 it does not.
@@ -444,18 +542,29 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
         sprintf(#m_min, "%d msg/s", events_ps);
 
         gfx_measurestr(#m_full, tw, th);
-        tw <= avail ? (
-          gfx_drawstr(#m_full);
-        ) : (
-          gfx_measurestr(#m_mid, tw, th);
+        // The column reserved room for the compact form: use it, and fall back
+        // to the shortest one only if the reserve was too optimistic.
+        g_layout_side ? (
+          gfx_measurestr(#m_short, tw, th);
           tw <= avail ? (
-            gfx_drawstr(#m_mid);
+            gfx_drawstr(#m_short);
           ) : (
-            gfx_measurestr(#m_short, tw, th);
+            gfx_drawstr(#m_min);
+          );
+        ) : (
+          tw <= avail ? (
+            gfx_drawstr(#m_full);
+          ) : (
+            gfx_measurestr(#m_mid, tw, th);
             tw <= avail ? (
-              gfx_drawstr(#m_short);
+              gfx_drawstr(#m_mid);
             ) : (
-              gfx_drawstr(#m_min);
+              gfx_measurestr(#m_short, tw, th);
+              tw <= avail ? (
+                gfx_drawstr(#m_short);
+              ) : (
+                gfx_drawstr(#m_min);
+              );
             );
           );
         );
@@ -715,14 +824,13 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_chann
  * window stays clean the rest of the time, and nothing has to be read in the
  * README before the numbers make sense.
  */
-function draw_metric_tooltip() local(i, y_pos, hit, metrics_x, bx, by, bw, bh, lh) (
+function draw_metric_tooltip() local(i, y_pos, hit, bx, by, bw, bh, lh) (
   hit = 0;
   y_pos = g_start_y;
   i = 0;
   loop(g_visible_bars,
     (mouse_y >= y_pos - 2 && mouse_y <= y_pos + BAR_HEIGHT + BAR_SPACING) ? (
-      metrics_x = g_margin + g_label_width + floor(g_available_width * 0.30) + 40;
-      (mouse_x >= metrics_x) ? hit = 1;
+      (mouse_x >= g_metrics_x) ? hit = 1;
     );
     y_pos += BAR_HEIGHT + BAR_SPACING;
     i += 1;
@@ -786,6 +894,12 @@ function draw_status_info(filtered_count, history_count) local() (
     // what grows.
     filtered_count > g_visible_bars ? (
       gfx_printf(" · showing %d of %d pairs (taller window fits more)", g_visible_bars, filtered_count);
+    );
+
+    // The slider asked for the column and the window cannot hold it: say so,
+    // because otherwise the plugin looks like it ignores slider 7.
+    g_side_fallback ? (
+      gfx_printf(" · rows beside need a wider window");
     );
 
     g_prev_freeze ? (
