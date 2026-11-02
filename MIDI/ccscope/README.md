@@ -95,7 +95,9 @@ example.
 ## Discussion
 
 Reports, questions and announcements happen in the REAPER forum thread, where the plugin
-started: [CCScope — MIDI CC oscilloscope](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
+started: [CCScope — MIDI CC oscilloscope](https://forum.cockos.com/showthread.php?t=304766),
+announced at 0.7.4 in
+[post #21](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
 Bugs and trackable requests are better as [issues](https://github.com/solyarisoftware/reaper/issues),
 because a thread grows and forgets.
 

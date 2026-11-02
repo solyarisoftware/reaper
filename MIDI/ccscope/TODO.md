@@ -11,9 +11,10 @@ Tracking follows the maturity of the work:
 
 ## From the Cockos forum thread
 
-The plugin began as a post in the REAPER forum
-([thread 304766](https://forum.cockos.com/showthread.php?t=304766)). The 0.6 release was
-announced there with the full change list:
+The plugin began as a post in the REAPER forum on 2025-11-17
+([thread 304766](https://forum.cockos.com/showthread.php?t=304766)). The 0.5.1 update was
+announced there ([post #14](https://forum.cockos.com/showpost.php?p=2905329&postcount=14)); the
+0.6–0.7 line was documented in the changelog instead, and the current announcement is
 [post #21](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
 
 - **The rate per CC per channel is the reason it exists.** X-Raym, using it to debug a
