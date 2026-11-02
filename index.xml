@@ -474,6 +474,15 @@ reapack-index
 }}}
  running in GitHub Actions \u8212- do not edit it by hand.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Each package lives in its own folder, with everything it needs: the sources, the includes it imports (which resolve relative to it), and its own documentation.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Feedback and contributions\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Bug:} open an issue with reproduction steps and expected versus actual behaviour.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Idea or workflow need:} start a discussion in {\b Ideas}.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Defined feature or change request:} open an enhancement issue with completion criteria.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Start titles with the tool name, such as {\f1 CCScope - \u8230 ?}. Open topics are not promises of implementation or delivery dates. Testing, documentation and code contributions are welcome.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Full guidelines: {\field{\*\fldinst{HYPERLINK "CONTRIBUTING.md"}}{\fldrslt{\ul
+CONTRIBUTING.md
+}}}
+.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Related repositories\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The scale collections are separate projects, each with its own documentation:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\field{\*\fldinst{HYPERLINK "https://github.com/solyarisoftware/Claude-Debussy-Scales"}}{\fldrslt{\ul
@@ -496,7 +505,7 @@ Olivier-Messiaen-Modes
 Donate with PayPal
 }}}
 }\sa180\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 It is a donation, not a purchase: nothing is unlocked, nothing changes in the license, and no support is promised in exchange. The minimum is 5 EUR, for a practical reason \u8212- below that the PayPal fee takes most of it. The same button funds the other open-source work of mine (dxconvey, the scale collections), so one pointer covers all of it.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Donations are entirely voluntary and help cover investigation, development, testing and documentation. You do not need to donate to report a bug, propose an improvement or join a discussion. A donation does not guarantee implementation, priority, a delivery date or support. It is not a purchase: nothing is unlocked and nothing changes in the license. The minimum is 5 EUR, for a practical reason \u8212- below that the PayPal fee takes most of it. The same button funds the other open-source work of mine (dxconvey, the scale collections), so one pointer covers all of it.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 License\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 {\field{\*\fldinst{HYPERLINK "LICENSE"}}{\fldrslt{\ul
 MIT
