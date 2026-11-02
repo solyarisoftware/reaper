@@ -54,9 +54,9 @@ them explains them on screen:
 
 | | what it says |
 |---|---|
-| **Messages** | how many times per second the controller sends — its update rate |
-| **Motion** | how far the value (0–127) travels per second — how fast the gesture is; rated slow, moderate, brisk, fast |
-| **Timing** | how much the spacing between messages wobbles, in ms — rated steady, even, uneven, loose, erratic, and shown with the number of intervals it was computed on. Gaps (a pause, a loop jump) are not counted as jitter, and `n/a` means there were too few intervals to say |
+| **Messages** | received MIDI CC messages in the last second, including repeated identical values — not distinct values or physical movements |
+| **Motion** | sum of absolute CC value changes associated with messages in the last second, in CC units/s; rated slow, moderate, brisk, fast. This is MIDI value travel, not physical fader speed; intentional movement, noise and jumps can all contribute |
+| **Timing** | **Timing jitter:** standard deviation of accepted inter-message intervals, in ms; rated steady, even, uneven, loose, erratic. The hover panel shows the interval count. Intervals longer than four times the shortest interval in the window are excluded by a gap heuristic; `n/a` means fewer than four usable intervals |
 
 They are drawn as **three columns**, not as a sentence: each label starts at a fixed x and each
 number is aligned at its right edge, so `6`, `16` and `123` end on the same pixel and the quality
@@ -67,8 +67,14 @@ order: `Messages 16/s   Motion 250 u/s   Timing ±0.0ms`, then `16/s   250 u/s  
 count alone. The first form is what shows in the default layout; the third is what the column
 beside the plot uses, where 190 px hold the three numbers but no words.
 
-The window is exactly one second, filtered on read, so a rate of 240/s is what the plugin was
-measuring and not what happened to be in a buffer.
+The measurement window is one second, filtered on read, independently of the graph's 1–30 s
+window. The metrics buffer holds 500 events per pair; readings are bounded by that capacity.
+
+**Timing jitter is not value noise.** The graph can help spot oscillating CC values and sudden
+jumps visually, but the plugin does not yet quantify stationary value noise or count large
+steps. Timing describes message spacing; Motion cannot tell an intended gesture from a fault.
+No incoming messages do not establish that a stationary fader is noise-free: some devices send
+only when a value changes. These are observations of MIDI output, not physical calibration.
 
 It was written for testing MIDI hardware: the numbers tell you whether a controller really
 transmits at high resolution, whether its timing is stable, and how hard you are actually moving it.
@@ -97,3 +103,5 @@ because a thread grows and forgets.
 
 - [CHANGELOG.md](CHANGELOG.md) — what changed, release by release
 - [TODO.md](TODO.md) — what is missing: the issues, the forum requests, the ideas
+- [Device testing proposal](docs/device-testing.md) — possible Hold/Sweep sessions for hardware
+  evaluation; not implemented, with no release commitment

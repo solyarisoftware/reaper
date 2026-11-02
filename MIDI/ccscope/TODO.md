@@ -33,6 +33,23 @@ announced there with the full change list:
   500 events/s per pair with an exact one-second window.
 - **The bottom row of text overlapped the CC rows**: fixed in 0.5.2.
 
+## Proposal for evaluation — device testing
+
+[Device testing proposal](docs/device-testing.md) — **not implemented; no release commitment**.
+Keep the live Messages / Motion / Timing metrics, explain Timing as **Timing jitter**, and
+consider a separate Start / Stop / Reset session:
+
+- **Hold:** observed range, peak-to-peak and value standard deviation while the operator keeps
+  the fader stationary; always show duration and message count, never equate silence with zero noise.
+- **Sweep:** observed endpoints, distinct-code coverage, maximum step and direction reversals
+  during a declared monotonic sweep; coverage is not effective resolution.
+- **Later:** configurable Large steps counter and graph markers, not automatic fault detection.
+
+Physical linearity, dead zone and hysteresis require an independent position reference and
+remain outside scope. The README now clarifies the current metrics; review hover wording in a
+separately verified patch, retaining `Timing` in compact rows. No algorithm changes are proposed
+for that terminology update. See the proposal for protocols, limitations and acceptance criteria.
+
 ## Feature requests — decided, not written as issues
 
 - **An overlay panel for the parameters.** The control bar (0.7.0) is deliberately one simple
