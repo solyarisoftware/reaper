@@ -35,6 +35,17 @@ Actions — do not edit it by hand.
 Each package lives in its own folder, with everything it needs: the sources, the includes it
 imports (which resolve relative to it), and its own documentation.
 
+## Feedback and contributions
+
+- **Bug:** open an issue with reproduction steps and expected versus actual behaviour.
+- **Idea or workflow need:** start a discussion in **Ideas**.
+- **Defined feature or change request:** open an enhancement issue with completion criteria.
+
+Start titles with the tool name, such as `CCScope - …`. Open topics are not promises of
+implementation or delivery dates. Testing, documentation and code contributions are welcome.
+
+Full guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Related repositories
 
 The scale collections are separate projects, each with its own documentation:
@@ -54,8 +65,10 @@ If you want to go further, there is a donate button in the **Sponsor** menu of t
 
 - **[Donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=AEV3EVJEUFM32)**
 
-It is a donation, not a purchase: nothing is unlocked, nothing changes in the license, and no
-support is promised in exchange. The minimum is 5 EUR, for a practical reason — below that the
+Donations are entirely voluntary and help cover investigation, development, testing and
+documentation. You do not need to donate to report a bug, propose an improvement or join a
+discussion. A donation does not guarantee implementation, priority, a delivery date or support.
+It is not a purchase: nothing is unlocked and nothing changes in the license. The minimum is 5 EUR, for a practical reason — below that the
 PayPal fee takes most of it. The same button funds the other open-source work of mine
 (dxconvey, the scale collections), so one pointer covers all of it.
 

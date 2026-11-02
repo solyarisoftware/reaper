@@ -1,12 +1,13 @@
 # TODO — what is missing
 
-Two trackers, on purpose:
+Tracking follows the maturity of the work:
 
 - **bugs** live in the GitHub [issues](../../issues), labelled `bug`: something that is
   wrong and has to stay visible until it is fixed;
-- **feature requests** are the roadmap below. The ones that deserve a thread are issues too,
-  labelled `enhancement` — `label:bug` gives the faults, `label:enhancement` gives the plans —
-  and everything else is written down here.
+- **ideas and feature proposals** are outlined below; open design questions belong in GitHub
+  Discussions, category **Ideas**, without an implementation commitment;
+- **defined implementation work** can become an issue labelled `enhancement`, linked back to
+  its discussion.
 
 ## From the Cockos forum thread
 
@@ -22,7 +23,8 @@ announced there with the full change list:
 - **14-bit CC pairs.** MSB/LSB, CC n paired with CC n+32, value 0–16383; REAPER supports
   them in the MIDI editor and in ReaControlMIDI. Here the two halves are still drawn as two
   independent 7-bit streams, so a 14-bit change reads as two jumps.
-  → [#6](../../issues/6)
+  → [Discussion #10](https://github.com/solyarisoftware/reaper/discussions/10)
+  (converted from issue #6; design proposal, not scheduled implementation).
 - **See every pair when the window grows**: both halves are done. 0.6.3 made the bar area
   grow with the window instead of being a fraction of it; 0.6.4 added the layout where the
   list sits **beside** the plot, for windows that are wide and short, where no amount of
@@ -36,6 +38,8 @@ announced there with the full change list:
 ## Proposal for evaluation — device testing
 
 [Device testing proposal](docs/device-testing.md) — **not implemented; no release commitment**.
+Feedback and use cases: [Discussion #11](https://github.com/solyarisoftware/reaper/discussions/11),
+category **Ideas**.
 Keep the live Messages / Motion / Timing metrics, explain Timing as **Timing jitter**, and
 consider a separate Start / Stop / Reset session:
 
@@ -57,7 +61,8 @@ for that terminology update. See the proposal for protocols, limitations and acc
   a value typed from the keyboard — a JSFX has no text input without a library — and with 128
   controllers the `CC` list is long enough to scroll. Both point at the same thing: a panel
   with `−`/`+` steppers and the value in clear, opened by a button (the "redbox" idea), to be
-  done when the bar starts to feel tight.
+  done when the bar starts to feel tight. Feedback:
+  https://github.com/solyarisoftware/reaper/discussions/13
 - **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` is
   permissively licensed (*"free as in free beer… share your plugins for free too"*) but ships
   knobs, buttons and meters — no dropdowns, which is exactly what the three enum parameters
@@ -77,15 +82,21 @@ channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0
 
 ## Feature requests — the roadmap
 
-| issue | what it is |
+| discussion | what it is |
 |---|---|
-| [#6](../../issues/6) | 14-bit CC pairs (MSB/LSB, CC n with CC n+32). Today the two halves are drawn as two independent 7-bit streams, so one gesture reads as two jumps |
+| [#10](https://github.com/solyarisoftware/reaper/discussions/10) — Ideas | 14-bit CC pairs (MSB/LSB, CC n with CC n+32). Currently two independent 7-bit streams. Design and use cases are under discussion; no implementation commitment |
 
 ## Ideas, not decided yet
 
-- **peak hold / min-max per pair** — the instant tells you little when you are measuring
-  resolution; the extremes of the last second tell more.
+- **peak hold / min-max per pair** — discuss within the Hold/Sweep proposal:
+  https://github.com/solyarisoftware/reaper/discussions/11
 - **export** — JSFX cannot write files. Publishing the metrics on `gmem` and shipping a
-  small ReaScript that writes a CSV would turn the display into an instrument.
+  small ReaScript is one possible approach. Summaries versus time series, CSV versus JSON and
+  acquisition mechanics are under discussion:
+  https://github.com/solyarisoftware/reaper/discussions/12
 - **presets** — none today. Two starting points (*hardware test*, *gesture analysis*)
-  would save the first five minutes.
+  might save setup time; useful configurations still need definition:
+  https://github.com/solyarisoftware/reaper/discussions/14
+- **device assessment profiles and scoring** — test protocols, explicit thresholds and category
+  results before considering an overall score; no universal pass/fail limits are agreed:
+  https://github.com/solyarisoftware/reaper/discussions/15

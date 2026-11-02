@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Explore an idea or workflow need
+    url: https://github.com/solyarisoftware/reaper/discussions/categories/ideas
+    about: Discuss usefulness and design before defining implementation work.
+  - name: Contribution and request guidelines
+    url: https://github.com/solyarisoftware/reaper/blob/master/CONTRIBUTING.md
+    about: How to report bugs, propose changes and contribute.

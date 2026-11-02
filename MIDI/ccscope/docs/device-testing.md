@@ -1,6 +1,8 @@
 # Device testing with CCScope
 
 **Status: Proposal — not implemented.** Updated: 2026-11-02.
+Feedback: https://github.com/solyarisoftware/reaper/discussions/11
+
 No release date or implementation commitment. This document separates current capabilities
 from possible extensions to evaluate in the roadmap.
 
@@ -112,4 +114,6 @@ A later external measurement protocol could make these testable; MIDI alone cann
 - ../README.md — current capabilities and metric interpretation
 - ../TODO.md — active bugs and roadmap
 - https://github.com/solyarisoftware/reaper/issues/5 — history capacity
-- https://github.com/solyarisoftware/reaper/issues/6 — 14-bit CC pairs
+- https://github.com/solyarisoftware/reaper/discussions/10 — 14-bit CC pairs
+- https://github.com/solyarisoftware/reaper/discussions/12 — export
+- https://github.com/solyarisoftware/reaper/discussions/15 — assessment profiles and scoring
