@@ -80,6 +80,17 @@ Closed: [#7](../../issues/7) rates read up to 10% high; [#3](../../issues/3) jit
 interval; [#2](../../issues/2) metrics saturating above 200 events/s; [#4](../../issues/4)
 channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0.6.4.
 
+## Enhancement issues — defined work
+
+Behaviour and completion criteria are stated in the issue; an open issue is not a promise of
+implementation, priority or a delivery date.
+
+| issue | what it is |
+|---|---|
+| [#19](../../issues/19) | vertical CC value bars: a third `ROWS` value (`strips`) draws one narrow vertical bar per pair in the beside area, so a bank of faders can be read by height instead of row by row. The beside rows stay the default and the 18-pair view: a strip is wider than a 16 px row, so this layout will show fewer pairs, and that trade-off is to be measured and written into the changelog |
+| [#18](../../issues/18) | metric names, units and explanatory tooltips |
+| [#17](../../issues/17) | recent input activity in the status line |
+
 ## Feature requests — the roadmap
 
 | discussion | what it is |
