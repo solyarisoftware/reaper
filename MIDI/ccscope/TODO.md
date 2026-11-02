@@ -1,13 +1,8 @@
 # TODO — what is missing
 
-Tracking follows the maturity of the work:
-
-- **bugs** live in the GitHub [issues](../../issues), labelled `bug`: something that is
-  wrong and has to stay visible until it is fixed;
-- **ideas and feature proposals** are outlined below; open design questions belong in GitHub
-  Discussions, category **Ideas**, without an implementation commitment;
-- **defined implementation work** can become an issue labelled `enhancement`, linked back to
-  its discussion.
+Tracking follows the maturity of the work: **bugs** are issues labelled `bug`; **ideas and
+design questions** are Discussions in **Ideas**, without an implementation commitment; **defined
+work** is an issue labelled `enhancement`, with completion criteria.
 
 ## From the Cockos forum thread
 
@@ -17,59 +12,26 @@ announced there ([post #14](https://forum.cockos.com/showpost.php?p=2905329&post
 0.6–0.7 line was documented in the changelog instead, and the current announcement is
 [post #21](https://forum.cockos.com/showpost.php?p=2972028&postcount=21).
 
-- **The rate per CC per channel is the reason it exists.** X-Raym, using it to debug a
-  DMX-lights JSFX, put it plainly: no MIDI logger shows a MIDI rate per CC per channel, so
-  a rate limit in his own script was hard to verify from timestamped logs. That number —
-  `Messages/s`, per pair — is the feature to protect when the metrics are touched.
-- **14-bit CC pairs.** MSB/LSB, CC n paired with CC n+32, value 0–16383; REAPER supports
-  them in the MIDI editor and in ReaControlMIDI. Here the two halves are still drawn as two
-  independent 7-bit streams, so a 14-bit change reads as two jumps.
-  → [Discussion #10](https://github.com/solyarisoftware/reaper/discussions/10)
-  (converted from issue #6; design proposal, not scheduled implementation).
-- **See every pair when the window grows**: both halves are done. 0.6.3 made the bar area
-  grow with the window instead of being a fraction of it; 0.6.4 added the layout where the
-  list sits **beside** the plot, for windows that are wide and short, where no amount of
-  height helps. The two-line labels the issue expected turned out to be a bad trade —
-  measured, two-line rows show *fewer* pairs than the layout they would replace, so the
-  column keeps one line and the compact metrics.
-- **The buffer could hold more** (200 events per pair was the cap): addressed in 0.6.0,
-  500 events/s per pair with an exact one-second window.
-- **The bottom row of text overlapped the CC rows**: fixed in 0.5.2.
+- **The rate per CC per channel is the reason it exists.** X-Raym, debugging a DMX-lights JSFX,
+  put it plainly: no MIDI logger shows a MIDI rate per CC per channel, so a rate limit in his own
+  script was hard to verify from timestamped logs. `Messages/s` per pair is the feature to protect
+  when the metrics are touched.
 
 ## Proposal for evaluation — device testing
 
 [Device testing proposal](docs/device-testing.md) — **not implemented; no release commitment**.
-Feedback and use cases: [Discussion #11](https://github.com/solyarisoftware/reaper/discussions/11),
-category **Ideas**.
-Keep the live Messages / Motion / Timing metrics, explain Timing as **Timing jitter**, and
-consider a separate Start / Stop / Reset session:
+Feedback and use cases: [Discussion #11](https://github.com/solyarisoftware/reaper/discussions/11).
+The proposal holds the protocols, the limitations and the acceptance criteria.
 
-- **Hold:** observed range, peak-to-peak and value standard deviation while the operator keeps
-  the fader stationary; always show duration and message count, never equate silence with zero noise.
-- **Sweep:** observed endpoints, distinct-code coverage, maximum step and direction reversals
-  during a declared monotonic sweep; coverage is not effective resolution.
-- **Later:** configurable Large steps counter and graph markers, not automatic fault detection.
+## Feature requests — decided
 
-Physical linearity, dead zone and hysteresis require an independent position reference and
-remain outside scope. The README now clarifies the current metrics; review hover wording in a
-separately verified patch, retaining `Timing` in compact rows. No algorithm changes are proposed
-for that terminology update. See the proposal for protocols, limitations and acceptance criteria.
-
-## Feature requests — decided, not written as issues
-
-- **An overlay panel for the parameters.** The control bar (0.7.0) is deliberately one simple
-  widget: click opens a list, the wheel steps, a right click resets. What it cannot do is take
-  a value typed from the keyboard — a JSFX has no text input without a library — and with 128
-  controllers the `CC` list is long enough to scroll. Both point at the same thing: a panel
-  with `−`/`+` steppers and the value in clear, opened by a button (the "redbox" idea), to be
-  done when the bar starts to feel tight. Feedback:
-  https://github.com/solyarisoftware/reaper/discussions/13
-- **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` is
-  permissively licensed (*"free as in free beer… share your plugins for free too"*) but ships
-  knobs, buttons and meters — no dropdowns, which is exactly what the three enum parameters
-  need. Geraint Luff's `ui-lib.jsfx-inc` does have selectors and text input, but declares no
-  license, so it cannot be vendored into this MIT repository without asking him first. The bar
-  is ~200 lines of our own code and needs neither.
+- **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` has no
+  dropdowns, which is what the enum parameters need; Geraint Luff's `ui-lib.jsfx-inc` has them but
+  declares no license, so it cannot be vendored into this MIT repository. The bar is ~200 lines of
+  our own code and needs neither.
+- **An overlay panel for the parameters** — `−`/`+` steppers and a value in clear — is the next
+  step if the bar starts to feel tight: a JSFX has no text input without a library, and the `CC`
+  list can scroll. [Discussion #13](https://github.com/solyarisoftware/reaper/discussions/13)
 
 ## Bugs
 
@@ -83,32 +45,27 @@ channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0
 
 ## Enhancement issues — defined work
 
-Behaviour and completion criteria are stated in the issue; an open issue is not a promise of
-implementation, priority or a delivery date.
-
 | issue | what it is |
 |---|---|
-| [#19](../../issues/19) | vertical CC value bars: a third `ROWS` value (`strips`) draws one narrow vertical bar per pair in the beside area, so a bank of faders can be read by height instead of row by row. The beside rows stay the default and the 18-pair view: a strip is wider than a 16 px row, so this layout will show fewer pairs, and that trade-off is to be measured and written into the changelog |
+| [#19](../../issues/19) | vertical CC value bars: a third `ROWS` value (`strips`), so a bank of faders can be read by height. Stays an alternative to the beside rows, which hold more pairs |
 | [#18](../../issues/18) | metric names, units and explanatory tooltips |
 | [#17](../../issues/17) | recent input activity in the status line |
+
+An open issue is not a promise of implementation, priority or a delivery date.
 
 ## Feature requests — the roadmap
 
 | discussion | what it is |
 |---|---|
-| [#10](https://github.com/solyarisoftware/reaper/discussions/10) — Ideas | 14-bit CC pairs (MSB/LSB, CC n with CC n+32). Currently two independent 7-bit streams. Design and use cases are under discussion; no implementation commitment |
+| [#10](https://github.com/solyarisoftware/reaper/discussions/10) — Ideas | 14-bit CC pairs (MSB/LSB, CC n with CC n+32). Currently two independent 7-bit streams, so a 14-bit change reads as two jumps |
 
 ## Ideas, not decided yet
 
-- **peak hold / min-max per pair** — discuss within the Hold/Sweep proposal:
+- **peak hold / min-max per pair** — inside the Hold/Sweep proposal:
   https://github.com/solyarisoftware/reaper/discussions/11
-- **export** — JSFX cannot write files. Publishing the metrics on `gmem` and shipping a
-  small ReaScript is one possible approach. Summaries versus time series, CSV versus JSON and
-  acquisition mechanics are under discussion:
-  https://github.com/solyarisoftware/reaper/discussions/12
-- **presets** — none today. Two starting points (*hardware test*, *gesture analysis*)
-  might save setup time; useful configurations still need definition:
+- **export** — JSFX cannot write files; the metrics on `gmem` plus a small ReaScript is one
+  approach: https://github.com/solyarisoftware/reaper/discussions/12
+- **presets** — useful configurations are not defined yet:
   https://github.com/solyarisoftware/reaper/discussions/14
-- **device assessment profiles and scoring** — test protocols, explicit thresholds and category
-  results before considering an overall score; no universal pass/fail limits are agreed:
+- **device assessment profiles and scoring** — no universal pass/fail limits are agreed:
   https://github.com/solyarisoftware/reaper/discussions/15

@@ -1,6 +1,7 @@
 # CCScope — MIDI CC oscilloscope and fader bars
 
-A JSFX effect for REAPER 6.37 or newer.
+A JSFX effect for REAPER 6.37 or newer. ReaPack has no metadata tag for a REAPER version
+requirement, so this is a statement, not something the package manager can enforce.
 
 ![CCScope in REAPER: a controller being moved, one bar per CC](ccscope.gif)
 
