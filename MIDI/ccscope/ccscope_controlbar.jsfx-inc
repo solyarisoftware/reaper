@@ -1,294 +1,570 @@
 // ===================================================================
-// CCSCOPE CONTROL BAR - the cells, the lists, the pointer
+// CONTROL BAR MODULE - a row of cells with lists, for any JSFX
 // ===================================================================
-// A library file (.jsfx-inc) imported by ccscope.jsfx.
+// A library file (.jsfx-inc). CCScope is its first user; nothing here knows what
+// a CC is, what a slider is, or how many parameters the host has.
 //
-// OWNS: everything between the top of the canvas and the plot frame -- cell
-// geometry from measured text, the two tiers (with and without labels), hit
-// testing, the wheel, right-click, the open list and its scrolling thumb, and the
-// corner-cut primitives the cells are drawn with.
+// WHAT IT GIVES THE HOST
+//   cbm_init(base, cells)                claim a block in the host's mem[]
+//   cbm_style(gap, pad, corner, row_h, menu_rows, menu_min_w, drop)
+//                                        the pixels the host wants; called once
+//   cbm_cell(i, kind, min, max, def)     0 numeric list, 1 enum list, 2 toggle,
+//                                        3 action (a button that sets 1)
+//   cbm_group_right(k)                   the last k cells hang on the right edge
+//   cbm_value_push(i, v)                 the host's value for cell i
+//   cbm_text(i, #key, #key_w, #val, #val_w)
+//                                        what a cell says: the key now, the
+//                                        widest key it can take, the value now,
+//                                        the widest value it can take
+//   cbm_layout(left, right, top, h, font)
+//                                        measure and place; drops the key labels
+//                                        when the window cannot hold them
+//   cbm_mouse()                          hover, click, wheel, right click
+//   cbm_changes()                        bitmask of the cells the pointer changed
+//   cbm_value(i) / cbm_applied(i, v)      read it, then confirm the host wrote it
+//   cbm_draw() / cbm_draw_menu()         paint cells, and the open list frame,
+//                                        row highlight and scroll thumb
+//   cbm_rows(), cbm_row_y(r), cbm_row_value(r), cbm_row_hovered(r),
+//   cbm_row_is_current(r)
+//                                        the host draws the item text: EEL2 has no
+//                                        array of strings, so a module cannot own
+//                                        the vocabulary of someone else's list
+//   cbm_has_labels(), cbm_hover(), cbm_open(), cbm_menu_x/y/w/rows/count/scroll(),
+//   cbm_cell_x(i), cbm_cell_w(i)
+//                                        published state, for the host's own logic
+//                                        and for a test harness that has to know
+//                                        where the cells are
 //
-// READS: the CTRL_* constants, PLOT_LEFT/PLOT_RIGHT, BAR_FONT and FONT_SIZE from
-// ccscope.jsfx @init; mem[MEM_CTL_X..] from ccscope_utils.jsfx-inc; mouse_x,
-// mouse_y, mouse_cap, mouse_wheel from the host.
-// WRITES: slider1..slider7 through ctl_set() (with sliderchange(), so automation
-// and the Param button follow), and the g_menu_*/g_hover_cell state.
+// WHAT IT DOES NOT DO
+//   It never touches a slider. The host keeps its parameters, pushes their values
+//   in, applies what came out (sliderchange() is the host's business) and formats
+//   every string. That is what makes this file reusable: no global called slider1,
+//   no constant of one plugin's palette.
 //
-// No other panel calls into this file and this file calls no other panel.
+// MEMORY
+//   The host passes the base address; the module claims nothing on its own, so the
+//   host's address-space map stays the host's. cbm_bytes() says how much block to
+//   reserve; the offsets inside it are the CBM_* constants below.
+//
+// STATE OUTSIDE mem[]
+//   EEL2 strings cannot be stored in mem[] and cannot be indexed, so the cells'
+//   four strings live in #cbm_k1..#cbm_kw8 / #cbm_v1..#cbm_vw8, filled by
+//   cbm_text() and read by cbm_key()/cbm_key_widest()/cbm_value_text()/
+//   cbm_value_widest() through #cbm_str.
+//
+// EEL2 RULES THIS FILE RESPECTS
+//   * A function may only call functions declared before it, and recursion is not
+//     allowed: the order below is the dependency order.
+//   * loop() is not reentrant. cbm_text() and the string readers dispatch with a
+//     chain, so the host can call them from inside a loop; the functions that
+//     loop are meant to be called from plain code, not from another loop.
+//   * An empty branch is a syntax error: every chain ends with a real statement.
 // ===================================================================
 
 @init
 
-// ========== CONTROL BAR: WHAT EACH CELL DRIVES ==========
-// The bar is ordered by what you reach for first, not by the order of the slider
-// declarations, so the mapping lives here once and nowhere else.
-function ctl_slider_number(i) (
-  i == 1 ? 1 : i == 2 ? 6 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 2 : 4;
+// ========== THE BLOCK, IN OFFSETS FROM THE HOST'S BASE ==========
+CBM_N = 0;            // how many cells the host registered
+CBM_MENU_OPEN = 1;    // index of the cell whose list is open, 0 = closed
+CBM_MENU_X = 2;
+CBM_MENU_Y = 3;
+CBM_MENU_W = 4;
+CBM_MENU_ROWS = 5;    // rows the open list shows at once
+CBM_MENU_COUNT = 6;   // how many values it holds
+CBM_MENU_SCROLL = 7;
+CBM_DIRTY = 8;        // bitmask: cells whose value the pointer changed
+CBM_HAS_LABELS = 9;   // the tier the last layout settled on
+CBM_TOTAL = 10;       // width of all cells packed edge to edge
+CBM_GROUP_RIGHT = 11; // how many trailing cells hang on the right edge
+CBM_READY = 12;       // the first frame has no previous state to compare
+CBM_HOVER = 13;       // cell under the pointer, 0 = none
+CBM_WHEEL = 14;       // mouse_wheel is cumulative: only the delta matters
+CBM_DOWN = 15;
+CBM_RDOWN = 16;
+CBM_TOP = 17;         // top of the cells, as placed by cbm_layout()
+CBM_HEIGHT = 18;
+CBM_FONT = 19;
+CBM_ST_GAP = 20;      // space between cells
+CBM_ST_PAD = 21;      // space inside a cell
+CBM_ST_CORNER = 22;   // pixels cut from each corner
+CBM_ST_ROW = 23;      // height of one row of an open list
+CBM_ST_MENU_W = 24;   // a list is never narrower than this
+CBM_ST_DROP = 25;     // between the bar and its open list
+CBM_CARET = 26;       // width of the triangle that promises a list
+CBM_CARET_AIR = 27;   // and the air between it and the value
+CBM_ST_MENU_ROWS = 28; // the ceiling of rows an open list may show
+CBM_X = 32;           // 32..39  left edge of each cell
+CBM_W = 40;           // 40..47  width of each cell
+CBM_KIND = 48;        // 48..55  what the cell is
+CBM_MIN = 56;         // 56..63  first value of its list
+CBM_MAX = 64;         // 64..71  last value of its list
+CBM_DEF = 72;         // 72..79  what a right click restores
+CBM_VAL = 80;         // 80..87  the value the host last pushed, or the one the
+                      //         pointer chose and the host has yet to apply
+CBM_APL = 88;         // 88..95  the value in force in the host
+CBM_MAX_CELLS = 8;
+CBM_ARRAYS_END = 96;
+
+g_cbm_base = 0;
+
+// ========== REGISTRATION ==========
+
+/**
+ * Claims the block in the host's memory and clears it
+ *
+ * @param base  first slot of the host's block
+ * @param cells how many cells this bar has (1..CBM_MAX_CELLS)
+ */
+function cbm_init(base, cells) local(i) (
+  g_cbm_base = base;
+  i = 0;
+  loop(CBM_ARRAYS_END,
+    mem[base + i] = 0;
+    i += 1;
+  );
+  mem[base + CBM_N] = max(1, min(CBM_MAX_CELLS, cells));
+  mem[base + CBM_HAS_LABELS] = 1;
+  mem[base + CBM_ST_GAP] = 6;
+  mem[base + CBM_ST_PAD] = 6;
+  mem[base + CBM_ST_CORNER] = 2;
+  mem[base + CBM_ST_ROW] = 15;
+  mem[base + CBM_ST_MENU_W] = 92;
+  mem[base + CBM_ST_DROP] = 3;
+  mem[base + CBM_CARET] = 11;
+  mem[base + CBM_CARET_AIR] = 4;
+  0;
 );
 
-function ctl_is_selector(i) ( i <= 5 ? 1 : 0 );
+/** How many slots of the host's mem[] this module needs */
+function cbm_bytes() ( CBM_ARRAYS_END );
 
-// The two buttons carry their text in the key, not in a value: dropping the
-// labels in a narrow window would leave FREEZE and CLEAR blank, so they keep
-// theirs while the selectors go to values only.
-function ctl_shows_key(i) ( (i >= 6 || g_bar_has_labels) ? 1 : 0 );
-
-function ctl_min(i) (
-  i == 1 ? 0 : i == 2 ? 0 : i == 3 ? 1 : i == 4 ? 0 : i == 5 ? 0 : 0;
-);
-
-function ctl_max(i) (
-  i == 1 ? 127 : i == 2 ? 16 : i == 3 ? 30 : i == 4 ? 2 : i == 5 ? 1 : 1;
-);
-
-function ctl_default(i) (
-  i == 1 ? 0 : i == 2 ? 0 : i == 3 ? 10 : i == 4 ? 0 : i == 5 ? 0 : 0;
-);
-
-function ctl_get(i) local(s) (
-  s = ctl_slider_number(i);
-  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 : s == 5 ? slider5 : s == 6 ? slider6 : slider7;
-);
-
-// The documented form is sliderchange(sliderN): it tells REAPER the value was set
-// from code, so embedded displays and the Param list follow. It does not write
-// automation -- slider_automate() would -- so a cell is a setting, not a source
-// of automation. The clamp lives here, so no caller can store an out-of-range
-// value that the slider would then refuse to show.
-function ctl_set(i, v) local(s) (
-  s = ctl_slider_number(i);
-  v = max(ctl_min(i), min(ctl_max(i), v));
-  s == 1 ? ( slider1 = v; sliderchange(slider1); ) :
-  s == 2 ? ( slider2 = v; sliderchange(slider2); ) :
-  s == 3 ? ( slider3 = v; sliderchange(slider3); ) :
-  s == 4 ? ( slider4 = v; sliderchange(slider4); ) :
-  s == 5 ? ( slider5 = v; sliderchange(slider5); ) :
-  s == 6 ? ( slider6 = v; sliderchange(slider6); ) :
-           ( slider7 = v; sliderchange(slider7); );
-);
-
-// What a cell says. Key text is the dim label, value text the bright one.
-function ctl_key_text(i) (
-  i == 1 ? ( #ctl_key = "CC"; ) :
-  i == 2 ? ( #ctl_key = "CH"; ) :
-  i == 3 ? ( #ctl_key = "WIN"; ) :
-  i == 4 ? ( #ctl_key = "DOTS"; ) :
-  i == 5 ? ( #ctl_key = "ROWS"; ) :
-  i == 6 ? ( slider2 ? ( #ctl_key = "FROZEN"; ) : ( #ctl_key = "FREEZE"; ); ) :
-           ( #ctl_key = "CLEAR"; );
-);
-
-function ctl_value_text(i) local(v) (
-  v = ctl_get(i);
-  i == 1 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
-  i == 2 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
-  i == 3 ? ( sprintf(#ctl_val, "%ds", v); ) :
-  i == 4 ? ( v == 0 ? ( #ctl_val = "auto"; ) : v == 1 ? ( #ctl_val = "event"; ) : ( #ctl_val = "none"; ); ) :
-  i == 5 ? ( v == 0 ? ( #ctl_val = "below"; ) : ( #ctl_val = "beside"; ); ) :
-           ( #ctl_val = ""; );
-);
-
-// The widest text a cell can show, so the cells do not move while a value
-// changes: measuring what is on screen would shift every cell to its right.
-function ctl_value_widest(i) (
-  i == 1 ? ( #ctl_val = "127"; ) :
-  i == 2 ? ( #ctl_val = "all"; ) :
-  i == 3 ? ( #ctl_val = "30s"; ) :
-  i == 4 ? ( #ctl_val = "event"; ) :
-  i == 5 ? ( #ctl_val = "beside"; ) :
-           ( #ctl_val = ""; );
-);
-
-function ctl_item_text(i, v) (
-  i == 1 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
-  i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
-  i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
-  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every point"; ) : ( #ctl_item = "none"; ); ) :
-           ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); );
+/** The pixels: only what a host may reasonably want to differ */
+function cbm_style(gap, pad, corner, row_h, menu_rows, menu_min_w, drop) (
+  mem[g_cbm_base + CBM_ST_GAP] = gap;
+  mem[g_cbm_base + CBM_ST_PAD] = pad;
+  mem[g_cbm_base + CBM_ST_CORNER] = corner;
+  mem[g_cbm_base + CBM_ST_ROW] = row_h;
+  mem[g_cbm_base + CBM_ST_MENU_ROWS] = menu_rows;   // the ceiling, per open list
+  mem[g_cbm_base + CBM_ST_MENU_W] = menu_min_w;
+  mem[g_cbm_base + CBM_ST_DROP] = drop;
+  0;
 );
 
 /**
- * Places the seven cells left to right and records their geometry
+ * Declares one cell. The order of the calls is the order on screen.
  *
- * Widths come from the widest text each cell can hold, so a value changing does
- * not move its neighbours. Two tiers: with the key labels, and without them.
+ * @param kind 0 numeric list, 1 enum list, 2 toggle, 3 action
  */
-function layout_bar_cells() local(i, x, w, tw, th, left_end, right_group, bar_right) (
-  // Pass one: how wide each cell has to be.
+function cbm_cell(i, kind, minv, maxv, defv) (
+  mem[g_cbm_base + CBM_KIND + i] = kind;
+  mem[g_cbm_base + CBM_MIN + i] = minv;
+  mem[g_cbm_base + CBM_MAX + i] = maxv;
+  mem[g_cbm_base + CBM_DEF + i] = max(minv, min(maxv, defv));
+  mem[g_cbm_base + CBM_VAL + i] = mem[g_cbm_base + CBM_DEF + i];
+  mem[g_cbm_base + CBM_APL + i] = mem[g_cbm_base + CBM_DEF + i];
+  0;
+);
+
+function cbm_cells() ( mem[g_cbm_base + CBM_N] );
+
+function cbm_group_right(k) ( mem[g_cbm_base + CBM_GROUP_RIGHT] = max(0, min(cbm_cells(), k)); );
+
+function cbm_kind(i) ( mem[g_cbm_base + CBM_KIND + i] );
+function cbm_is_selector(i) ( cbm_kind(i) <= 1 );
+function cbm_min(i) ( mem[g_cbm_base + CBM_MIN + i] );
+function cbm_max(i) ( mem[g_cbm_base + CBM_MAX + i] );
+function cbm_default(i) ( mem[g_cbm_base + CBM_DEF + i] );
+function cbm_value(i) ( mem[g_cbm_base + CBM_VAL + i] );
+function cbm_has_labels() ( mem[g_cbm_base + CBM_HAS_LABELS] );
+function cbm_hover() ( mem[g_cbm_base + CBM_HOVER] );
+function cbm_open() ( mem[g_cbm_base + CBM_MENU_OPEN] );
+function cbm_cell_x(i) ( mem[g_cbm_base + CBM_X + i] );
+function cbm_cell_w(i) ( mem[g_cbm_base + CBM_W + i] );
+function cbm_menu_x() ( mem[g_cbm_base + CBM_MENU_X] );
+function cbm_menu_y() ( mem[g_cbm_base + CBM_MENU_Y] );
+function cbm_menu_w() ( mem[g_cbm_base + CBM_MENU_W] );
+function cbm_menu_rows() ( mem[g_cbm_base + CBM_MENU_ROWS] );
+function cbm_menu_count() ( mem[g_cbm_base + CBM_MENU_COUNT] );
+function cbm_menu_scroll() ( mem[g_cbm_base + CBM_MENU_SCROLL] );
+
+// ========== VALUES: IN FROM THE HOST, OUT TO THE HOST ==========
+
+/**
+ * The host's value for a cell. An outside change wins over a stale memo.
+ *
+ * Called once per cell per frame with the parameter's current value: when the
+ * user moves the parameter itself (automation, the FX window's Param list, a
+ * preset) the parameter differs from what the host last applied, and the cell
+ * follows it instead of fighting it.
+ */
+function cbm_value_push(i, v) (
+  v != mem[g_cbm_base + CBM_APL + i] ? (
+    mem[g_cbm_base + CBM_VAL + i] = v;
+    mem[g_cbm_base + CBM_APL + i] = v;
+  );
+  0;
+);
+
+/**
+ * Sets a value from the pointer, clamped to the cell's own range
+ *
+ * It does not write the host's parameter: it marks the cell dirty, and the host
+ * applies it -- with sliderchange() -- in the same frame.
+ */
+function cbm_set(i, v) (
+  mem[g_cbm_base + CBM_VAL + i] = max(cbm_min(i), min(cbm_max(i), v));
+  mem[g_cbm_base + CBM_DIRTY] = mem[g_cbm_base + CBM_DIRTY] | (1 << (i - 1));
+  0;
+);
+
+function cbm_changes() ( mem[g_cbm_base + CBM_DIRTY] );
+
+/** Confirms that the value reached the host's parameter, and forgets the change */
+function cbm_applied(i, v) local(bit) (
+  bit = 1 << (i - 1);
+  mem[g_cbm_base + CBM_APL + i] = v;
+  // EEL2 has no unary complement: ~ is bitwise XOR, so the bit is subtracted,
+  // and only if it is still set -- applying twice must not re-arm the cell.
+  (mem[g_cbm_base + CBM_DIRTY] & bit) ? ( mem[g_cbm_base + CBM_DIRTY] -= bit; );
+  0;
+);
+
+// ========== TEXT: FOUR STRINGS PER CELL, FILLED BY THE HOST ==========
+
+/**
+ * What a cell says. The host calls this for every cell, before cbm_layout().
+ *
+ * @param k  the key as it reads now ("FREEZE" or "FROZEN")
+ * @param kw the widest key the cell can take: widths are measured on this one,
+ *           so a cell does not move when its key changes length
+ * @param v  the current value as text
+ * @param vw the widest value the cell can take
+ */
+function cbm_text(i, k, kw, v, vw) (
+  i == 1 ? ( #cbm_k1 = k; #cbm_kw1 = kw; #cbm_v1 = v; #cbm_vw1 = vw; ) :
+  i == 2 ? ( #cbm_k2 = k; #cbm_kw2 = kw; #cbm_v2 = v; #cbm_vw2 = vw; ) :
+  i == 3 ? ( #cbm_k3 = k; #cbm_kw3 = kw; #cbm_v3 = v; #cbm_vw3 = vw; ) :
+  i == 4 ? ( #cbm_k4 = k; #cbm_kw4 = kw; #cbm_v4 = v; #cbm_vw4 = vw; ) :
+  i == 5 ? ( #cbm_k5 = k; #cbm_kw5 = kw; #cbm_v5 = v; #cbm_vw5 = vw; ) :
+  i == 6 ? ( #cbm_k6 = k; #cbm_kw6 = kw; #cbm_v6 = v; #cbm_vw6 = vw; ) :
+  i == 7 ? ( #cbm_k7 = k; #cbm_kw7 = kw; #cbm_v7 = v; #cbm_vw7 = vw; ) :
+  ( #cbm_k8 = k; #cbm_kw8 = kw; #cbm_v8 = v; #cbm_vw8 = vw; );
+);
+
+function cbm_key(i) (
+  i == 1 ? ( #cbm_str = #cbm_k1; ) :
+  i == 2 ? ( #cbm_str = #cbm_k2; ) :
+  i == 3 ? ( #cbm_str = #cbm_k3; ) :
+  i == 4 ? ( #cbm_str = #cbm_k4; ) :
+  i == 5 ? ( #cbm_str = #cbm_k5; ) :
+  i == 6 ? ( #cbm_str = #cbm_k6; ) :
+  i == 7 ? ( #cbm_str = #cbm_k7; ) :
+  ( #cbm_str = #cbm_k8; );
+);
+
+function cbm_key_widest(i) (
+  i == 1 ? ( #cbm_str = #cbm_kw1; ) :
+  i == 2 ? ( #cbm_str = #cbm_kw2; ) :
+  i == 3 ? ( #cbm_str = #cbm_kw3; ) :
+  i == 4 ? ( #cbm_str = #cbm_kw4; ) :
+  i == 5 ? ( #cbm_str = #cbm_kw5; ) :
+  i == 6 ? ( #cbm_str = #cbm_kw6; ) :
+  i == 7 ? ( #cbm_str = #cbm_kw7; ) :
+  ( #cbm_str = #cbm_kw8; );
+);
+
+function cbm_value_text(i) (
+  i == 1 ? ( #cbm_str = #cbm_v1; ) :
+  i == 2 ? ( #cbm_str = #cbm_v2; ) :
+  i == 3 ? ( #cbm_str = #cbm_v3; ) :
+  i == 4 ? ( #cbm_str = #cbm_v4; ) :
+  i == 5 ? ( #cbm_str = #cbm_v5; ) :
+  i == 6 ? ( #cbm_str = #cbm_v6; ) :
+  i == 7 ? ( #cbm_str = #cbm_v7; ) :
+  ( #cbm_str = #cbm_v8; );
+);
+
+function cbm_value_widest(i) (
+  i == 1 ? ( #cbm_str = #cbm_vw1; ) :
+  i == 2 ? ( #cbm_str = #cbm_vw2; ) :
+  i == 3 ? ( #cbm_str = #cbm_vw3; ) :
+  i == 4 ? ( #cbm_str = #cbm_vw4; ) :
+  i == 5 ? ( #cbm_str = #cbm_vw5; ) :
+  i == 6 ? ( #cbm_str = #cbm_vw6; ) :
+  i == 7 ? ( #cbm_str = #cbm_vw7; ) :
+  ( #cbm_str = #cbm_vw8; );
+);
+
+/**
+ * The key is drawn only when it fits -- except on the buttons, which are known
+ * by their word and not by a value: a blank FREEZE would be an empty cell.
+ */
+function cbm_shows_key(i) ( cbm_kind(i) >= 2 ? 1 : cbm_has_labels() );
+
+// ========== LAYOUT: WIDTHS FROM TEXT, POSITIONS FROM THE WINDOW ==========
+
+/**
+ * Pass one: how wide each cell has to be
+ *
+ * Measured on the widest text a cell can hold, so a value changing does not move
+ * its neighbours. Only the width is kept: the second pass reads it.
+ */
+function cbm_measure_cells() local(i, w, tw, th) (
   i = 1;
-  loop(7,
-    ctl_key_text(i);
-    #ctl_key_measure = #ctl_key;
-    i == 6 ? ( #ctl_key_measure = "FROZEN"; );
-    w = CTRL_CELL_PAD * 2;
-    ctl_shows_key(i) ? (
-      gfx_measurestr(#ctl_key_measure, tw, th);
+  loop(cbm_cells(),
+    w = mem[g_cbm_base + CBM_ST_PAD] * 2;
+    cbm_shows_key(i) ? (
+      cbm_key_widest(i);
+      gfx_measurestr(#cbm_str, tw, th);
       w += tw + 8;
     );
-    ctl_value_widest(i);
-    gfx_measurestr(#ctl_val, tw, th);
+    cbm_value_widest(i);
+    gfx_measurestr(#cbm_str, tw, th);
     w += tw;
-    ctl_is_selector(i) ? ( w += 11; );   // the caret and its air
-    mem[MEM_CTL_W + i] = max(w, 20);
+    cbm_is_selector(i) ? ( w += mem[g_cbm_base + CBM_CARET]; );   // the caret alone:
+                                                                    // the air is in the value's inset
+    mem[g_cbm_base + CBM_W + i] = max(w, 20);
     i += 1;
   );
+  0;
+);
 
-  // Pass two: where they go. The five selectors start on the plot's left edge;
-  // the two buttons sit flush with its right edge, so the bar spans exactly the
-  // same vertical lines as the plot. When the window is too narrow for that, the
-  // buttons follow the selectors instead of overlapping them -- the tier check
-  // in calculate_bar_layout() has already made sure the packed total fits.
-  x = PLOT_LEFT;
+/**
+ * Pass two: where the cells go, and the width they occupy packed edge to edge
+ *
+ * The leading cells start on the left edge the host gives; the trailing
+ * CBM_GROUP_RIGHT ones sit flush with the right edge, so the bar spans the same
+ * vertical lines as whatever it sits above. When the window cannot hold that,
+ * they follow the leading ones instead of overlapping them -- the tier check in
+ * cbm_layout() has already made sure the packed total fits.
+ */
+function cbm_place_cells(left, right) local(i, x, gap, left_end, group, group_w) (
+  gap = mem[g_cbm_base + CBM_ST_GAP];
+  group = min(mem[g_cbm_base + CBM_GROUP_RIGHT], cbm_cells() - 1);
+
+  x = left;
   i = 1;
-  loop(5,
-    mem[MEM_CTL_X + i] = x;
-    x += mem[MEM_CTL_W + i] + CTRL_CELL_GAP;
+  loop(cbm_cells() - group,
+    mem[g_cbm_base + CBM_X + i] = x;
+    x += mem[g_cbm_base + CBM_W + i] + gap;
     i += 1;
   );
-  left_end = x - CTRL_CELL_GAP;                       // right edge of ROWS
-  right_group = mem[MEM_CTL_W + 6] + CTRL_CELL_GAP + mem[MEM_CTL_W + 7];
-  bar_right = gfx_w - PLOT_RIGHT;
+  left_end = x - gap;
 
-  (bar_right - right_group >= left_end + CTRL_CELL_GAP) ? (
-    mem[MEM_CTL_X + 6] = bar_right - right_group;
-  ) : (
-    mem[MEM_CTL_X + 6] = left_end + CTRL_CELL_GAP;
+  group_w = 0;
+  i = cbm_cells() - group + 1;
+  loop(group,
+    group_w += mem[g_cbm_base + CBM_W + i];
+    i += 1;
   );
-  mem[MEM_CTL_X + 7] = mem[MEM_CTL_X + 6] + mem[MEM_CTL_W + 6] + CTRL_CELL_GAP;
+  group_w += gap * (group - 1);
+
+  x = (right - group_w >= left_end + gap) ? ( right - group_w ) : ( left_end + gap );
+
+  i = cbm_cells() - group + 1;
+  loop(group,
+    mem[g_cbm_base + CBM_X + i] = x;
+    x += mem[g_cbm_base + CBM_W + i] + gap;
+    i += 1;
+  );
 
   // What the tier check needs is the width the cells occupy when packed edge to
   // edge, not the span of the ones placed flush right: the second is fixed by the
   // window and would always look like a fit.
-  g_bar_total = 0;
+  mem[g_cbm_base + CBM_TOTAL] = 0;
   i = 1;
-  loop(7,
-    g_bar_total += mem[MEM_CTL_W + i];
+  loop(cbm_cells(),
+    mem[g_cbm_base + CBM_TOTAL] += mem[g_cbm_base + CBM_W + i];
     i += 1;
   );
-  g_bar_total += CTRL_CELL_GAP * 6;
+  mem[g_cbm_base + CBM_TOTAL] += gap * (cbm_cells() - 1);
+  0;
 );
 
-function calculate_bar_layout() (
-  gfx_setfont(1, "Arial", BAR_FONT);
-  g_bar_has_labels = 1;
-  layout_bar_cells();
-  PLOT_LEFT + g_bar_total > gfx_w - PLOT_RIGHT ? (
-    g_bar_has_labels = 0;
-    layout_bar_cells();
+/**
+ * Measures and places the bar, dropping the key labels when they do not fit
+ *
+ * Leaves the measuring font in force: the host restores its own type right after.
+ *
+ * @param left  the left edge the leading cells start from
+ * @param right the right edge the trailing cells end on
+ * @param top   top of the cells
+ * @param h     height of the cells
+ * @param font  the font the texts are measured (and drawn) in
+ */
+function cbm_layout(left, right, top, h, font) (
+  mem[g_cbm_base + CBM_TOP] = top;
+  mem[g_cbm_base + CBM_HEIGHT] = h;
+  mem[g_cbm_base + CBM_FONT] = font;
+  gfx_setfont(1, "Arial", font);
+  mem[g_cbm_base + CBM_HAS_LABELS] = 1;
+  cbm_measure_cells();
+  cbm_place_cells(left, right);
+  left + mem[g_cbm_base + CBM_TOTAL] > right ? (
+    mem[g_cbm_base + CBM_HAS_LABELS] = 0;
+    cbm_measure_cells();
+    cbm_place_cells(left, right);
   );
-  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
 );
 
-// Hit test written as a chain and not as a loop on purpose: loop() in EEL2 is
-// not reentrant, and this one is called from inside the loop that draws the
-// cells. A nested loop there does not fail loudly -- it corrupts the outer
-// counter, so the cells are drawn in a random order and the rest of the frame
-// never runs.
-function ctl_hit_test(px, py) local(hit) (
+// ========== THE OPEN LIST ==========
+
+/**
+ * Opens the list of a selector, scrolled so the current value is in the middle:
+ * with 128 controllers the list cannot start at the top every time.
+ */
+function cbm_open_menu(i) local(cur, rows) (
+  mem[g_cbm_base + CBM_MENU_OPEN] = 0;
+  cbm_is_selector(i) ? (
+    mem[g_cbm_base + CBM_MENU_OPEN] = i;
+    mem[g_cbm_base + CBM_MENU_COUNT] = cbm_max(i) - cbm_min(i) + 1;
+    rows = min(mem[g_cbm_base + CBM_MENU_COUNT], mem[g_cbm_base + CBM_ST_MENU_ROWS]);
+    mem[g_cbm_base + CBM_MENU_ROWS] = rows;
+    mem[g_cbm_base + CBM_MENU_W] = max(mem[g_cbm_base + CBM_W + i], mem[g_cbm_base + CBM_ST_MENU_W]);
+    mem[g_cbm_base + CBM_MENU_X] = mem[g_cbm_base + CBM_X + i];
+    mem[g_cbm_base + CBM_MENU_Y] = mem[g_cbm_base + CBM_TOP] + mem[g_cbm_base + CBM_HEIGHT]
+                                  + mem[g_cbm_base + CBM_ST_DROP];
+    cur = cbm_value(i) - cbm_min(i);
+    mem[g_cbm_base + CBM_MENU_SCROLL] = max(0, min(cur - floor(rows / 2),
+                                                  mem[g_cbm_base + CBM_MENU_COUNT] - rows));
+  );
+  0;
+);
+
+/** Rows of the open list that hold a value and therefore are drawn */
+function cbm_rows() (
+  max(0, min(mem[g_cbm_base + CBM_MENU_ROWS],
+             mem[g_cbm_base + CBM_MENU_COUNT] - mem[g_cbm_base + CBM_MENU_SCROLL]));
+);
+
+function cbm_row_y(r) (
+  mem[g_cbm_base + CBM_MENU_Y] + 2 + r * mem[g_cbm_base + CBM_ST_ROW];
+);
+
+function cbm_row_value(r) (
+  cbm_min(cbm_open()) + mem[g_cbm_base + CBM_MENU_SCROLL] + r;
+);
+
+function cbm_row_hovered(r) local(y, hit) (
   hit = 0;
-  (py >= CTRL_BAR_TOP && py <= CTRL_BAR_TOP + CTRL_BAR_HEIGHT) ? (
-    hit = (px >= mem[MEM_CTL_X + 7] && px <= mem[MEM_CTL_X + 7] + mem[MEM_CTL_W + 7]) ? 7 :
-          (px >= mem[MEM_CTL_X + 6] && px <= mem[MEM_CTL_X + 6] + mem[MEM_CTL_W + 6]) ? 6 :
-          (px >= mem[MEM_CTL_X + 5] && px <= mem[MEM_CTL_X + 5] + mem[MEM_CTL_W + 5]) ? 5 :
-          (px >= mem[MEM_CTL_X + 4] && px <= mem[MEM_CTL_X + 4] + mem[MEM_CTL_W + 4]) ? 4 :
-          (px >= mem[MEM_CTL_X + 3] && px <= mem[MEM_CTL_X + 3] + mem[MEM_CTL_W + 3]) ? 3 :
-          (px >= mem[MEM_CTL_X + 2] && px <= mem[MEM_CTL_X + 2] + mem[MEM_CTL_W + 2]) ? 2 :
-          (px >= mem[MEM_CTL_X + 1] && px <= mem[MEM_CTL_X + 1] + mem[MEM_CTL_W + 1]) ? 1 : 0;
+  cbm_open() > 0 ? (
+    y = cbm_row_y(r);
+    (mouse_x >= mem[g_cbm_base + CBM_MENU_X]
+     && mouse_x <= mem[g_cbm_base + CBM_MENU_X] + mem[g_cbm_base + CBM_MENU_W]
+     && mouse_y >= y && mouse_y < y + mem[g_cbm_base + CBM_ST_ROW]) ? ( hit = 1; );
   );
   hit;
 );
 
-// Opens the list of a selector, scrolled so that the current value is in the
-// middle: with 128 controllers the list cannot start at the top every time.
-function ctl_open_menu(i) local(cur) (
-  g_menu_open = 0;
-  ctl_is_selector(i) ? (
-    g_menu_open = i;
-    g_menu_count = ctl_max(i) - ctl_min(i) + 1;
-    g_menu_rows = min(g_menu_count, CTRL_MENU_ROWS);
-    g_menu_w = max(mem[MEM_CTL_W + i], 92);
-    g_menu_x = mem[MEM_CTL_X + i];
-    g_menu_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + 3;
-    cur = ctl_get(i) - ctl_min(i);
-    g_menu_scroll = max(0, min(cur - floor(g_menu_rows / 2), g_menu_count - g_menu_rows));
-  );
-);
+function cbm_row_is_current(r) ( (cbm_row_value(r) == cbm_value(cbm_open())) ? 1 : 0 );
 
-// Returns 1 when the press was inside the open list (and acted on it), so the
-// caller knows the click was consumed even after the list has closed.
-function ctl_menu_press(px, py) local(r, v, h, used) (
+/**
+ * Returns 1 when the press was inside the open list (and acted on it), so the
+ * caller knows the click was consumed even after the list has closed.
+ */
+function cbm_menu_press(px, py) local(used, r, v, h) (
   used = 0;
-  g_menu_open > 0 ? (
-    h = g_menu_rows * CTRL_ITEM_HEIGHT + 4;
-    (px >= g_menu_x && px <= g_menu_x + g_menu_w && py >= g_menu_y && py <= g_menu_y + h) ? (
-      r = floor((py - g_menu_y - 2) / CTRL_ITEM_HEIGHT);
-      v = ctl_min(g_menu_open) + g_menu_scroll + r;
-      (r >= 0 && r < g_menu_rows && v <= ctl_max(g_menu_open)) ? ( ctl_set(g_menu_open, v); );
+  cbm_open() > 0 ? (
+    h = mem[g_cbm_base + CBM_MENU_ROWS] * mem[g_cbm_base + CBM_ST_ROW] + 4;
+    (px >= mem[g_cbm_base + CBM_MENU_X]
+     && px <= mem[g_cbm_base + CBM_MENU_X] + mem[g_cbm_base + CBM_MENU_W]
+     && py >= mem[g_cbm_base + CBM_MENU_Y] && py <= mem[g_cbm_base + CBM_MENU_Y] + h) ? (
+      r = floor((py - mem[g_cbm_base + CBM_MENU_Y] - 2) / mem[g_cbm_base + CBM_ST_ROW]);
+      v = cbm_min(cbm_open()) + mem[g_cbm_base + CBM_MENU_SCROLL] + r;
+      (r >= 0 && r < mem[g_cbm_base + CBM_MENU_ROWS] && v <= cbm_max(cbm_open())) ? (
+        cbm_set(cbm_open(), v);
+      );
       used = 1;
     );
-    g_menu_open = 0;
+    mem[g_cbm_base + CBM_MENU_OPEN] = 0;
   );
   used;
 );
 
+// ========== THE POINTER ==========
+
+/** Cell under the pointer, 0 when it is over none. Call it outside any loop() */
+function cbm_hit_test(px, py) local(i, x, w, hit) (
+  hit = 0;
+  (py >= mem[g_cbm_base + CBM_TOP]
+   && py <= mem[g_cbm_base + CBM_TOP] + mem[g_cbm_base + CBM_HEIGHT]) ? (
+    i = 1;
+    loop(cbm_cells(),
+      x = mem[g_cbm_base + CBM_X + i];
+      w = mem[g_cbm_base + CBM_W + i];
+      (px >= x && px <= x + w) ? ( hit = i; );
+      i += 1;
+    );
+  );
+  hit;
+);
+
 // The wheel arrives in host units, not in notches: measured on Windows a single
-// notch is 120, so stepping by the raw delta took the time window from 10 s to
-// 30 s (its maximum) in one turn. One notch = one step, and a fast spin still
-// moves several when the delta is a multiple of it.
-function ctl_wheel_steps(delta) (
+// notch is 120, so stepping by the raw delta took a 30 s window in one turn. One
+// notch = one step, and a fast spin still moves several when the delta is a
+// multiple of it.
+function cbm_wheel_steps(delta) (
   (delta > 0) ? max(1, floor(delta / 120)) : -max(1, floor(-delta / 120));
 );
 
 /**
- * Turns the mouse into changes: click opens, wheel steps, right click resets
+ * Turns the mouse into changes: click opens or acts, wheel steps, right click resets
  *
  * Run before drawing, so the frame shows the state the pointer has just made.
- * mouse_x / mouse_y are canvas coordinates, and with every slider hidden the
- * canvas is the whole window: the bar's geometry is the drawing geometry.
+ * mouse_x / mouse_y are canvas coordinates, and with the host's parameters hidden
+ * the canvas is the whole window: the bar's geometry is the drawing geometry.
  */
-function ctl_handle_mouse() local(down, rdown, wd, used) (
-  g_ctl_ready == 0 ? (
-    g_wheel_last = mouse_wheel;
-    g_mouse_down = mouse_cap & 1;
-    g_mouse_right = mouse_cap & 2;
-    g_ctl_ready = 1;
+function cbm_mouse() local(down, rdown, wd, used, hit) (
+  mem[g_cbm_base + CBM_READY] == 0 ? (
+    mem[g_cbm_base + CBM_WHEEL] = mouse_wheel;
+    mem[g_cbm_base + CBM_DOWN] = mouse_cap & 1;
+    mem[g_cbm_base + CBM_RDOWN] = mouse_cap & 2;
+    mem[g_cbm_base + CBM_READY] = 1;
   );
 
   down = mouse_cap & 1;
   rdown = mouse_cap & 2;
-  g_hover_cell = ctl_hit_test(mouse_x, mouse_y);
+  hit = cbm_hit_test(mouse_x, mouse_y);
+  mem[g_cbm_base + CBM_HOVER] = hit;
 
-  wd = mouse_wheel - g_wheel_last;
-  g_wheel_last = mouse_wheel;
+  wd = mouse_wheel - mem[g_cbm_base + CBM_WHEEL];
+  mem[g_cbm_base + CBM_WHEEL] = mouse_wheel;
   wd != 0 ? (
-    g_menu_open > 0 ? (
-      g_menu_scroll = max(0, min(g_menu_scroll - ctl_wheel_steps(wd), g_menu_count - g_menu_rows));
+    cbm_open() > 0 ? (
+      mem[g_cbm_base + CBM_MENU_SCROLL] = max(0, min(mem[g_cbm_base + CBM_MENU_SCROLL] - cbm_wheel_steps(wd),
+                                                    mem[g_cbm_base + CBM_MENU_COUNT] - mem[g_cbm_base + CBM_MENU_ROWS]));
     ) : (
-      g_hover_cell > 0 ? ( ctl_is_selector(g_hover_cell) ? ( ctl_set(g_hover_cell, ctl_get(g_hover_cell) + ctl_wheel_steps(wd)); ); );
-    );
-  );
-
-  (down && !g_mouse_down) ? (
-    used = ctl_menu_press(mouse_x, mouse_y);
-    used == 0 ? (
-      g_menu_open = 0;
-      g_hover_cell > 0 ? (
-        g_hover_cell == 6 ? ( ctl_set(6, 1 - slider2); ) :
-        g_hover_cell == 7 ? ( slider4 = 1; sliderchange(slider4); ) :
-                            ( ctl_open_menu(g_hover_cell); );
+      hit > 0 ? (
+        cbm_is_selector(hit) ? ( cbm_set(hit, cbm_value(hit) + cbm_wheel_steps(wd)); );
       );
     );
   );
 
-  (rdown && !g_mouse_right) ? (
-    g_hover_cell > 0 ? (
-      g_hover_cell == 7 ? ( slider4 = 1; sliderchange(slider4); ) : ( ctl_set(g_hover_cell, ctl_default(g_hover_cell)); );
+  (down && !mem[g_cbm_base + CBM_DOWN]) ? (
+    used = cbm_menu_press(mouse_x, mouse_y);
+    used == 0 ? (
+      mem[g_cbm_base + CBM_MENU_OPEN] = 0;
+      hit > 0 ? (
+        cbm_kind(hit) == 3 ? ( cbm_set(hit, 1); ) :
+        cbm_kind(hit) == 2 ? ( cbm_set(hit, 1 - cbm_value(hit)); ) :
+                             ( cbm_open_menu(hit); );
+      );
     );
   );
 
-  g_mouse_down = down;
-  g_mouse_right = rdown;
+  (rdown && !mem[g_cbm_base + CBM_RDOWN]) ? (
+    hit > 0 ? (
+      cbm_kind(hit) == 3 ? ( cbm_set(hit, 1); ) : ( cbm_set(hit, cbm_default(hit)); );
+    );
+  );
+
+  mem[g_cbm_base + CBM_DOWN] = down;
+  mem[g_cbm_base + CBM_RDOWN] = rdown;
+  0;
 );
+
+// ========== DRAWING ==========
 
 /**
  * Fills a cell body: a rectangle with its four corners cut away
@@ -297,28 +573,20 @@ function ctl_handle_mouse() local(down, rdown, wd, used) (
  * a two-pixel chamfer is what the eye reads as a corner. The body is two
  * overlapping rectangles, which leaves the four corner pixels black; the border
  * closes them with one pixel on each diagonal.
- *
- * @param x left edge
- * @param y top edge
- * @param w width
- * @param h height
  */
-function draw_cell_body(x, y, w, h) (
-  gfx_rect(x + CTRL_CORNER, y, w - CTRL_CORNER * 2, h, 1);
-  gfx_rect(x, y + CTRL_CORNER, w, h - CTRL_CORNER * 2, 1);
+function cbm_draw_cell_body(x, y, w, h) local(c) (
+  c = mem[g_cbm_base + CBM_ST_CORNER];
+  gfx_rect(x + c, y, w - c * 2, h, 1);
+  gfx_rect(x, y + c, w, h - c * 2, 1);
 );
 
-/**
- * Draws a cell border, following the cut corners of draw_cell_body()
- *
- * The caller sets the colour: the same function draws an idle cell, a hovered one
- * and an engaged button, and only the colour says which is which.
- */
-function draw_cell_border(x, y, w, h) (
-  gfx_rect(x + CTRL_CORNER, y, w - CTRL_CORNER * 2, 1, 1);
-  gfx_rect(x + CTRL_CORNER, y + h - 1, w - CTRL_CORNER * 2, 1, 1);
-  gfx_rect(x, y + CTRL_CORNER, 1, h - CTRL_CORNER * 2, 1);
-  gfx_rect(x + w - 1, y + CTRL_CORNER, 1, h - CTRL_CORNER * 2, 1);
+/** Draws a cell border, following the cut corners of cbm_draw_cell_body() */
+function cbm_draw_cell_border(x, y, w, h) local(c) (
+  c = mem[g_cbm_base + CBM_ST_CORNER];
+  gfx_rect(x + c, y, w - c * 2, 1, 1);
+  gfx_rect(x + c, y + h - 1, w - c * 2, 1, 1);
+  gfx_rect(x, y + c, 1, h - c * 2, 1);
+  gfx_rect(x + w - 1, y + c, 1, h - c * 2, 1);
   gfx_rect(x + 1, y + 1, 1, 1, 1);
   gfx_rect(x + w - 2, y + 1, 1, 1, 1);
   gfx_rect(x + 1, y + h - 2, 1, 1, 1);
@@ -326,143 +594,136 @@ function draw_cell_border(x, y, w, h) (
 );
 
 /**
- * Draws the bar: a band of cells where REAPER's sliders used to be
+ * Draws the bar: a band of cells where the host's own controls would be
+ *
+ * Three things change the fill -- the pointer over a cell, an open list, an
+ * engaged toggle -- so "on" reads at a glance. The caller restores its own font.
  */
-function draw_control_bar() local(i, x, w, y, tx, tw, th, hovered, is_on) (
-  gfx_setfont(1, "Arial", BAR_FONT);
-  y = CTRL_BAR_TOP;
+function cbm_draw() local(i, x, y, w, h, tx, tw, th, hovered, is_on) (
+  y = mem[g_cbm_base + CBM_TOP];
+  h = mem[g_cbm_base + CBM_HEIGHT];
+  gfx_setfont(1, "Arial", mem[g_cbm_base + CBM_FONT]);
 
   // The band is the window's own black, not a lighter strip: the bar is then a
-  // row of small cells floating on the same background as the plot's margins,
-  // and only the cells carry an edge. There is no rule under the bar: the top
-  // edge of the plot's frame, a few pixels below, is already that line.
+  // row of small cells floating on the same background as the margins, and only
+  // the cells carry an edge. There is no rule under the bar: the top edge of the
+  // frame a few pixels below is already that line.
   gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
-  gfx_rect(0, 0, gfx_w, y + CTRL_BAR_HEIGHT + 3, 1);
+  gfx_rect(0, 0, gfx_w, y + h + mem[g_cbm_base + CBM_ST_DROP], 1);
 
   i = 1;
-  loop(7,
-    x = mem[MEM_CTL_X + i];
-    w = mem[MEM_CTL_W + i];
-    hovered = (g_hover_cell == i) ? 1 : 0;
-    is_on = (i == 6 && slider2) ? 1 : 0;
+  loop(cbm_cells(),
+    x = mem[g_cbm_base + CBM_X + i];
+    w = mem[g_cbm_base + CBM_W + i];
+    hovered = (cbm_hover() == i) ? 1 : 0;
+    is_on = (cbm_kind(i) == 2 && cbm_value(i)) ? 1 : 0;
 
     // Flat cells: the pointer over one, an open list or an engaged button are
     // the only three things that change the fill, so "on" reads at a glance
     gfx_a = 1;
     is_on ? (
       gfx_r = 0.32; gfx_g = 0.21; gfx_b = 0.08;
-    ) : (hovered || g_menu_open == i) ? (
+    ) : (hovered || cbm_open() == i) ? (
       gfx_r = 0.16; gfx_g = 0.16; gfx_b = 0.18;
     ) : (
       gfx_r = 0.10; gfx_g = 0.10; gfx_b = 0.11;
     );
-    draw_cell_body(x, y, w, CTRL_BAR_HEIGHT);
+    cbm_draw_cell_body(x, y, w, h);
 
     // The border, and with it the corners: an engaged button turns amber
     // altogether, so "armed" is one colour and not two.
     is_on ? ( gfx_r = 0.95; gfx_g = 0.62; gfx_b = 0.18; )
-          : (hovered || g_menu_open == i) ? ( gfx_r = 0.55; gfx_g = 0.55; gfx_b = 0.57; )
-                                          : ( gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.24; );
-    draw_cell_border(x, y, w, CTRL_BAR_HEIGHT);
+          : (hovered || cbm_open() == i) ? ( gfx_r = 0.55; gfx_g = 0.55; gfx_b = 0.57; )
+                                         : ( gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.24; );
+    cbm_draw_cell_border(x, y, w, h);
 
-    ctl_key_text(i);
-    ctl_value_text(i);
-    tx = x + CTRL_CELL_PAD;
-    gfx_y = y + floor((CTRL_BAR_HEIGHT - BAR_FONT) / 2);
-    ctl_shows_key(i) ? (
-      gfx_measurestr(#ctl_key, tw, th);
+    tx = x + mem[g_cbm_base + CBM_ST_PAD];
+    gfx_y = y + floor((h - mem[g_cbm_base + CBM_FONT]) / 2);
+    cbm_shows_key(i) ? (
+      cbm_key(i);
+      gfx_measurestr(#cbm_str, tw, th);
       is_on ? ( gfx_r = 1.0; gfx_g = 0.72; gfx_b = 0.30; ) : ( gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62; );
       gfx_a = 1;
       gfx_x = tx;
-      gfx_drawstr(#ctl_key);
+      gfx_drawstr(#cbm_str);
       tx += tw + 8;
     );
 
+    cbm_value_text(i);
     is_on ? ( gfx_r = 1.0; gfx_g = 0.80; gfx_b = 0.40; ) : ( gfx_r = 0.94; gfx_g = 0.94; gfx_b = 0.95; );
     gfx_a = 1;
     // With the labels on, the value sits against the caret: a cell whose value
     // grows ("all" -> "127") then keeps its text where the eye left it, and the
     // air goes into the gap instead of trailing after the value. Without labels
     // the value IS the cell, so it stays on the left.
-    g_bar_has_labels ? (
-      gfx_measurestr(#ctl_val, tw, th);
-      // 15 = the caret (11) plus four pixels of air: without it the value ends
-      // where the triangle begins and the two read as one glyph.
-      gfx_x = x + w - (ctl_is_selector(i) ? 15 : CTRL_CELL_PAD) - tw;
+    cbm_has_labels() ? (
+      gfx_measurestr(#cbm_str, tw, th);
+      gfx_x = x + w - (cbm_is_selector(i) ? (mem[g_cbm_base + CBM_CARET] + mem[g_cbm_base + CBM_CARET_AIR])
+                                          : mem[g_cbm_base + CBM_ST_PAD]) - tw;
     ) : (
       gfx_x = tx;
     );
-    gfx_drawstr(#ctl_val);
+    gfx_drawstr(#cbm_str);
 
     // The caret is drawn, not typed: no font is guaranteed to have the glyph.
     // It brightens with its cell, because it is the part that promises a list.
-    ctl_is_selector(i) ? (
-      (hovered || g_menu_open == i) ? ( gfx_r = 0.80; gfx_g = 0.80; gfx_b = 0.84; )
+    cbm_is_selector(i) ? (
+      (hovered || cbm_open() == i) ? ( gfx_r = 0.80; gfx_g = 0.80; gfx_b = 0.84; )
                                     : ( gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.55; );
       gfx_a = 1;
-      gfx_triangle(x + w - 11, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
-                   x + w - 5, y + floor(CTRL_BAR_HEIGHT / 2) - 2,
-                   x + w - 8, y + floor(CTRL_BAR_HEIGHT / 2) + 2);
+      gfx_triangle(x + w - mem[g_cbm_base + CBM_CARET], y + floor(h / 2) - 2,
+                   x + w - mem[g_cbm_base + CBM_CARET] + 6, y + floor(h / 2) - 2,
+                   x + w - mem[g_cbm_base + CBM_CARET] + 3, y + floor(h / 2) + 2);
     );
-
-    // No hairline between the selectors and the buttons: the buttons now sit
-    // against the plot's right edge, so the width of the gap is the separator,
-    // and a line next to the last cell only looked like part of that cell.
 
     i += 1;
   );
-  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
 );
 
 /**
- * Draws the open list, last, so it can overlap the plot
+ * Draws the frame of the open list, the hovered row and the scroll thumb
+ *
+ * The item texts are the caller's: this leaves room for them (the rows are
+ * cbm_row_y() and cbm_rows()) and draws the thumb first, because the thumb
+ * column sits outside the text area by construction -- a list is never narrower
+ * than cbm_style()'s menu_min_w, and the text starts 10 px inside it.
  */
-function draw_control_menu() local(i, r, v, y, h, hovered, current, thumb, thumbnail, scroll_h) (
-  g_menu_open > 0 ? (
-    i = g_menu_open;
-    h = g_menu_rows * CTRL_ITEM_HEIGHT + 4;
-    gfx_setfont(1, "Arial", BAR_FONT);
+function cbm_draw_menu() local(r, h, thumb, thumbnail, scroll_h) (
+  cbm_open() > 0 ? (
+    h = mem[g_cbm_base + CBM_MENU_ROWS] * mem[g_cbm_base + CBM_ST_ROW] + 4;
 
     gfx_r = 0.04; gfx_g = 0.04; gfx_b = 0.05; gfx_a = 1;
-    gfx_rect(g_menu_x + 2, g_menu_y + 2, g_menu_w, h, 1);
+    gfx_rect(mem[g_cbm_base + CBM_MENU_X] + 2, mem[g_cbm_base + CBM_MENU_Y] + 2, mem[g_cbm_base + CBM_MENU_W], h, 1);
     gfx_r = 0.11; gfx_g = 0.11; gfx_b = 0.13; gfx_a = 1;
-    gfx_rect(g_menu_x, g_menu_y, g_menu_w, h, 1);
+    gfx_rect(mem[g_cbm_base + CBM_MENU_X], mem[g_cbm_base + CBM_MENU_Y], mem[g_cbm_base + CBM_MENU_W], h, 1);
     gfx_r = 0.42; gfx_g = 0.42; gfx_b = 0.45; gfx_a = 1;
-    gfx_rect(g_menu_x, g_menu_y, g_menu_w, h, 0);
+    gfx_rect(mem[g_cbm_base + CBM_MENU_X], mem[g_cbm_base + CBM_MENU_Y], mem[g_cbm_base + CBM_MENU_W], h, 0);
 
     r = 0;
-    loop(g_menu_rows,
-      v = ctl_min(i) + g_menu_scroll + r;
-      v <= ctl_max(i) ? (
-        y = g_menu_y + 2 + r * CTRL_ITEM_HEIGHT;
-        hovered = (mouse_x >= g_menu_x && mouse_x <= g_menu_x + g_menu_w
-                   && mouse_y >= y && mouse_y < y + CTRL_ITEM_HEIGHT) ? 1 : 0;
-        hovered ? (
-          gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.24; gfx_a = 1;
-          gfx_rect(g_menu_x + 1, y, g_menu_w - 2, CTRL_ITEM_HEIGHT, 1);
-        );
-        ctl_item_text(i, v);
-        current = (v == ctl_get(i)) ? 1 : 0;
-        current ? ( gfx_r = 1.0; gfx_g = 0.76; gfx_b = 0.36; ) : ( gfx_r = 0.78; gfx_g = 0.78; gfx_b = 0.80; );
-        gfx_a = 1;
-        gfx_x = g_menu_x + 10;
-        gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
-        gfx_drawstr(#ctl_item);
+    loop(cbm_rows(),
+      cbm_row_hovered(r) ? (
+        gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.24; gfx_a = 1;
+        gfx_rect(mem[g_cbm_base + CBM_MENU_X] + 1, cbm_row_y(r), mem[g_cbm_base + CBM_MENU_W] - 2,
+                 mem[g_cbm_base + CBM_ST_ROW], 1);
       );
       r += 1;
     );
 
     // With 128 controllers the list is longer than it is tall: a thin track and
     // a thumb say that there is more of it, which a clipped list does not.
-    (g_menu_count > g_menu_rows) ? (
+    (mem[g_cbm_base + CBM_MENU_COUNT] > mem[g_cbm_base + CBM_MENU_ROWS]) ? (
       scroll_h = h - 6;
       gfx_r = 0.22; gfx_g = 0.22; gfx_b = 0.25; gfx_a = 1;
-      gfx_rect(g_menu_x + g_menu_w - 4, g_menu_y + 3, 2, scroll_h, 1);
-      thumbnail = max(floor(scroll_h * g_menu_rows / g_menu_count), 8);
-      thumb = floor((scroll_h - thumbnail) * g_menu_scroll / max(g_menu_count - g_menu_rows, 1));
+      gfx_rect(mem[g_cbm_base + CBM_MENU_X] + mem[g_cbm_base + CBM_MENU_W] - 4,
+               mem[g_cbm_base + CBM_MENU_Y] + 3, 2, scroll_h, 1);
+      thumbnail = max(floor(scroll_h * mem[g_cbm_base + CBM_MENU_ROWS] / mem[g_cbm_base + CBM_MENU_COUNT]), 8);
+      thumb = floor((scroll_h - thumbnail) * mem[g_cbm_base + CBM_MENU_SCROLL]
+                    / max(mem[g_cbm_base + CBM_MENU_COUNT] - mem[g_cbm_base + CBM_MENU_ROWS], 1));
       gfx_r = 0.50; gfx_g = 0.50; gfx_b = 0.54;
-      gfx_rect(g_menu_x + g_menu_w - 4, g_menu_y + 3 + thumb, 2, thumbnail, 1);
+      gfx_rect(mem[g_cbm_base + CBM_MENU_X] + mem[g_cbm_base + CBM_MENU_W] - 4,
+               mem[g_cbm_base + CBM_MENU_Y] + 3 + thumb, 2, thumbnail, 1);
     );
-    gfx_setfont(1, "Arial", FONT_SIZE);
   );
+  0;
 );

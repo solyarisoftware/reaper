@@ -227,9 +227,19 @@
 // - Updated metric tracking to account for channel-specific streams
 //
 // ARCHITECTURE:
-// - Modular function-based design for maintainability
-// - Separate utility library (ccscope_utils.jsfx-inc) for data management
-// - Separate metrics library (ccscope_metrics.jsfx-inc) for performance analysis
+// - One conductor, one state: this file declares every global and the sliders,
+//   and the @gfx pipeline calls the panels in the order they must run
+// - Panels are leaves: ccscope_layout (frame geometry, metric columns),
+//   ccscope_plot (window, grid, image cache, traces), ccscope_rows (bars, metric
+//   fields, explanation), ccscope_status (the line under everything). No panel
+//   calls another, so a new panel or a third rows mode touches one file
+// - ccscope_utils.jsfx-inc owns the mem[] address space and the (CC, channel)
+//   data; ccscope_metrics.jsfx-inc owns the 1-second metrics
+// - ccscope_controlbar.jsfx-inc is a general-purpose widget: a row of cells with
+//   dropdown lists, a toggle and an action button, measured, hit-tested and
+//   painted. It owns no parameter and formats no string: the host pushes values
+//   and texts in and applies what comes out with sliderchange(). Another JSFX can
+//   copy that file and use it with its own vocabulary
 // - Efficient memory management for history buffer and metrics
 // - All metrics calculated over 1-second rolling window for real-time feedback
 // ===================================================================
@@ -319,6 +329,8 @@ CTRL_CELL_PAD = 6;       // inside a cell
 CTRL_CORNER = 2;         // px cut from each cell corner: what reads as rounded
 CTRL_ITEM_HEIGHT = 15;   // one row of an open list
 CTRL_MENU_ROWS = 12;     // rows visible before the list starts scrolling
+CTRL_MENU_MIN_WIDTH = 92; // a list is never narrower than this
+CTRL_MENU_DROP = 3;      // between the bar and its open list
 BAR_FONT = FONT_SIZE - 3; // the bar is one size under the rest of the text
 
 // ========== GLOBAL LAYOUT VARIABLES ==========
@@ -377,27 +389,22 @@ g_col_tmg_r = 0;         // right edge of "±N.Nms"
 g_col_tmg_q_r = 0;       // right edge of the timing quality word (and of the int count)
 
 // ========== CONTROL BAR STATE ==========
-// The geometry of the seven cells lives in mem[], in the two ranges declared in
-// ccscope_utils.jsfx-inc: EEL2 arrays cannot be trusted for this. Measured here:
-// writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME seven
-// numbers for both -- two arrays had been given the same memory, so every cell
-// was placed at its own width. mem[] with explicit offsets is what the rest of
-// the plugin uses, and tools/check_ccscope_memory.py verifies the ranges.
-g_bar_has_labels = 1;
-g_bar_total = 0;
-
+// The bar's own state -- cell geometry, values, the open list, the pointer edges
+// -- lives in mem[MEM_CBM_BASE .. +MEM_CBM_SIZE], owned by the control-bar module
+// (ccscope_controlbar.jsfx-inc). EEL2 arrays cannot be trusted for this: measured
+// here, writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME
+// seven numbers for both -- two arrays had been given the same memory, so every
+// cell was placed at its own width. mem[] with explicit offsets is what the
+// plugin uses, and tools/check_ccscope_memory.py verifies the ranges.
+//
+// The five variables below are a PROJECTION of that state, published because the
+// acceptance probe reads them and because the pipeline reads at a glance what the
+// pointer is doing. They are refreshed once per frame by ctl_publish_state().
 g_menu_open = 0;         // index of the cell whose list is open, 0 = closed
 g_menu_x = 0;            // where that list is drawn
 g_menu_y = 0;
-g_menu_w = 0;
 g_menu_rows = 0;
-g_menu_count = 0;
 g_menu_scroll = 0;
-
-g_mouse_down = 0;        // previous frame, for edge detection
-g_mouse_right = 0;
-g_wheel_last = 0;        // mouse_wheel is cumulative: only the delta matters
-g_ctl_ready = 0;         // the first frame has no previous state to compare
 g_hover_cell = 0;        // the cell under the pointer, computed once per frame
 
 // ========== TIME WINDOW VARIABLES ==========
@@ -421,6 +428,23 @@ g_time_end = 0;
 g_last_prune_time = 0;
 PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
 
+// ========== THE CONTROL BAR, REGISTERED ==========
+// What the bar has to be told once: where its block is, which pixels this plugin
+// wants, and what each cell is. The order of cbm_cell() is the order on screen --
+// arranged by what you reach for first, not by the order of the slider declarations.
+// kinds: 0 numeric list, 1 enum list, 2 toggle, 3 action.
+cbm_init(MEM_CBM_BASE, 7);
+cbm_style(CTRL_CELL_GAP, CTRL_CELL_PAD, CTRL_CORNER, CTRL_ITEM_HEIGHT, CTRL_MENU_ROWS,
+          CTRL_MENU_MIN_WIDTH, CTRL_MENU_DROP);
+cbm_group_right(2);              // the two buttons hang on the plot's right edge
+cbm_cell(1, 0, 0, 127, 0);      // CC to monitor (0 = all)
+cbm_cell(2, 0, 0, 16, 0);       // channel (0 = all)
+cbm_cell(3, 0, 1, 30, 10);      // time window, seconds
+cbm_cell(4, 1, 0, 2, 0);        // dots on the traces
+cbm_cell(5, 1, 0, 1, 0);        // where the pair list lives
+cbm_cell(6, 2, 0, 1, 0);        // Freeze
+cbm_cell(7, 3, 0, 1, 0);        // Clear
+
 // ========== FUNCTION DEFINITIONS ==========
 
 // The (CC, channel) key encoding has ONE definition, in
@@ -433,6 +457,178 @@ PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
 // in @init above), the adapter between the control bar and the sliders, the MIDI
 // ingest below, and the @gfx pipeline that orders the calls. No panel calls
 // another: one frame, one state, one conductor.
+
+// ========== THE CONTROL BAR ADAPTER ==========
+// The module owns the geometry, the pointer and the painting. What stays here is
+// what belongs to this plugin: which parameter each cell drives, what the cells
+// say, and how a change becomes a slider move. The module never touches a slider,
+// so this is the only place where a cell and a parameter meet.
+
+// The bar is ordered by what you reach for first, not by the order of the slider
+// declarations, so the mapping lives here once and nowhere else.
+function ctl_slider_number(i) (
+  i == 1 ? 1 : i == 2 ? 6 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 2 : 4;
+);
+
+function ctl_slider_value(i) local(s) (
+  s = ctl_slider_number(i);
+  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 : s == 5 ? slider5 : s == 6 ? slider6 : slider7;
+);
+
+// The documented form is sliderchange(sliderN): it tells REAPER the value was set
+// from code, so embedded displays and the Param list follow. It does not write
+// automation -- slider_automate() would -- so a cell is a setting, not a source
+// of automation.
+function ctl_slider_write(s, v) (
+  s == 1 ? ( slider1 = v; sliderchange(slider1); ) :
+  s == 2 ? ( slider2 = v; sliderchange(slider2); ) :
+  s == 3 ? ( slider3 = v; sliderchange(slider3); ) :
+  s == 4 ? ( slider4 = v; sliderchange(slider4); ) :
+  s == 5 ? ( slider5 = v; sliderchange(slider5); ) :
+  s == 6 ? ( slider6 = v; sliderchange(slider6); ) :
+           ( slider7 = v; sliderchange(slider7); );
+);
+
+// What a cell says. Key text is the dim label, value text the bright one.
+function ctl_key_text(i) (
+  i == 1 ? ( #ctl_key = "CC"; ) :
+  i == 2 ? ( #ctl_key = "CH"; ) :
+  i == 3 ? ( #ctl_key = "WIN"; ) :
+  i == 4 ? ( #ctl_key = "DOTS"; ) :
+  i == 5 ? ( #ctl_key = "ROWS"; ) :
+  i == 6 ? ( cbm_value(6) ? ( #ctl_key = "FROZEN"; ) : ( #ctl_key = "FREEZE"; ); ) :
+           ( #ctl_key = "CLEAR"; );
+);
+
+// The widest key each cell can take: widths are measured on these, so FREEZE ->
+// FROZEN does not push the cells to its right.
+function ctl_key_widest(i) (
+  i == 1 ? ( #ctl_key_w = "CC"; ) :
+  i == 2 ? ( #ctl_key_w = "CH"; ) :
+  i == 3 ? ( #ctl_key_w = "WIN"; ) :
+  i == 4 ? ( #ctl_key_w = "DOTS"; ) :
+  i == 5 ? ( #ctl_key_w = "ROWS"; ) :
+  i == 6 ? ( #ctl_key_w = "FROZEN"; ) :
+           ( #ctl_key_w = "CLEAR"; );
+);
+
+function ctl_value_text(i, v) (
+  i == 1 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
+  i == 2 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
+  i == 3 ? ( sprintf(#ctl_val, "%ds", v); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_val = "auto"; ) : v == 1 ? ( #ctl_val = "event"; ) : ( #ctl_val = "none"; ); ) :
+  i == 5 ? ( v == 0 ? ( #ctl_val = "below"; ) : ( #ctl_val = "beside"; ); ) :
+           ( #ctl_val = ""; );
+);
+
+// The widest text a cell can show, so the cells do not move while a value
+// changes: measuring what is on screen would shift every cell to its right.
+function ctl_value_widest(i) (
+  i == 1 ? ( #ctl_val_w = "127"; ) :
+  i == 2 ? ( #ctl_val_w = "all"; ) :
+  i == 3 ? ( #ctl_val_w = "30s"; ) :
+  i == 4 ? ( #ctl_val_w = "event"; ) :
+  i == 5 ? ( #ctl_val_w = "beside"; ) :
+           ( #ctl_val_w = ""; );
+);
+
+function ctl_item_text(i, v) (
+  i == 1 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
+  i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
+  i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every point"; ) : ( #ctl_item = "none"; ); ) :
+           ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); );
+);
+
+// ========== THE FRAME, IN THE ORDER THE MODULE ASKS FOR ==========
+
+// The parameters are the truth: whatever they say (a preset, automation, the FX
+// window's Param list) wins over what the bar remembers.
+function ctl_push_values() local(i) (
+  i = 1;
+  loop(cbm_cells(),
+    cbm_value_push(i, ctl_slider_value(i));
+    i += 1;
+  );
+  0;
+);
+
+function ctl_push_texts() local(i) (
+  i = 1;
+  loop(cbm_cells(),
+    ctl_key_text(i);
+    ctl_key_widest(i);
+    ctl_value_text(i, cbm_value(i));
+    ctl_value_widest(i);
+    cbm_text(i, #ctl_key, #ctl_key_w, #ctl_val, #ctl_val_w);
+    i += 1;
+  );
+  0;
+);
+
+/**
+ * Writes back what the pointer changed, with sliderchange(), in the same frame
+ *
+ * One frame, one state: the click that opens a list and the click that picks a
+ * value both reach the parameter before the plot and the rows are drawn from it.
+ */
+function ctl_apply_changes() local(mask, i, v) (
+  mask = cbm_changes();
+  mask != 0 ? (
+    i = 1;
+    loop(cbm_cells(),
+      (mask & (1 << (i - 1))) ? (
+        v = cbm_value(i);
+        ctl_slider_write(ctl_slider_number(i), v);
+        cbm_applied(i, v);
+      );
+      i += 1;
+    );
+  );
+  0;
+);
+
+// Geometry runs on the text, so the texts go in first. The module leaves the bar
+// font in force after measuring: the rest of the frame is FONT_SIZE.
+function ctl_layout() (
+  cbm_layout(PLOT_LEFT, gfx_w - PLOT_RIGHT, CTRL_BAR_TOP, CTRL_BAR_HEIGHT, BAR_FONT);
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);
+
+// The list's row texts are the host's: EEL2 has no array of strings, so the
+// module hands out the rows and this draws what they say.
+function ctl_draw_menu_items() local(r, i, y) (
+  cbm_open() > 0 ? (
+    i = cbm_open();
+    gfx_setfont(1, "Arial", BAR_FONT);
+    r = 0;
+    loop(cbm_rows(),
+      y = cbm_row_y(r);
+      ctl_item_text(i, cbm_row_value(r));
+      cbm_row_is_current(r) ? ( gfx_r = 1.0; gfx_g = 0.76; gfx_b = 0.36; )
+                            : ( gfx_r = 0.78; gfx_g = 0.78; gfx_b = 0.80; );
+      gfx_a = 1;
+      gfx_x = cbm_menu_x() + 10;
+      gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
+      gfx_drawstr(#ctl_item);
+      r += 1;
+    );
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
+  0;
+);
+
+/** The published projection of the bar's state, once per frame */
+function ctl_publish_state() (
+  g_menu_open = cbm_open();
+  g_menu_x = cbm_menu_x();
+  g_menu_y = cbm_menu_y();
+  g_menu_rows = cbm_menu_rows();
+  g_menu_scroll = cbm_menu_scroll();
+  g_hover_cell = cbm_hover();
+  0;
+);
 
 /**
  * Processes incoming MIDI messages in the audio block
@@ -516,10 +712,17 @@ gfx_mode = 0;
 gfx_setfont(1, "Arial", FONT_SIZE);
 
 // ========== THE CONTROL BAR ==========
-// Geometry first (the plot starts below the bar), then the pointer, then the
-// drawing: one frame, one state, and what you click is what you see.
-calculate_bar_layout();
-ctl_handle_mouse();
+// Values in from the parameters, then geometry (it runs on the text), then the
+// pointer, then back out what the pointer changed -- in that order and in one
+// frame, so what you click is what you see. The second push is for the cell the
+// pointer has just moved: its value has to read new before the bar is painted.
+ctl_push_values();
+ctl_push_texts();
+ctl_layout();
+cbm_mouse();
+ctl_apply_changes();
+ctl_push_texts();
+ctl_publish_state();
 
 // ========== SLIDER EDGES ==========
 // Freeze: remember the instant, so the window and the numbers describe it
@@ -558,7 +761,10 @@ calculate_time_window();
 g_metrics_now = g_time_end;
 
 // ========== DRAW UI ELEMENTS ==========
-draw_control_bar();
+// The bar's own text is drawn by the module; it leaves the bar font in force, and
+// the rest of the frame is FONT_SIZE.
+cbm_draw();
+gfx_setfont(1, "Arial", FONT_SIZE);
 draw_cached_graph_background();
 draw_cc_data_lines(filtered_count);
 draw_cc_bars();
@@ -570,5 +776,8 @@ draw_status_info(filtered_count, history_count);
 // On top of everything: the explanation of the numbers under the pointer
 draw_metric_tooltip();
 
-// ...and the open list above even that, because it is what the pointer is using
-draw_control_menu();
+// ...and the open list above even that, because it is what the pointer is using:
+// the module paints the frame, the highlighted row and the scroll thumb, then the
+// host writes the row texts on top.
+cbm_draw_menu();
+ctl_draw_menu_items();

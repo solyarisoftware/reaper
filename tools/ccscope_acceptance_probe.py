@@ -51,7 +51,7 @@ gmem[23] = slider4; gmem[24] = slider5; gmem[25] = slider6; gmem[26] = slider7;
 gmem[27] = srate; gmem[28] = samplesblock;
 accept_i = 1;
 loop(7,
-  gmem[40 + accept_i] = mem[MEM_CTL_X + accept_i] + mem[MEM_CTL_W + accept_i] / 2;
+  gmem[40 + accept_i] = cbm_cell_x(accept_i) + cbm_cell_w(accept_i) / 2;
   accept_i += 1;
 );
 gmem[60] = g_metrics_x; gmem[61] = g_start_y; gmem[62] = g_visible_bars;

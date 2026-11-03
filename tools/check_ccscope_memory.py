@@ -41,7 +41,7 @@ def check(root: Path) -> list[str]:
         'MEM_HISTORY_BASE': history * 4,
         'MEM_HISTORY_WRITE': 1, 'MEM_HISTORY_COUNT': 1,
         'MEM_NEXT_COLOR': 1, 'MEM_PAIR_LIST_COUNT': 1,
-        'MEM_CTL_X': 8, 'MEM_CTL_W': 8,
+        'MEM_CBM_BASE': c['MEM_CBM_SIZE'],
         'MEM_GRAPH_SELECTED': pairs, 'MEM_GRAPH_HEAD': pairs, 'MEM_GRAPH_TAIL': pairs,
         'MEM_GRAPH_NEXT': history, 'MEM_GRAPH_X': history, 'MEM_GRAPH_Y': history,
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],

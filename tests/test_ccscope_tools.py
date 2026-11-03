@@ -136,6 +136,65 @@ class PackageLayoutTests(unittest.TestCase):
                               f'{panel}.{name} calls {other}.{call}: panels must stay leaves')
 
 
+class Eel2OrderTests(unittest.TestCase):
+    """EEL2 has no forward declarations: a function may only call what came first."""
+
+    def combined(self):
+        import re
+        source = ROOT / 'MIDI/ccscope'
+        main = (source / 'ccscope.jsfx').read_text()
+        order = [line.split()[1] for line in main.splitlines() if line.startswith('import ')]
+        parts = [(source / name).read_text() for name in order]
+        parts.append(main)
+        text = '\n'.join(parts)
+        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        return re.sub(r'//[^\n]*', '', text)
+
+    def test_no_forward_references(self):
+        import re
+        text = self.combined()
+        marks = [(m.start(), m.group(1)) for m in
+                 re.finditer(r'^function\s+([A-Za-z_]\w*)\s*\(', text, re.M)]
+        order = [name for _, name in marks]
+        problems = []
+        for index, (start, name) in enumerate(marks):
+            end = marks[index + 1][0] if index + 1 < len(marks) else len(text)
+            for call in set(re.findall(r'\b([A-Za-z_]\w*)\s*\(', text[start:end])):
+                if call != name and call in order and order.index(call) > index:
+                    problems.append(f'{name} calls {call}, declared later')
+        self.assertEqual(problems, [], 'EEL2 requires the callee to be declared first')
+
+    def test_module_block_fits_the_declared_size(self):
+        import re
+        source = ROOT / 'MIDI/ccscope'
+        module = (source / 'ccscope_controlbar.jsfx-inc').read_text()
+        utils = (source / 'ccscope_utils.jsfx-inc').read_text()
+        constants = {m.group(1): int(m.group(2)) for m in
+                     re.finditer(r'^(CBM_\w+|MEM_CBM_\w+)\s*=\s*(\d+);', module + '\n' + utils, re.M)}
+        cells = constants['CBM_MAX_CELLS']
+        arrays = [constants[name] for name in
+                  ('CBM_X', 'CBM_W', 'CBM_KIND', 'CBM_MIN', 'CBM_MAX',
+                   'CBM_DEF', 'CBM_VAL', 'CBM_APL')]
+        for start in arrays:
+            self.assertLessEqual(start + cells, constants['CBM_ARRAYS_END'],
+                                 'a cell array runs past the module block')
+        self.assertEqual(constants['CBM_ARRAYS_END'], constants['MEM_CBM_SIZE'],
+                         'the module block and the size declared in ccscope_utils must agree')
+        self.assertLess(max(value for name, value in constants.items()
+                            if name.startswith('CBM_') and name not in
+                            ('CBM_ARRAYS_END', 'CBM_MAX_CELLS') and value < min(arrays)),
+                        min(arrays), 'the scalar header must end before the arrays')
+
+    def test_module_never_touches_a_slider(self):
+        import re
+        text = (ROOT / 'MIDI/ccscope/ccscope_controlbar.jsfx-inc').read_text()
+        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        text = re.sub(r'//[^\n]*', '', text)
+        for word in ('slider1', 'slider2', 'slider3', 'slider4', 'slider5',
+                     'slider6', 'slider7', 'sliderchange'):
+            self.assertNotIn(word, text, 'the bar module must stay reusable: no parameters of its own')
+
+
 class AcceptanceRunnerCleanupTests(unittest.TestCase):
     def test_real_cleanup_is_registered_and_idempotent(self):
         lua = shutil.which('lua5.4') or shutil.which('lua')

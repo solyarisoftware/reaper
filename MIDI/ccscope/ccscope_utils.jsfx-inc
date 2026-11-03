@@ -59,8 +59,6 @@ MEM_HISTORY_WRITE = 12608;    // write position pointer
 MEM_HISTORY_COUNT = 12609;    // item count
 MEM_NEXT_COLOR = 12610;       // next colour index to assign
 MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
-MEM_CTL_X = 12612;            // 12612..12619 x of the 7 control-bar cells
-MEM_CTL_W = 12620;            // 12620..12627 width of the 7 control-bar cells
 
 // GUI-owned graph index: the audio writer never accesses these ranges. Build
 // chronological per-pair lists once per frame, then draw in the usual pair order.
@@ -70,6 +68,13 @@ MEM_GRAPH_TAIL = 16724;       // 16724..18771 last visible point per pair
 MEM_GRAPH_NEXT = 18772;       // 18772..20771 next point, MAX_HISTORY_ITEMS slots
 MEM_GRAPH_X = 20772;          // 20772..22771 copied point x, MAX_HISTORY_ITEMS slots
 MEM_GRAPH_Y = 22772;          // 22772..24771 copied point y, MAX_HISTORY_ITEMS slots
+
+// The control-bar module owns a block of its own: geometry, values and pointer
+// state of the cells and of the open list. Its internal layout is declared in
+// ccscope_controlbar.jsfx-inc (the CBM_* constants); only the size lives here,
+// because the address space has one owner and one checker.
+MEM_CBM_BASE = 24772;         // 24772..24867 control-bar module block
+MEM_CBM_SIZE = 96;
 
 // Temporal history is independent of the raw-event diagnostic ring. Each pair
 // owns 301 slots: 30 seconds plus the partially intersected boundary bucket.
