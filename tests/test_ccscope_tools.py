@@ -241,6 +241,21 @@ class Eel2OrderTests(unittest.TestCase):
             self.assertNotIn(word, text, 'the bar module must stay reusable: no parameters of its own')
 
 
+class ReleaseMetadataTests(unittest.TestCase):
+    def test_reapack_tag_matches_the_jsfx_version(self):
+        import re
+        text = (ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text()
+        tag = re.search(r'^//\s*@version\s+(\S+)', text, re.M)
+        meta = re.search(r'^version:\s*(\S+)', text, re.M)
+        self.assertIsNotNone(tag, 'ReaPack reads @version, not the JSFX metadata line')
+        self.assertIsNotNone(meta)
+        self.assertEqual(tag.group(1), meta.group(1),
+                         'the tag ReaPack publishes and the plugin version must be the same')
+        changelog = (ROOT / 'MIDI/ccscope/CHANGELOG.md').read_text()
+        self.assertIn(f'## {meta.group(1)} ', changelog,
+                      'a released version needs its entry in CHANGELOG.md')
+
+
 class CrossSplitProbeTests(unittest.TestCase):
     def test_pre_split_package_builds_with_a_compatibility_shim(self):
         import importlib.util

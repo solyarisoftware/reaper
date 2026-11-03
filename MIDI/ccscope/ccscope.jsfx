@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.6
+// @version 0.7.7
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
