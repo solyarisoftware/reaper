@@ -1,0 +1,189 @@
+// ===================================================================
+// CCSCOPE LAYOUT - where every region of the canvas starts and ends
+// ===================================================================
+// A library file (.jsfx-inc) imported by ccscope.jsfx.
+//
+// OWNS: the geometry of the frame. calculate_layout() decides the plot floor, the
+// rows below the plot (or the column beside it), the row geometry that the bar
+// rows and the metric columns hang from, and the EFFECTIVE layout mode together
+// with the fallback flag the status line explains. calculate_metric_columns()
+// measures the three metric fields and picks which of its four forms fits.
+//
+// READS: gfx_w, gfx_h, slider7 and the constants declared in ccscope.jsfx @init
+// (MIN_GRAPH_PROPORTION, SIDE_*, MIN_PLOT_WIDTH, BAR_*, Y_LABEL_OFFSET).
+// WRITES: the g_* layout variables declared in ccscope.jsfx @init.
+//
+// Called by the @gfx pipeline once the visible pair list is built. No other panel
+// calls into this file and this file calls no other panel: the pipeline orders the
+// calls, so a frame has one state.
+// ===================================================================
+
+@init
+
+/**
+ * Calculates all layout dimensions for the UI with dynamic sizing
+ * 
+ * This function computes:
+ * - Bar section height based on number of active CCs (dynamic!)
+ * - Graph section gets ALL remaining space (maximized!)
+ * - Bar positioning and spacing (at bottom)
+ * - Graph margins and dimensions (at top)
+ * - Y-axis range with padding
+ * 
+ * Results are stored in global g_* variables for use by drawing functions
+ * 
+ * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
+ */
+function calculate_layout(filtered_count) local(required_bar_height, max_bar_height,
+                                               min_graph_height, available_bar_space,
+                                               column_width, side_needed_width) (
+
+  g_graph_start_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + CTRL_BAR_GAP;
+  g_graph_margin_left = PLOT_LEFT;
+  g_graph_margin_right = PLOT_RIGHT;  // half of "now" when it is centred on the last line
+  g_graph_margin_bottom = 10;
+
+  // ========== WHICH LAYOUT: BESIDE IF ASKED AND IF IT FITS ==========
+  // The column has a fixed width, so "does it fit" is a subtraction: the plot
+  // keeps at least MIN_PLOT_WIDTH, and below that the layout falls back to the
+  // rows under the plot rather than drawing a column of text over a sliver of
+  // graph. The slider still says what was asked, so the status line can say why
+  // it is not what happened.
+  column_width = SIDE_PAD * 2 + SIDE_LABEL_WIDTH + SIDE_BAR_WIDTH
+                 + SIDE_VALUE_WIDTH + SIDE_METRICS_WIDTH;
+  side_needed_width = g_graph_margin_left + MIN_PLOT_WIDTH + g_graph_margin_right
+                      + SIDE_COLUMN_GAP + column_width + SIDE_PAD;
+  g_layout_side = (slider7 == 1 && gfx_w >= side_needed_width) ? 1 : 0;
+  g_side_fallback = (slider7 == 1 && g_layout_side == 0) ? 1 : 0;
+
+  g_layout_side ? (
+    // ========== BESIDE: THE COLUMN OWNS THE RIGHT EDGE, THE PLOT KEEPS HEIGHT ==========
+    g_column_width = column_width;
+    g_column_x = gfx_w - column_width - SIDE_PAD;
+    g_graph_width = g_column_x - SIDE_COLUMN_GAP - g_graph_margin_left;
+    g_graph_actual_height = max(gfx_h - g_graph_start_y - STATUS_TEXT_MARGIN - SIDE_TIME_LABEL_BAND, 40);
+    g_graph_height = g_graph_start_y + g_graph_actual_height;
+    g_bars_height = gfx_h - STATUS_TEXT_MARGIN - g_graph_start_y;
+
+    // Rows start at the top of the window, beside the plot, and run down to the
+    // status line: the list uses the whole height, which is the whole point.
+    g_start_y = g_graph_start_y;
+
+    g_label_x = g_column_x + SIDE_PAD;
+    g_bar_x = g_label_x + SIDE_LABEL_WIDTH;
+    g_bar_width = SIDE_BAR_WIDTH;
+    g_value_x = g_bar_x + g_bar_width + 8;
+    g_metrics_x = g_value_x + SIDE_VALUE_WIDTH;
+
+    g_max_bars = max(floor((gfx_h - g_start_y - STATUS_TEXT_MARGIN) / (BAR_HEIGHT + BAR_SPACING)), 0);
+    g_visible_bars = min(filtered_count, g_max_bars);
+  ) : (
+    // ========== BELOW: THE ROWS TAKE HEIGHT FROM THE PLOT ==========
+    // Minimum height needed for the bar section: one row per (CC, channel)
+    // pair, plus the status line and the gap under the graph.
+    required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
+    required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
+
+    // The plot keeps its minimum share of the window and the bars take what is
+    // left: one row per pair while they fit, which is the point of a taller
+    // window. Below the floor the graph stops being readable, so the rows beyond
+    // it are reported by the status line instead of drawn on top of the plot.
+    min_graph_height = floor(gfx_h * MIN_GRAPH_PROPORTION);
+    max_bar_height = gfx_h - min_graph_height;
+    g_bars_height = min(required_bar_height, max_bar_height);
+
+    g_graph_height = gfx_h - g_bars_height;
+    g_graph_width = gfx_w - g_graph_margin_left - g_graph_margin_right;
+    g_graph_actual_height = g_graph_height - g_graph_start_y;
+
+    // The bar section starts where the graph ends (plus a small gap): no magic
+    // offsets, so the last bar cannot be drawn under the status text.
+    g_start_y = gfx_h - g_bars_height + BAR_SECTION_TOP_GAP;
+    g_label_width = FONT_SIZE * 6 + 8;  // "CCnn/CHnn" plus air before the bar
+    g_margin = 20;
+    g_available_width = gfx_w - g_label_width - g_margin * 2;
+
+    g_label_x = g_graph_margin_left - Y_LABEL_OFFSET;
+    g_bar_x = g_label_x + g_label_width;
+    g_bar_width = max(floor(g_available_width * 0.30), 50);
+    g_value_x = g_bar_x + g_bar_width + 8;
+    g_metrics_x = g_bar_x + g_bar_width + 32;
+
+    // How many bars really fit between the graph and the status line
+    available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
+    g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
+    g_visible_bars = min(filtered_count, g_max_bars);
+  );
+
+  // The plot covers exactly the CC range: 0 is the bottom edge, 127 the top.
+  // Any padding here is dead space that makes the scale look like it continues
+  // beyond the limits of a 7-bit controller.
+  g_y_range_min = 0;
+  g_y_range_max = 127;
+  g_y_range_total = 127;
+
+);
+
+/**
+ * Places the three metric columns and decides which form fits
+ *
+ * The columns are fixed fields, measured from the widest text each one can hold,
+ * so a value changing never moves its neighbours. Four forms, from the widest to
+ * the shortest: labels + quality words, labels only, values only (what the column
+ * beside the plot uses), and the bare count.
+ *
+ * The reserve for a value is a realistic maximum, not a theoretical one: a wider
+ * number would grow to the LEFT of its right edge, into the gap, without shifting
+ * the columns after it. Alignment is what has to hold, not the gap.
+ */
+function calculate_metric_columns() local(
+    tw, th, wmsg, wmot, wtmg, wv_msg, wv_mot, wv_tmg, wq_mot, wq_tmg,
+    avail, gap, total) (
+  gap = 14;
+  avail = g_layout_side ? SIDE_METRICS_WIDTH : max(gfx_w - g_metrics_x - 8, 80);
+
+  gfx_measurestr("Messages", wmsg, th);
+  gfx_measurestr("Motion", wmot, th);
+  gfx_measurestr("Timing", wtmg, th);
+  gfx_measurestr("500/s", wv_msg, th);
+  gfx_measurestr("9999 u/s", wv_mot, th);
+  gfx_measurestr("±99.9ms", wv_tmg, th);
+  gfx_measurestr("moderate", wq_mot, th);
+  gfx_measurestr("erratic", wq_tmg, th);
+
+  // ========== THE WIDEST FORM: LABELS AND QUALITY WORDS ==========
+  g_metrics_tier = 3;
+  g_col_msg_x = g_metrics_x;
+  g_col_msg_r = g_col_msg_x + wmsg + 8 + wv_msg;
+  g_col_mot_x = g_col_msg_r + gap;
+  g_col_mot_r = g_col_mot_x + max(wmot, wmsg) + 8 + wv_mot;
+  g_col_mot_q_r = g_col_mot_r + 8 + wq_mot;
+  g_col_tmg_x = g_col_mot_q_r + gap;
+  g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
+  g_col_tmg_q_r = g_col_tmg_r + 8 + wq_tmg;
+  total = g_col_tmg_q_r - g_metrics_x;
+
+  // ========== WITHOUT THE QUALITY WORDS ==========
+  total > avail ? (
+    g_metrics_tier = 2;
+    g_col_mot_q_r = g_col_mot_r;
+    g_col_tmg_x = g_col_mot_r + gap;
+    g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
+    g_col_tmg_q_r = g_col_tmg_r;
+    total = g_col_tmg_r - g_metrics_x;
+  );
+
+  // ========== WITHOUT THE LABELS: THE COLUMN BESIDE THE PLOT ==========
+  total > avail ? (
+    g_metrics_tier = 1;
+    g_col_msg_r = g_metrics_x + wv_msg;
+    g_col_mot_r = g_col_msg_r + gap + wv_mot;
+    g_col_mot_q_r = g_col_mot_r;
+    g_col_tmg_r = g_col_mot_r + gap + wv_tmg;
+    g_col_tmg_q_r = g_col_tmg_r;
+    total = g_col_tmg_r - g_metrics_x;
+  );
+
+  // ========== THE COUNT AND NOTHING ELSE ==========
+  total > avail ? ( g_metrics_tier = 0; );
+);

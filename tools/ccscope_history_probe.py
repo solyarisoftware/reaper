@@ -12,10 +12,14 @@ import shutil
 def build(source: Path, output: Path) -> None:
     if output.exists():
         raise ValueError('Output must be a new temporary directory')
-    text = (source / 'ccscope.jsfx').read_text()
+    # The renderer lives in the plot panel; the probe extracts it from there so
+    # it tests the code that ships, not a copy.
+    text = (source / 'ccscope_plot.jsfx-inc').read_text()
     start = text.index('function draw_temporal_point(')
-    end = text.index('/**\n * Draws status information text', start)
-    functions = text[start:end].replace('gfx_line(', 'history_line(').replace('gfx_circle(', 'history_circle(')
+    functions = text[start:]
+    if 'function draw_cc_data_lines(' not in functions:
+        raise ValueError('Plot panel must define draw_cc_data_lines after the temporal helpers')
+    functions = functions.replace('gfx_line(', 'history_line(').replace('gfx_circle(', 'history_circle(')
     captures = '''
 function history_line(x1,y1,x2,y2) (
  history_lines+=1; history_low=min(history_low,min(y1,y2));

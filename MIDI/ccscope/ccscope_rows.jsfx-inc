@@ -1,0 +1,282 @@
+// ===================================================================
+// CCSCOPE ROWS - one line per (CC, channel) and the metric fields
+// ===================================================================
+// A library file (.jsfx-inc) imported by ccscope.jsfx.
+//
+// OWNS: the visible pair list as text and bars -- label in the pair colour, bar
+// with its value, and the three metric columns (Messages, Motion, Timing) in the
+// form the layout module chose -- plus the explanation panel that appears when the
+// pointer rests on the numbers.
+//
+// READS: the row geometry (g_label_x, g_bar_x, g_bar_width, g_value_x, g_metrics_x,
+// g_start_y, g_visible_bars, g_layout_side) and the metric columns (g_col_*_x,
+// g_col_*_r, g_metrics_tier) written by the layout module; the pairs and the
+// metrics from ccscope_utils.jsfx-inc and ccscope_metrics.jsfx-inc.
+// WRITES: nothing but pixels. It never mutates the data it displays.
+//
+// No other panel calls into this file and this file calls no other panel.
+// ===================================================================
+
+@init
+
+/**
+ * Draws the metric columns of one row: three fixed fields, values right-aligned
+ *
+ * Each number travels with its unit in one string ("250 u/s") and is right-aligned
+ * at the column's right edge. The suffix is what lines up, and because it has a
+ * constant width the digits line up with it: 6, 123 and 500 end on the same pixel
+ * without any per-digit padding. The quality words are right-aligned in their own
+ * field, so "fast" and "moderate" also occupy the same column instead of pushing
+ * what comes after them.
+ *
+ * Which of the four forms is drawn was decided by calculate_metric_columns().
+ *
+ * @param events_ps events per second for this pair
+ * @param rate_ps   units per second for this pair
+ * @param rate_q    motion quality word
+ * @param jitter_ms timing jitter, negative when there are too few intervals
+ * @param jitter_q  timing quality word
+ * @param y_pos     row top
+ */
+function draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos)
+                          local(tw, th) (
+  gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+
+  events_ps <= 0 ? (
+    // Nothing arrived in the last second: one sentence instead of three empty
+    // columns, and short enough for the column beside the plot.
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    gfx_x = g_metrics_x;
+    g_layout_side ? gfx_drawstr("no activity") : gfx_drawstr("no activity in the last second");
+  ) : g_metrics_tier == 0 ? (
+    // Not even the columns fit: the count is the number the plugin exists for
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    sprintf(#mtf, "%d msg/s", events_ps);
+    gfx_x = g_metrics_x;
+    gfx_drawstr(#mtf);
+  ) : (
+    // ========== MESSAGES ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72; gfx_a = 1;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_msg_x;
+      gfx_drawstr("Messages");
+    );
+    gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+    sprintf(#mtf, "%d/s", events_ps);
+    gfx_measurestr(#mtf, tw, th);
+    gfx_x = g_col_msg_r - tw;
+    gfx_drawstr(#mtf);
+
+    // ========== MOTION ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_mot_x;
+      gfx_drawstr("Motion");
+    );
+    gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+    sprintf(#mtf, "%d u/s", rate_ps);
+    gfx_measurestr(#mtf, tw, th);
+    gfx_x = g_col_mot_r - tw;
+    gfx_drawstr(#mtf);
+
+    g_metrics_tier == 3 ? (
+      gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+      // The quality comes back as a string handle, not as a #variable: strcpy is
+      // what turns it into something gfx_measurestr/gfx_drawstr accept.
+      strcpy(#mtq, rate_q);
+      gfx_measurestr(#mtq, tw, th);
+      gfx_x = g_col_mot_q_r - tw;
+      gfx_drawstr(#mtq);
+    );
+
+    // ========== TIMING ==========
+    gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72;
+    g_metrics_tier >= 2 ? (
+      gfx_x = g_col_tmg_x;
+      gfx_drawstr("Timing");
+    );
+    jitter_ms < 0 ? (
+      gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+      gfx_measurestr("n/a", tw, th);
+      gfx_x = g_col_tmg_r - tw;
+      gfx_drawstr("n/a");
+    ) : (
+      gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+      sprintf(#mtf, "±%.1fms", jitter_ms);
+      gfx_measurestr(#mtf, tw, th);
+      gfx_x = g_col_tmg_r - tw;
+      gfx_drawstr(#mtf);
+
+      g_metrics_tier == 3 ? (
+        gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
+        strcpy(#mtq, jitter_q);
+        gfx_measurestr(#mtq, tw, th);
+        gfx_x = g_col_tmg_q_r - tw;
+        gfx_drawstr(#mtq);
+
+        // The sample size is shown only when it is small enough to matter: with
+        // 240 intervals the number speaks for itself, with 5 it does not. It is
+        // written after the field and never reserved, so the rows stay aligned.
+        g_jitter_intervals < 20 ? (
+          gfx_x = g_col_tmg_q_r + 6;
+          gfx_printf("(%d int)", g_jitter_intervals);
+        );
+      );
+    );
+  );
+);
+
+/**
+ * Draws horizontal bars showing current CC values with performance metrics
+ * 
+ * For each active/filtered (CC#, Channel) pair:
+ * - Draws CC number and channel label
+ * - Draws colored bar proportional to CC value (0-127)
+ * - Draws "Value: X" label with clear metric identification
+ * - Draws performance metrics with explicit labels: Events, Rate, Jitter
+ * 
+ * DISPLAY FORMAT (v0.5.1):
+ * CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
+ * 
+ * CHANGES (unreleased, 0.5.2):
+ * - Bars follow the visible selection (get_visible_cc_channel_pair), filters and all
+ * - Bar width is derived from g_available_width, computed once in the layout
+ * - A pair that resolves to -1 is skipped instead of drawing garbage
+ *
+ * CHANGES (v0.5.1):
+ * - Removed pipe separators (│) for cleaner appearance
+ * - Added "Value:" label to CC value display for clarity
+ * - Added explicit metric labels: "Events:", "Rate:", "Jitter:"
+ * - Optimized spacing using natural gaps instead of visual separators
+ * - Improved readability by clearly identifying each metric
+ * - Single-line format maintained for high CC count scenarios
+ * 
+ * Uses global layout variables set by calculate_layout()
+ */
+function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
+                               fill, avail,
+                               events_ps, rate_ps, rate_q, jitter_ms, jitter_q,
+                               tw, th) (
+  y_pos = g_start_y;
+  i = 0;
+
+  loop(g_visible_bars,
+    cc_channel_pair = get_visible_cc_channel_pair(i);
+
+    cc_channel_pair >= 0 ? (
+      cc_num = key_to_cc(cc_channel_pair);
+      channel = key_to_channel(cc_channel_pair);
+      val = get_cc_channel_value(cc_num, channel);
+
+      // One colour per (CC, channel): the label is drawn in it, so the rows are
+      // their own legend and two channels of one CC stay distinguishable
+      get_cc_channel_color(cc_num, channel);
+
+      // Row geometry comes from calculate_layout() and nowhere else: below the
+      // plot the labels hang from the 0 / 64 / 127 vertical, beside the plot
+      // they hang from the column edge. One place to change, both layouts move.
+      gfx_x = g_label_x;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);
+
+      // In the column the bar gets a track. Below the plot the bar area is wide
+      // enough that a short bar still reads as "a bar starting here"; in a 90 px
+      // column a value of 5 draws 4 pixels and the row looks like a dot. The
+      // track makes the rows a table. The colour has to be restored after it,
+      // because the fill is drawn in the (CC, channel) colour.
+      g_layout_side ? (
+        gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.15; gfx_a = 1;
+        gfx_rect(g_bar_x, y_pos, g_bar_width, BAR_HEIGHT, 1);
+        get_cc_channel_color(cc_num, channel);
+      );
+
+      fill = (val / 127.0) * g_bar_width;
+      fill = max(fill, 2);
+      gfx_rect(g_bar_x, y_pos, fill, BAR_HEIGHT);
+
+      // The number is the bar written out: no "Value:" prefix
+      gfx_x = g_value_x;
+      gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
+      gfx_printf("%d", val);
+
+      events_ps = get_events_per_second_cc_channel(cc_num, channel);
+      // Count-only rows do not display Motion or Timing. Do not walk their
+      // buffers to calculate values that draw_row_metrics() will discard.
+      rate_ps = 0;
+      rate_q = "";
+      jitter_ms = -1;
+      jitter_q = "";
+      events_ps > 0 && g_metrics_tier > 0 ? (
+        rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
+        rate_q = get_rate_quality(rate_ps);
+        jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
+        jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
+      );
+
+      // The three numbers, in three fixed columns: see draw_row_metrics().
+      draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos);
+    );
+
+    y_pos += BAR_HEIGHT + BAR_SPACING;
+    i += 1;
+  );
+);
+
+/**
+ * Draws status information text at the bottom of the UI
+ * 
+ * Displays:
+ * - Waiting message if no data received
+ * - Time window settings and history point count
+ * 
+ * @param filtered_count Number of active/filtered (CC#, Channel) pairs
+ * @param history_count Number of points in history buffer
+ */
+/**
+ * Explains the three numbers, but only where they are: with the pointer over the
+ * metrics of a row, a small box says what Messages, Motion and Timing are. The
+ * window stays clean the rest of the time, and nothing has to be read in the
+ * README before the numbers make sense.
+ */
+function draw_metric_tooltip() local(i, y_pos, hit, bx, by, bw, bh, lh) (
+  hit = 0;
+  y_pos = g_start_y;
+  i = 0;
+  loop(g_visible_bars,
+    (mouse_y >= y_pos - 2 && mouse_y <= y_pos + BAR_HEIGHT + BAR_SPACING) ? (
+      (mouse_x >= g_metrics_x) ? hit = 1;
+    );
+    y_pos += BAR_HEIGHT + BAR_SPACING;
+    i += 1;
+  );
+
+  hit && mouse_x > 0 && mouse_y > 0 ? (
+    bw = 520; bh = 62;
+    bx = min(mouse_x + 16, gfx_w - bw - 6);
+    bx = max(bx, 6);
+    by = mouse_y - bh - 14;
+    by < 6 ? by = mouse_y + 22;
+    by = min(by, gfx_h - bh - 6);
+
+    // Opaque panel: the rows underneath must not show through. gfx_r/gfx_g/gfx_b/
+    // gfx_a is the idiom that works here -- gfx_set(...,1,0,0) left the panel
+    // translucent in REAPER 7.82.
+    gfx_r = 0.09; gfx_g = 0.09; gfx_b = 0.12; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_rect(bx, by, bw, bh, 1);
+    gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45; gfx_a = 1;
+    gfx_rect(bx, by, bw, bh, 0);
+
+    gfx_setfont(1, "Arial", FONT_SIZE - 4);
+    gfx_r = 0.9; gfx_g = 0.9; gfx_b = 0.9; gfx_a = 1;
+    // gfx_drawstr advances gfx_x: every line has to set it again
+    gfx_x = bx + 8; gfx_y = by + 6;
+    gfx_drawstr("Messages  times per second the controller sends");
+    gfx_x = bx + 8; gfx_y = by + 23;
+    gfx_drawstr("Motion    how far the value travels per second");
+    gfx_x = bx + 8; gfx_y = by + 40;
+    gfx_drawstr("Timing    how much the spacing between events wobbles");
+
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
+);

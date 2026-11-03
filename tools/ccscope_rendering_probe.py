@@ -18,11 +18,28 @@ from pathlib import Path
 import shutil
 
 
+def provides(source: Path) -> list[Path]:
+    """The package files, read from the @provides block: one source of truth."""
+    text = (source / 'ccscope.jsfx').read_text()
+    block = text.split('@provides', 1)[1].split('@changelog', 1)[0]
+    names = [line.strip().lstrip('/').strip() for line in block.splitlines()]
+    names = [name for name in names if name]
+    if not names:
+        raise ValueError('@provides lists no files')
+    for name in names:
+        if not (source / name).exists():
+            raise ValueError(f'@provides names a file that does not exist: {name}')
+    return [source / name for name in names]
+
+
 def graph_function(source: str) -> str:
     if 'function draw_temporal_point(' in source:
         raise ValueError('Temporal history intentionally changes graph commands; use ccscope_history_probe.py instead of exact-event differential tests')
     start = source.index('function draw_cc_data_lines(')
-    end = source.index('\n/**', start)
+    try:
+        end = source.index('\n/**', start)
+    except ValueError:          # the renderer is the last function of its file
+        end = len(source)
     result = source[start:end].rstrip()
     if not result.endswith(');'):
         raise ValueError('Unexpected graph function boundary; inspect source before updating the probe')
@@ -128,32 +145,34 @@ def main() -> None:
     ap.add_argument('--source', type=Path, default=Path('MIDI/ccscope'))
     ap.add_argument('--output', type=Path, required=True)
     args = ap.parse_args()
-    source = (args.source / 'ccscope.jsfx').read_text()
+    main = (args.source / 'ccscope.jsfx').read_text()
+    plot_name = 'ccscope_plot.jsfx-inc'
+    plot = (args.source / plot_name).read_text()
     if args.grid:
         original = ''
         driver = Path(__file__).with_name('ccscope_grid_probe.txt').read_text()
         signature = 'function draw_graph_background() local(i, level, weight, y) ('
-        if source.count(signature) != 1:
+        if plot.count(signature) != 1:
             raise ValueError('Unexpected background function signature')
-        source = source.replace(signature, signature + '\n  probe_grid_builds += 1;')
+        plot = plot.replace(signature, signature + '\n  probe_grid_builds += 1;')
     else:
         if args.reference is None:
             ap.error('--reference is required for graph-command comparison')
         original = graph_function(args.reference.read_text())
-        candidate = graph_function(source)
+        candidate = graph_function(plot)
         original = original.replace('function draw_cc_data_lines(', 'function probe_reference_lines(')
         original = original.replace('gfx_line(', 'probe_line(').replace('gfx_circle(', 'probe_circle(')
         wrapped = candidate.replace('gfx_line(', 'probe_line(').replace('gfx_circle(', 'probe_circle(')
-        source = source.replace(candidate, CAPTURE + wrapped)
-        driver = DRIVER
-    source = source.split('\n@block\n', 1)[0]
-    source = source.replace('desc:CCScope (MIDI CC oscilloscope)', 'desc:CCScope rendering regression probe')
-    source = source.replace('options:no_meter', 'options:no_meter\noptions:gmem=CCScopeRenderingTest23')
+        plot = plot.replace(candidate, CAPTURE + wrapped)
+    main = main.split('\n@block\n', 1)[0]
+    main = main.replace('desc:CCScope (MIDI CC oscilloscope)', 'desc:CCScope rendering regression probe')
+    main = main.replace('options:no_meter', 'options:no_meter\noptions:gmem=CCScopeRenderingTest23')
     args.output.mkdir(parents=True, exist_ok=True)
-    for name in ('ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
-        shutil.copy2(args.source / name, args.output / name)
+    for path in provides(args.source):
+        shutil.copy2(path, args.output / path.name)
+    (args.output / plot_name).write_text(plot)
     target = args.output / 'ccscope_rendering_probe.jsfx'
-    target.write_text(source + '\n' + original + '\n' + driver)
+    target.write_text(main + '\n' + original + '\n' + driver)
     kind = 'grid-pixel' if args.grid else 'graph-command'
     print(f'Built native {kind} probe: {target}')
 

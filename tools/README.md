@@ -21,7 +21,9 @@ execute EEL2 or establish thread safety.
 ## Native graph-command regression
 
 Export the baseline `ccscope.jsfx` to a temporary reference file, then build a probe
-into its own temporary directory under REAPER's `Effects/`:
+into its own temporary directory under REAPER's `Effects/`. The probe copies the
+package files (read from the plugin's `@provides` block) and instruments the plot
+panel it imports:
 
 ```text
 python3 tools/ccscope_rendering_probe.py --reference <reference.jsfx> --source MIDI/ccscope --output <resource>/Effects/CCScopeGraphTest
@@ -78,8 +80,10 @@ must fail. Regenerate the normal probe afterward.
 ## Native UI, MIDI and audio-thread acceptance (Windows)
 
 `ccscope_acceptance_probe.py` builds instrumented copies of an unmodified baseline
-and the candidate, a synthetic MIDI generator, and input/output observers. Export
-all three baseline sources to a temporary directory first:
+and the candidate, a synthetic MIDI generator, and input/output observers. Copy the
+whole baseline package to a temporary directory first: the `--reference` argument is
+the baseline `ccscope.jsfx`, and the includes listed in its `@provides` block are
+taken from the same directory:
 
 ```text
 python3 tools/ccscope_acceptance_probe.py --reference <baseline>/ccscope.jsfx --candidate MIDI/ccscope/ccscope.jsfx --output <resource>/Effects/CCScopeAcceptance23

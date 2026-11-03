@@ -1,0 +1,61 @@
+// ===================================================================
+// CCSCOPE STATUS - the line under everything
+// ===================================================================
+// A library file (.jsfx-inc) imported by ccscope.jsfx.
+//
+// OWNS: one line of text at the bottom of the canvas. It answers "why is the plot
+// empty" (no data yet, or the filters select nothing), states the window and the
+// resolutions in force, and says what does not fit (rows on screen, fallback to
+// the rows below). Adding a field here -- recent input activity is what GitHub
+// issue #17 asks for -- touches this file only.
+//
+// READS: slider1..slider7, the layout counts (g_visible_bars, filtered_count,
+// g_side_fallback), STATUS_TEXT_MARGIN and gfx_w/gfx_h.
+// WRITES: nothing but pixels.
+//
+// No other panel calls into this file and this file calls no other panel.
+// ===================================================================
+
+@init
+
+function draw_status_info(filtered_count, history_count) local() (
+  gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
+  gfx_x = 10;
+  gfx_y = gfx_h - STATUS_TEXT_MARGIN + 5;
+
+  filtered_count == 0 ? (
+    slider1 != 0 ? (
+      slider6 != 0 ? (
+        gfx_printf("Waiting for CC%d data on channel %d...", slider1, slider6);
+      ) : (
+        gfx_printf("Waiting for CC%d data (any channel)...", slider1);
+      );
+    ) : (
+      slider6 != 0 ? (
+        gfx_printf("Waiting for any CC on channel %d...", slider6);
+      ) : (
+        gfx_drawstr("Send MIDI CC data to visualize.");
+      );
+    );
+  ) : (
+    gfx_printf("%d s window · 100 ms history · 1 s metrics", slider3);
+
+    // Never hide bars silently, and say what to do about it: while rows are
+    // hidden a taller window always fits more of them, because the rows are
+    // what grows.
+    filtered_count > g_visible_bars ? (
+      gfx_printf(" · showing %d of %d pairs (taller window fits more)", g_visible_bars, filtered_count);
+    );
+
+    // The slider asked for the column and the window cannot hold it: say so,
+    // because otherwise the plugin looks like it ignores slider 7.
+    g_side_fallback ? (
+      gfx_printf(" · rows beside need a wider window");
+    );
+
+    g_prev_freeze ? (
+      gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2;
+      gfx_printf("   FROZEN");
+    );
+  );
+);

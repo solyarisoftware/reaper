@@ -114,11 +114,32 @@ spl0 = 0; spl1 = 0;
 '''
 
 
-def instrument(source: str, variant: str, *, seed_history: bool = True) -> str:
+def provides(source: Path) -> list[Path]:
+    """The package files, read from the @provides block: one source of truth."""
+    text = (source / 'ccscope.jsfx').read_text()
+    block = text.split('@provides', 1)[1].split('@changelog', 1)[0]
+    names = [line.strip().lstrip('/').strip() for line in block.splitlines()]
+    names = [name for name in names if name]
+    if not names:
+        raise ValueError('@provides lists no files')
+    for name in names:
+        if not (source / name).exists():
+            raise ValueError(f'@provides names a file that does not exist: {name}')
+    return [source / name for name in names]
+
+
+def instrument(source: str, variant: str, *, seed_history: bool = True,
+               temporal: bool = True) -> str:
+    """Instrument the conductor: metadata, gmem, the audio clock and telemetry.
+
+    Only ccscope.jsfx is touched here: it owns desc/options and the @block,
+    @sample and @gfx sections. The two drawing hooks live in the panels and are
+    injected by instrument_plot() and instrument_rows().
+    """
     if 'options:gmem=' in source or 'accept_start =' in source:
         raise ValueError('Use an uninstrumented source, not an earlier probe')
     seed = SEED if seed_history else '\naccept_cookie = time_precise();\n'
-    if seed_history and 'function draw_temporal_point(' in source:
+    if seed_history and temporal:
         marker = '  add_to_history_with_channel(accept_t, accept_cc, accept_ch, accept_v);'
         seed = seed.replace(marker, marker + '\n  add_temporal_history(accept_t, make_cc_channel_key(accept_cc, accept_ch), accept_v);')
     replacements = {
@@ -132,19 +153,28 @@ gmem[5] = accept_block_seq;
 @sample
 ''',
         '@gfx 1000 720': '@gfx 1000 720\naccept_start = time_precise();\ngmem[70] = 0;',
-        'function draw_graph_background() local(i, level, weight, y) (':
-            'function draw_graph_background() local(i, level, weight, y) (\n  accept_grid_calls += 1;',
     }
     for old, new in replacements.items():
         if source.count(old) != 1:
             raise ValueError(f'Unexpected source boundary: {old!r}')
         source = source.replace(old, new)
-    # Observes entry to the actual tooltip paint branch; no fake pointer state.
+    return source + TELEMETRY
+
+
+def instrument_plot(source: str) -> str:
+    """Count grid rebuilds from inside the real background renderer."""
+    signature = 'function draw_graph_background() local(i, level, weight, y) ('
+    if source.count(signature) != 1:
+        raise ValueError('Unexpected background function signature')
+    return source.replace(signature, signature + '\n  accept_grid_calls += 1;')
+
+
+def instrument_rows(source: str) -> str:
+    """Observe entry to the actual tooltip paint branch; no fake pointer state."""
     marker = '  hit && mouse_x > 0 && mouse_y > 0 ? ('
     if source.count(marker) != 1:
         raise ValueError('Unexpected tooltip paint branch')
-    source = source.replace(marker, marker + '\n    gmem[70] = hit;')
-    return source + TELEMETRY
+    return source.replace(marker, marker + '\n    gmem[70] = hit;')
 
 
 def main() -> None:
@@ -158,8 +188,13 @@ def main() -> None:
     for variant, path in (('baseline', args.reference), ('candidate', args.candidate)):
         target = args.output / variant
         target.mkdir(parents=True)
-        for name in ('ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
-            shutil.copy2(path.parent / name, target / name)
+        files = provides(path.parent)
+        for file in files:
+            shutil.copy2(file, target / file.name)
+        (target / 'ccscope_plot.jsfx-inc').write_text(
+            instrument_plot((path.parent / 'ccscope_plot.jsfx-inc').read_text()))
+        (target / 'ccscope_rows.jsfx-inc').write_text(
+            instrument_rows((path.parent / 'ccscope_rows.jsfx-inc').read_text()))
         (target / 'ccscope.jsfx').write_text(instrument(path.read_text(), variant))
     (args.output / 'generator.jsfx').write_text(GENERATOR)
     # Observe the delivered input, not the generator's pre-host emission order:

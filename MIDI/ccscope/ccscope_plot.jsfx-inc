@@ -1,0 +1,399 @@
+// ===================================================================
+// CCSCOPE PLOT - the scrolling trace, its frame, its time axis
+// ===================================================================
+// A library file (.jsfx-inc) imported by ccscope.jsfx.
+//
+// OWNS: the visible time window (calculate_time_window), the plot frame and the
+// grid with its value labels, the offscreen image the static grid is cached into,
+// the scrolling traces (one polyline per pair, in the pair order the layout
+// decided) and the retained temporal points the DOTS slider selects.
+//
+// READS: the plot geometry (g_graph_*), the visible pair list, the raw history and
+// the temporal buckets from ccscope_utils.jsfx-inc.
+// WRITES: the g_time_* window variables and the cache state g_grid_cache_valid.
+//
+// No other panel calls into this file and this file calls no other panel.
+// ===================================================================
+
+@init
+
+/**
+ * Calculates the time window parameters in SECONDS
+ * 
+ * Sets:
+ * - g_time_window: Duration of visible time window (seconds)
+ * - g_time_start: Start time of visible window (seconds)
+ * - g_time_end: End time of visible window (seconds)
+ */
+function calculate_time_window() local(current_time_sec) (
+  // While frozen the window stops at the instant Freeze was engaged, so the
+  // graph and the numbers describe the same moment.
+  current_time_sec = g_prev_freeze ? g_freeze_time : g_clock_sec;
+  
+  g_time_window = slider3;
+  g_time_end = current_time_sec;
+  g_time_start = g_time_end - g_time_window;
+);
+
+/**
+ * Draws the graph grid lines without background
+ * 
+ * Creates:
+ * - Horizontal grid lines at CC values: 0, 32, 64, 96, 127
+ * - Y-axis value labels on the left side
+ * - Clean, minimal appearance without dark background
+ */
+function draw_graph_background() local(i, level, weight, y) (
+  // The plot area is a very slightly lighter panel: it defines the drawing area
+  // without a heavy frame, and the margins stay black
+  gfx_r = 0.025; gfx_g = 0.025; gfx_b = 0.03; gfx_a = 1;
+  gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 1);
+
+  // The frame is the scale: its top edge is 127, its bottom edge is 0. Drawing
+  // two more lines on top of them would only double the border.
+  gfx_r = 0.34; gfx_g = 0.34; gfx_b = 0.36; gfx_a = 1;
+  gfx_rect(g_graph_margin_left, g_graph_start_y, g_graph_width, g_graph_actual_height, 0);
+
+  // Interior guidance at the quarter points, dashed and unlabelled: they help
+  // the eye estimate without competing with the bounds, which are the frame
+  // itself. 64 is the centre and slightly brighter than 32 and 96.
+  weight = 0;
+  i = 0;
+  loop(3,
+    level = i == 0 ? 32 : i == 1 ? 64 : 96;
+    y = g_graph_start_y + g_graph_actual_height
+        - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+
+    weight = level == 64 ? 0.30 : 0.24;
+    gfx_r = weight; gfx_g = weight; gfx_b = weight + 0.02; gfx_a = 1;
+    gfx_x = g_graph_margin_left;
+    loop(floor(g_graph_width / 8),
+      gfx_rect(gfx_x, y, 4, 1, 1);
+      gfx_x += 8;
+    );
+
+    i += 1;
+  );
+
+  // Labels in the margin, right-aligned, digits padded. The two bounds are
+  // kept inside the window: 127 sits just under the top edge, 0 just above the
+  // bottom one, the centre on its line.
+  gfx_setfont(1, "Arial", FONT_SIZE - 4);
+
+  i = 0;
+  loop(3,
+    level = i == 0 ? 0 : i == 1 ? 64 : 127;
+    y = g_graph_start_y + g_graph_actual_height
+        - ((level - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+
+    level == 127 ? ( y = g_graph_start_y + 1 ) :
+    level == 0   ? ( y = g_graph_start_y + g_graph_actual_height - (FONT_SIZE - 4) - 1 ) :
+                   ( y = y - (FONT_SIZE - 4) / 2 );
+
+    gfx_r = level == 64 ? 0.45 : 0.58;
+    gfx_g = level == 64 ? 0.45 : 0.58;
+    gfx_b = level == 64 ? 0.48 : 0.60; gfx_a = 1;
+    // No %3d padding: 127, 64 and 0 start on the same x as the CC rows, so the
+    // whole left column hangs from a single vertical
+    sprintf(#ylab, "%d", level);
+    gfx_x = g_graph_margin_left - Y_LABEL_OFFSET;
+    gfx_y = y;
+    gfx_drawstr(#ylab);
+
+    i += 1;
+  );
+
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+/**
+ * Draws vertical time grid lines and labels on X-axis
+ * 
+ * Creates tick marks every 1 second with time labels showing
+ * seconds relative to the oldest visible point in the window
+ */
+function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_major, tw, th) (
+  // A ruler: a faint line every second, a brighter one where there is a label.
+  // Ticks are counted *backwards from now*, so the labels read exactly -5s, -10s
+  // and stay aligned with the right edge while the window slides.
+  tick_interval = 1;
+  label_interval = slider3 <= 12 ? 1 : slider3 <= 24 ? 2 : 5;
+
+  k = 0;
+  loop(ceil(g_time_window / tick_interval) + 1,
+    t = g_time_end - (k * tick_interval);
+
+    t >= g_time_start ? (
+      x_pos = g_graph_margin_left + ((t - g_time_start) / g_time_window) * g_graph_width;
+
+      // The frame already draws both vertical edges, solid. A tick landing on
+      // one would put dashes on top of the border: at "now" that reads as a
+      // double line, one straight and one broken, where there is only one edge.
+      x_pos > g_graph_margin_left && x_pos < g_graph_margin_left + g_graph_width - 1 ? (
+        is_major = (k % label_interval) == 0;
+
+        // Dashed like the horizontal guides, so the plot is one texture:
+        // brighter where the label is, fainter in between
+        is_major ? (
+          gfx_r = 0.30; gfx_g = 0.30; gfx_b = 0.32;
+        ) : (
+          gfx_r = 0.20; gfx_g = 0.20; gfx_b = 0.22;
+        );
+        gfx_a = 1;
+        gfx_y = g_graph_start_y;
+        loop(ceil(g_graph_actual_height / 8),
+          gfx_rect(x_pos, gfx_y, 1, 4, 1);
+          gfx_y += 8;
+        );
+
+        // Labels on major ticks only, *outside* the plot like the value labels,
+        // centred under their tick (a ruler, not a tick with a caption), and
+        // never in the corner that belongs to "now"
+        (is_major && k > 0 && x_pos < g_graph_margin_left + g_graph_width - 38) ? (
+          gfx_setfont(1, "Arial", FONT_SIZE - 4);
+          gfx_r = 0.52; gfx_g = 0.52; gfx_b = 0.54;
+          sprintf(#tlab, "-%ds", k);
+          gfx_measurestr(#tlab, tw, th);
+          gfx_x = x_pos - (tw / 2);
+          gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
+          gfx_drawstr(#tlab);
+        );
+      );
+    );
+
+    k += 1;
+  );
+
+  // Right edge is the present: right-aligned on the border it names
+  gfx_setfont(1, "Arial", FONT_SIZE - 4);
+  gfx_r = 0.62; gfx_g = 0.62; gfx_b = 0.64;
+  gfx_measurestr("now", tw, th);
+  gfx_x = g_graph_margin_left + g_graph_width - (tw / 2);
+  gfx_y = g_graph_start_y + g_graph_actual_height + TIME_LABEL_OFFSET;
+  gfx_drawstr("now");
+  gfx_setfont(1, "Arial", FONT_SIZE);
+);
+
+// The relative ruler and value grid do not move with the traces. Cache only
+// this static layer; rows, controls and traces keep their normal draw order.
+function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
+  w = ceil(gfx_w);
+  h = ceil(gfx_h);
+  w > 0 && h > g_graph_start_y && w <= GRID_CACHE_MAX_DIM && h <= GRID_CACHE_MAX_DIM
+    && g_graph_width > 0 && g_graph_actual_height >= 0 ? (
+    gfx_getimgdim(GRID_CACHE_IMAGE, iw, ih);
+    rebuild = !g_grid_cache_valid || iw != w || ih != h
+      || g_grid_cache_w != w || g_grid_cache_h != h
+      || g_grid_cache_left != g_graph_margin_left
+      || g_grid_cache_top != g_graph_start_y
+      || g_grid_cache_width != g_graph_width
+      || g_grid_cache_height != g_graph_actual_height
+      || g_grid_cache_window != g_time_window
+      || g_grid_cache_font != FONT_SIZE
+      || g_grid_cache_scale != gfx_ext_retina;
+    rebuild ? (
+      g_grid_cache_valid = 0;
+      iw != w || ih != h ? gfx_setimgdim(GRID_CACHE_IMAGE, w, h);
+      gfx_getimgdim(GRID_CACHE_IMAGE, iw, ih);
+      iw == w && ih == h ? (
+        gfx_dest = GRID_CACHE_IMAGE;
+        gfx_mode = 0;
+        gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+        gfx_rect(0, 0, w, h, 1);
+        draw_graph_background();
+        draw_time_grid();
+        gfx_dest = -1;
+        g_grid_cache_w = w;
+        g_grid_cache_h = h;
+        g_grid_cache_left = g_graph_margin_left;
+        g_grid_cache_top = g_graph_start_y;
+        g_grid_cache_width = g_graph_width;
+        g_grid_cache_height = g_graph_actual_height;
+        g_grid_cache_window = g_time_window;
+        g_grid_cache_font = FONT_SIZE;
+        g_grid_cache_scale = gfx_ext_retina;
+        g_grid_cache_valid = 1;
+      );
+    );
+    g_grid_cache_valid ? (
+      // Do not overwrite the control bar already drawn above the plot. Copy
+      // 1:1, ignoring image alpha and filtering, then restore normal drawing.
+      top = max(0, floor(g_graph_start_y));
+      gfx_a = 1;
+      gfx_mode = 6;
+      gfx_blit(GRID_CACHE_IMAGE, 1, 0, 0, top, w, h - top, 0, top, w, h - top);
+      gfx_mode = 0;
+    ) : (
+      draw_graph_background();
+      draw_time_grid();
+    );
+  ) : (
+    g_grid_cache_valid = 0;
+    draw_graph_background();
+    draw_time_grid();
+  );
+);
+
+/**
+ * Draws CC data lines and points on the graph
+ * 
+ * One history traversal builds chronological point lists for the shared
+ * filtered selection. The lists are drawn in pair order, preserving trace
+ * overlap, line order and the selected dot-spacing policy.
+ *
+ * The index is GUI-owned; acquisition history and metric algorithms are unchanged.
+ * 
+ * @param visible_count Number of (CC#, channel) pairs in the visible selection
+ */
+// Retained exact-event renderer for differential developer probes. Production
+// uses the bounded temporal renderer below; this diagnostic ring is not retention.
+function draw_cc_data_lines_exact(visible_count) local(history_count, cc_idx, pair,
+                                                 cc_num, channel, first_point, prev_x, prev_y,
+                                                 hist_idx, base, h_time, h_val, tail, point, x, y,
+                                                 last_dot_x) (
+  // Mark this frame's selection without clearing all 2048 pair slots. Selection
+  // still comes exclusively from the shared filtered list, not another filter.
+  g_graph_generation += 1;
+  cc_idx = 0;
+  loop(visible_count,
+    pair = get_visible_cc_channel_pair(cc_idx);
+    pair >= 0 ? (
+      mem[MEM_GRAPH_SELECTED + pair] = g_graph_generation;
+      mem[MEM_GRAPH_HEAD + pair] = -1;
+      mem[MEM_GRAPH_TAIL + pair] = -1;
+    );
+    cc_idx += 1;
+  );
+
+  // One history traversal, regardless of selected pair count. Copy coordinates
+  // into GUI-owned memory and link each pair's points in chronological order.
+  // The source ring remains concurrently writable, as before: this index is
+  // not a claim of an atomic audio/GUI snapshot.
+  history_count = get_history_count();
+  hist_idx = 0;
+  visible_count > 0 && g_time_window > 0 ? (
+    loop(history_count,
+      base = get_history(hist_idx);
+      base >= 0 ? (
+        h_time = mem[base];
+        h_time >= g_time_start && h_time <= g_time_end ? (
+          pair = make_cc_channel_key(mem[base + 1], mem[base + 2]);
+          mem[MEM_GRAPH_SELECTED + pair] == g_graph_generation ? (
+            h_val = mem[base + 3];
+            mem[MEM_GRAPH_X + hist_idx] = g_graph_margin_left
+              + ((h_time - g_time_start) / g_time_window) * g_graph_width;
+            mem[MEM_GRAPH_Y + hist_idx] = g_graph_start_y + g_graph_actual_height
+              - ((h_val - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+            mem[MEM_GRAPH_NEXT + hist_idx] = -1;
+            tail = mem[MEM_GRAPH_TAIL + pair];
+            tail >= 0 ? mem[MEM_GRAPH_NEXT + tail] = hist_idx
+                      : mem[MEM_GRAPH_HEAD + pair] = hist_idx;
+            mem[MEM_GRAPH_TAIL + pair] = hist_idx;
+          );
+        );
+      );
+      hist_idx += 1;
+    );
+  );
+
+  // Preserve pair draw order (including overlap at trace intersections), line
+  // order and dot spacing. Pairs without visible points do no history searches.
+  cc_idx = 0;
+  loop(visible_count,
+    pair = get_visible_cc_channel_pair(cc_idx);
+    pair >= 0 ? (
+      cc_num = key_to_cc(pair);
+      channel = key_to_channel(pair);
+      get_cc_channel_color(cc_num, channel);
+      first_point = 1;
+      last_dot_x = -1000;
+      prev_x = 0;
+      prev_y = 0;
+      point = mem[MEM_GRAPH_HEAD + pair];
+      while(point >= 0) (
+        x = mem[MEM_GRAPH_X + point];
+        y = mem[MEM_GRAPH_Y + point];
+        first_point == 0 ? gfx_line(prev_x, prev_y, x, y);
+        slider5 != 2 ? (
+          slider5 == 1 ? (
+            gfx_circle(x, y, 2, 1);
+          ) : (
+            (x - last_dot_x) >= DOT_MIN_SPACING ? (
+              gfx_circle(x, y, 2, 1);
+              last_dot_x = x;
+            );
+          );
+        );
+        prev_x = x;
+        prev_y = y;
+        first_point = 0;
+        point = mem[MEM_GRAPH_NEXT + point];
+      );
+    );
+    cc_idx += 1;
+  );
+);
+
+// Draw one retained representative. DOTS means retained points, not every input
+// event: temporal aggregation deliberately bounds detail at high event density.
+function draw_temporal_point(t, value) local(x, y) (
+  t >= g_time_start && t <= g_time_end ? (
+    x = g_graph_margin_left + (t - g_time_start) / g_time_window * g_graph_width;
+    y = g_graph_start_y + g_graph_actual_height
+      - (value - g_y_range_min) / g_y_range_total * g_graph_actual_height;
+    // Singleton/constant buckets often repeat endpoints and extrema. Do not
+    // overpaint an identical marker or emit a zero-length segment for duplicates.
+    g_temporal_first || x != g_temporal_x || y != g_temporal_y ? (
+      g_temporal_first == 0 ? gfx_line(g_temporal_x, g_temporal_y, x, y);
+      slider5 != 2 ? (
+        slider5 == 1 || x - g_temporal_dot_x >= DOT_MIN_SPACING ? (
+          gfx_circle(x, y, 2, 1); g_temporal_dot_x = x;
+        );
+      );
+    );
+    g_temporal_x = x; g_temporal_y = y; g_temporal_first = 0;
+  );
+);
+
+function draw_cc_data_lines(visible_count) local(i, pair, tick, last_tick, base,
+                                               epoch, first_t, last_t, ends, extremes,
+                                               order, middle, lo, hi) (
+  epoch = g_history_epoch;
+  last_tick = floor(g_time_end * TIME_HISTORY_HZ);
+  i = 0;
+  loop(visible_count,
+    pair = get_visible_cc_channel_pair(i);
+    pair >= 0 ? (
+      get_cc_channel_color(key_to_cc(pair), key_to_channel(pair));
+      g_temporal_first = 1; g_temporal_dot_x = -1000;
+      tick = max(0, floor(g_time_start * TIME_HISTORY_HZ));
+      loop(max(0, last_tick - tick + 1),
+        base = MEM_TIME_HISTORY + (pair * TIME_HISTORY_BUCKETS + tick % TIME_HISTORY_BUCKETS) * TIME_HISTORY_STRIDE;
+        mem[base] == tick + 1 && mem[base + 1] == epoch ? (
+          first_t = mem[base + 2]; last_t = mem[base + 3];
+          ends = mem[base + 4]; extremes = mem[base + 5]; order = mem[base + 6];
+          // A concurrently replaced slot is rejected. Updates within a bucket
+          // are not an atomic snapshot; the same limitation applies to raw history.
+          mem[base] == tick + 1 && mem[base + 1] == epoch ? (
+            lo = extremes % 128; hi = floor(extremes / 128);
+            // Extrema are an envelope, not individual timestamped events.
+            // Clip their representative time to the visible part of the bucket
+            // so a partially intersected boundary cannot discard the envelope.
+            middle = (max(first_t, g_time_start) + min(last_t, g_time_end)) * 0.5;
+            draw_temporal_point(first_t, ends % 128);
+            lo != hi && last_t >= g_time_start && first_t <= g_time_end ? (
+              order == 0 ? (
+                draw_temporal_point(middle, lo); draw_temporal_point(middle, hi);
+              ) : (
+                draw_temporal_point(middle, hi); draw_temporal_point(middle, lo);
+              );
+            );
+            draw_temporal_point(last_t, floor(ends / 128));
+          );
+        );
+        tick += 1;
+      );
+    );
+    i += 1;
+  );
+);

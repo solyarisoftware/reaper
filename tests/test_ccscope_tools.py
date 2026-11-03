@@ -84,7 +84,7 @@ class HistoryProbeTests(unittest.TestCase):
     def test_old_exact_event_probe_rejects_temporal_renderer(self):
         module = self.load_tool('ccscope_rendering_probe')
         with self.assertRaisesRegex(ValueError, 'ccscope_history_probe'):
-            module.graph_function((ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text())
+            module.graph_function((ROOT / 'MIDI/ccscope/ccscope_plot.jsfx-inc').read_text())
 
     def test_acceptance_seed_populates_both_temporal_and_raw_history(self):
         module = self.load_tool('ccscope_acceptance_probe')
@@ -95,6 +95,45 @@ class HistoryProbeTests(unittest.TestCase):
         unseeded = module.instrument(source, 'candidate', seed_history=False)
         self.assertNotIn('add_temporal_history(accept_t,', unseeded)
         self.assertNotIn('g_clock_sec = 200;', unseeded)
+
+
+class PackageLayoutTests(unittest.TestCase):
+    def test_every_include_is_provided_present_and_imported(self):
+        import importlib.util
+        source = ROOT / 'MIDI/ccscope'
+        main = (source / 'ccscope.jsfx').read_text()
+        spec = importlib.util.spec_from_file_location(
+            'ccscope_acceptance_probe', ROOT / 'tools/ccscope_acceptance_probe.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        provided = {path.name for path in module.provides(source)}
+        imported = {line.split()[1] for line in main.splitlines()
+                    if line.startswith('import ')}
+        self.assertEqual(provided, imported)
+        on_disk = {path.name for path in source.glob('*.jsfx-inc')}
+        self.assertEqual(provided, on_disk)
+
+    def test_panels_do_not_call_each_other(self):
+        """A panel reads the frame state; it calls no other panel's function."""
+        import re
+        source = ROOT / 'MIDI/ccscope'
+        panels = ['ccscope_layout', 'ccscope_plot', 'ccscope_rows',
+                  'ccscope_status', 'ccscope_controlbar']
+        owner, bodies = {}, []
+        for panel in panels:
+            text = (source / f'{panel}.jsfx-inc').read_text()
+            for match in re.finditer(r'^function\s+([A-Za-z_]\w*)\s*\(', text, re.M):
+                owner[match.group(1)] = panel
+                bodies.append((panel, match.group(1), match.start()))
+        for index, (panel, name, start) in enumerate(bodies):
+            end = bodies[index + 1][2] if index + 1 < len(bodies) else None
+            body = (source / f'{panel}.jsfx-inc').read_text()[start:end]
+            code = re.sub(r'/\*.*?\*/', '', body, flags=re.S)
+            code = re.sub(r'//[^\n]*', '', code)
+            for call in set(re.findall(r'\b([A-Za-z_]\w*)\s*\(', code)):
+                other = owner.get(call)
+                self.assertIn(other, (None, panel),
+                              f'{panel}.{name} calls {other}.{call}: panels must stay leaves')
 
 
 class AcceptanceRunnerCleanupTests(unittest.TestCase):
