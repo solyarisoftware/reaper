@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.5
+// @version 0.7.6
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -35,6 +35,12 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.6 Retain up to 30 s independently for each CC/channel with 100 ms
+//         first/last/min/max buckets. DOTS shows retained representatives;
+//         extrema have approximate bucket timing, including boundary buckets.
+//         Freeze/Clear and WIN changes preserve the temporal-history contract.
+//         Storage fits the default 8M JSFX slots; metrics and MIDI unchanged.
+//         Native validation and limits: GitHub issue #5.
 //   0.7.5 Index graph points with one history traversal while preserving pair
 //         draw order and dot spacing. Cache the static grid, with direct drawing
 //         for unsupported image sizes, and skip undisplayed metric calculations.
@@ -225,7 +231,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.5
+version: 0.7.6
 date: 2026-11-03
 
 // Import utility libraries
@@ -242,7 +248,7 @@ slider1:0<0,127,1>-CC to Monitor (0=All)
 slider2:0<0,1,1>-Freeze (stop acquiring)
 slider3:10<1,30,1>-Time Window (seconds)
 slider4:0<0,1,1>-Clear history and metrics
-slider5:0<0,2,1{Auto (12 px),Every event,None}>-Dots on traces
+slider5:0<0,2,1{Auto (12 px),Every retained point,None}>-Dots on traces
 slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Channel to Monitor (0=All)
 slider7:0<0,1,1{Rows below,Rows beside}>-Pair list layout
 
@@ -659,7 +665,7 @@ function ctl_item_text(i, v) (
   i == 1 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
   i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
   i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
-  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every event"; ) : ( #ctl_item = "none"; ); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every point"; ) : ( #ctl_item = "none"; ); ) :
            ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); );
 );
 
@@ -1458,7 +1464,9 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
  * 
  * @param visible_count Number of (CC#, channel) pairs in the visible selection
  */
-function draw_cc_data_lines(visible_count) local(history_count, cc_idx, pair,
+// Retained exact-event renderer for differential developer probes. Production
+// uses the bounded temporal renderer below; this diagnostic ring is not retention.
+function draw_cc_data_lines_exact(visible_count) local(history_count, cc_idx, pair,
                                                  cc_num, channel, first_point, prev_x, prev_y,
                                                  hist_idx, base, h_time, h_val, tail, point, x, y,
                                                  last_dot_x) (
@@ -1545,6 +1553,70 @@ function draw_cc_data_lines(visible_count) local(history_count, cc_idx, pair,
   );
 );
 
+// Draw one retained representative. DOTS means retained points, not every input
+// event: temporal aggregation deliberately bounds detail at high event density.
+function draw_temporal_point(t, value) local(x, y) (
+  t >= g_time_start && t <= g_time_end ? (
+    x = g_graph_margin_left + (t - g_time_start) / g_time_window * g_graph_width;
+    y = g_graph_start_y + g_graph_actual_height
+      - (value - g_y_range_min) / g_y_range_total * g_graph_actual_height;
+    // Singleton/constant buckets often repeat endpoints and extrema. Do not
+    // overpaint an identical marker or emit a zero-length segment for duplicates.
+    g_temporal_first || x != g_temporal_x || y != g_temporal_y ? (
+      g_temporal_first == 0 ? gfx_line(g_temporal_x, g_temporal_y, x, y);
+      slider5 != 2 ? (
+        slider5 == 1 || x - g_temporal_dot_x >= DOT_MIN_SPACING ? (
+          gfx_circle(x, y, 2, 1); g_temporal_dot_x = x;
+        );
+      );
+    );
+    g_temporal_x = x; g_temporal_y = y; g_temporal_first = 0;
+  );
+);
+
+function draw_cc_data_lines(visible_count) local(i, pair, tick, last_tick, base,
+                                               epoch, first_t, last_t, ends, extremes,
+                                               order, middle, lo, hi) (
+  epoch = g_history_epoch;
+  last_tick = floor(g_time_end * TIME_HISTORY_HZ);
+  i = 0;
+  loop(visible_count,
+    pair = get_visible_cc_channel_pair(i);
+    pair >= 0 ? (
+      get_cc_channel_color(key_to_cc(pair), key_to_channel(pair));
+      g_temporal_first = 1; g_temporal_dot_x = -1000;
+      tick = max(0, floor(g_time_start * TIME_HISTORY_HZ));
+      loop(max(0, last_tick - tick + 1),
+        base = MEM_TIME_HISTORY + (pair * TIME_HISTORY_BUCKETS + tick % TIME_HISTORY_BUCKETS) * TIME_HISTORY_STRIDE;
+        mem[base] == tick + 1 && mem[base + 1] == epoch ? (
+          first_t = mem[base + 2]; last_t = mem[base + 3];
+          ends = mem[base + 4]; extremes = mem[base + 5]; order = mem[base + 6];
+          // A concurrently replaced slot is rejected. Updates within a bucket
+          // are not an atomic snapshot; the same limitation applies to raw history.
+          mem[base] == tick + 1 && mem[base + 1] == epoch ? (
+            lo = extremes % 128; hi = floor(extremes / 128);
+            // Extrema are an envelope, not individual timestamped events.
+            // Clip their representative time to the visible part of the bucket
+            // so a partially intersected boundary cannot discard the envelope.
+            middle = (max(first_t, g_time_start) + min(last_t, g_time_end)) * 0.5;
+            draw_temporal_point(first_t, ends % 128);
+            lo != hi && last_t >= g_time_start && first_t <= g_time_end ? (
+              order == 0 ? (
+                draw_temporal_point(middle, lo); draw_temporal_point(middle, hi);
+              ) : (
+                draw_temporal_point(middle, hi); draw_temporal_point(middle, lo);
+              );
+            );
+            draw_temporal_point(last_t, floor(ends / 128));
+          );
+        );
+        tick += 1;
+      );
+    );
+    i += 1;
+  );
+);
+
 /**
  * Draws status information text at the bottom of the UI
  * 
@@ -1624,7 +1696,7 @@ function draw_status_info(filtered_count, history_count) local() (
       );
     );
   ) : (
-    gfx_printf("%d s window · 1 s metrics", slider3);
+    gfx_printf("%d s window · 100 ms history · 1 s metrics", slider3);
 
     // Never hide bars silently, and say what to do about it: while rows are
     // hidden a taller window always fits more of them, because the rows are
@@ -1690,6 +1762,7 @@ function process_midi_messages() local(offset, msg1, msg2, msg3, status, cc_num,
       slider2 == 0 ? (
         store_cc_channel_value(cc_num, midi_channel, cc_val);
         add_to_history_with_channel(event_time_sec, cc_num, midi_channel, cc_val);
+        add_temporal_history(event_time_sec, make_cc_channel_key(cc_num, midi_channel), cc_val);
         update_metrics_for_cc_channel(cc_num, midi_channel, cc_val, event_time_sec);
       );
     );

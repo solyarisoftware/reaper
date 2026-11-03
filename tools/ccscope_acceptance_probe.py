@@ -13,18 +13,19 @@ import shutil
 
 SEED = '''
 accept_cookie = time_precise();
+g_clock_sec = 200;
 accept_i = 0;
 accept_pairs = max(1, gmem[3]);
 loop(MAX_HISTORY_ITEMS,
   accept_pair = accept_i % accept_pairs;
   accept_cc = accept_pair % 128;
   accept_ch = floor(accept_pair / 128);
-  accept_t = -(MAX_HISTORY_ITEMS - 1 - accept_i) / (accept_pairs * 16);
+  accept_t = 200 - (MAX_HISTORY_ITEMS - 1 - accept_i) / (accept_pairs * 16);
   accept_v = (floor(accept_i / accept_pairs) * 7 + accept_pair * 13) % 128;
   assign_color_to_cc(accept_cc);
   store_cc_channel_value(accept_cc, accept_ch, accept_v);
   add_to_history_with_channel(accept_t, accept_cc, accept_ch, accept_v);
-  accept_t >= -1 ? update_metrics_for_cc_channel(accept_cc, accept_ch, accept_v, accept_t);
+  accept_t >= 199 ? update_metrics_for_cc_channel(accept_cc, accept_ch, accept_v, accept_t);
   accept_i += 1;
 );
 '''
@@ -113,13 +114,17 @@ spl0 = 0; spl1 = 0;
 '''
 
 
-def instrument(source: str, variant: str) -> str:
+def instrument(source: str, variant: str, *, seed_history: bool = True) -> str:
     if 'options:gmem=' in source or 'accept_start =' in source:
         raise ValueError('Use an uninstrumented source, not an earlier probe')
+    seed = SEED if seed_history else '\naccept_cookie = time_precise();\n'
+    if seed_history and 'function draw_temporal_point(' in source:
+        marker = '  add_to_history_with_channel(accept_t, accept_cc, accept_ch, accept_v);'
+        seed = seed.replace(marker, marker + '\n  add_temporal_history(accept_t, make_cc_channel_key(accept_cc, accept_ch), accept_v);')
     replacements = {
         'desc:CCScope (MIDI CC oscilloscope)': f'desc:CCScope acceptance {variant}',
         'options:no_meter': 'options:no_meter\noptions:gmem=CCScopeAcceptance23',
-        '\n@block\n': SEED + '\n@block\naccept_block_start = time_precise();\n',
+        '\n@block\n': seed + '\n@block\naccept_block_start = time_precise();\n',
         '\n@sample\n': '''
 accept_block_seq += 1;
 gmem[2000 + (accept_block_seq % 2048)] = (time_precise() - accept_block_start) * 1000000;

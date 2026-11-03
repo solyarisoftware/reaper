@@ -118,6 +118,33 @@ only when the run finishes. Keep logs and raw CSVs outside the repository.
 This automation does not create a physical HiDPI display or prove hard-real-time
 schedulability. Declare actual display coverage and elapsed-timing limitations.
 
+## Temporal history native checks (#5)
+
+The exact-event graph-command differential is intentionally **not** an oracle
+for time-aggregated traces. It refuses the temporal renderer instead of silently
+validating the legacy diagnostic function. Grid pixel checks remain separate.
+
+```text
+python3 tools/ccscope_history_probe.py --output <new-temporary-effects-dir>
+```
+
+Load `history_checks.jsfx` only in an authorized disposable REAPER project.
+The probe copies current storage code and extracts the actual production renderer,
+intercepting only `gfx_line`/`gfx_circle` to capture its output. It tests a 40,000
+message/s synthetic history across 20 pairs for 32 s, all 2048 dense keys, sparse
+pairs, spike endpoints/ordered extrema, same-tick Clear, duplicate markers,
+partially visible boundary envelopes and expired bucket tags. Results are in
+`CCScopeHistory5` gmem: `[0]` checks, `[1]` failures, `[2]` completed. A green result
+requires completed=1 and failures=0; loading an FX alone is not a compile oracle.
+Native loops test deterministic storage logic, not real-time schedulability.
+
+The general acceptance builder seeds positive clock times and populates both raw
+and temporal history when present. `instrument(..., seed_history=False)` is available
+for real live-acquisition tests: it must not inject synthetic history into a
+30-second retention measurement. Exact MIDI input/output and audio-block timing
+remain independent checks. `DOTS` refers to retained representatives under temporal
+aggregation; extrema have bucket-level timing rather than original event offsets.
+
 ## Performance is a separate check
 
 These probes test correctness, not speed. Measure `@gfx` execution duration and

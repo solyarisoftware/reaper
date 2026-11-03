@@ -45,6 +45,7 @@ def check(root: Path) -> list[str]:
         'MEM_GRAPH_SELECTED': pairs, 'MEM_GRAPH_HEAD': pairs, 'MEM_GRAPH_TAIL': pairs,
         'MEM_GRAPH_NEXT': history, 'MEM_GRAPH_X': history, 'MEM_GRAPH_Y': history,
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],
+        'MEM_TIME_HISTORY': pairs * c['TIME_HISTORY_BUCKETS'] * c['TIME_HISTORY_STRIDE'],
     }
     regions = sorted((c[name], c[name] + size, name) for name, size in sizes.items())
     errors = []
@@ -55,6 +56,12 @@ def check(root: Path) -> list[str]:
         errors.append('Pair count or dense-key capacity does not fit')
     if c['CC_BLOCK_SIZE'] < 2 + c['MAX_EVENTS_PER_CC'] * 3:
         errors.append('Metric block cannot hold its declared events')
+    if c['TIME_HISTORY_BUCKETS'] < 30 * c['TIME_HISTORY_HZ'] + 1:
+        errors.append('Temporal history cannot retain the full 30-second window')
+    if c['TIME_HISTORY_STRIDE'] != 7:
+        errors.append('Temporal history fields do not fit declared stride')
+    if max(end for _, end, _ in regions) > 8388608:
+        errors.append('Memory ranges exceed the default JSFX 8M-slot capacity')
     if any(start < 0 or end <= start for start, end, _ in regions):
         errors.append('Invalid range bounds')
     return errors

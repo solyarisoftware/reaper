@@ -3,6 +3,20 @@
 Notable changes only — what someone using the plugin would notice. For the full history,
 including every intermediate step, `git log`.
 
+## 0.7.6 — 2026-11-03
+
+- **History spans the requested time window:** a per-pair 100 ms temporal ring
+  retains up to 30 s independently of aggregate event rate. First/last values
+  and ordered min/max survive aggregation; spikes are retained as an envelope,
+  not exact timestamped events. A partially visible boundary bucket has up to
+  100 ms of temporal uncertainty.
+- `DOTS` now explicitly refers to retained points. Freeze stops acquisition;
+  Clear invalidates all temporal history in constant time, and changing `WIN`
+  does not erase previously acquired data. Metrics and MIDI pass-through are
+  unchanged. Declared memory fits the default 8M-slot JSFX capacity.
+- Native retention/renderer checks and live validation:
+  https://github.com/solyarisoftware/reaper/issues/5
+
 ## 0.7.5 — 2026-11-03
 
 - **Less per-frame graph work**: one history traversal builds the per-pair point lists,

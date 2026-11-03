@@ -35,11 +35,11 @@ The proposal holds the protocols, the limitations and the acceptance criteria.
 
 ## Bugs
 
-| issue | what it is |
-|---|---|
-| [#5](../../issues/5) | history is fixed at 2000 events; size it from the time window |
+Current bug reports: https://github.com/solyarisoftware/reaper/issues?q=is%3Aissue+is%3Aopen+label%3Abug
 
-Closed: [#7](../../issues/7) rates read up to 10% high; [#3](../../issues/3) jitter over one
+Closed: [#5](https://github.com/solyarisoftware/reaper/issues/5) temporal history
+retention, fixed in 0.7.6 with per-pair 100 ms first/last/min/max buckets;
+[#7](../../issues/7) rates read up to 10% high; [#3](../../issues/3) jitter over one
 interval; [#2](../../issues/2) metrics saturating above 200 events/s; [#4](../../issues/4)
 channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0.6.4.
 
@@ -52,8 +52,8 @@ channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0
 | [#17](../../issues/17) | recent input activity in the status line |
 
 Completed in 0.7.5: [#23](https://github.com/solyarisoftware/reaper/issues/23),
-rendering performance. Validation and measured limits stay in that issue; history
-retention remains the separate bug #5.
+rendering performance. Validation and measured limits stay in that issue.
+History retention was addressed separately in 0.7.6 through #5.
 
 An open issue is not a promise of implementation, priority or a delivery date.
 

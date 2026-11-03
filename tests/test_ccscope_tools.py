@@ -29,6 +29,18 @@ class MemoryMapTests(unittest.TestCase):
     def test_current_ranges_fit(self):
         self.assertEqual(MEMORY.check(self.source), [])
 
+    def test_temporal_history_overlap_is_rejected(self):
+        self.replace('MEM_TIME_HISTORY = 3120000;', 'MEM_TIME_HISTORY = 30000;')
+        self.assertTrue(any('overlaps' in error for error in MEMORY.check(self.source)))
+
+    def test_temporal_history_must_cover_thirty_seconds(self):
+        self.replace('TIME_HISTORY_BUCKETS = 301;', 'TIME_HISTORY_BUCKETS = 300;')
+        self.assertTrue(any('30-second' in error for error in MEMORY.check(self.source)))
+
+    def test_temporal_history_must_fit_default_memory(self):
+        self.replace('TIME_HISTORY_BUCKETS = 301;', 'TIME_HISTORY_BUCKETS = 1000;')
+        self.assertTrue(any('8M-slot' in error for error in MEMORY.check(self.source)))
+
     def test_detects_graph_index_overlap(self):
         self.replace('MEM_GRAPH_Y = 22772;', 'MEM_GRAPH_Y = 20772;')
         self.assertTrue(any('MEM_GRAPH' in error and 'overlaps' in error
@@ -45,6 +57,44 @@ class MemoryMapTests(unittest.TestCase):
     def test_wider_pair_key_is_rejected(self):
         self.replace('  (cc_num << 4) | channel\n', '  (cc_num << 5) | channel\n')
         self.assertTrue(any('dense-key' in error for error in MEMORY.check(self.source)))
+
+
+class HistoryProbeTests(unittest.TestCase):
+    def load_tool(self, name):
+        spec = importlib.util.spec_from_file_location(name, ROOT / 'tools' / (name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_probe_uses_actual_renderer_and_copies_current_storage(self):
+        module = self.load_tool('ccscope_history_probe')
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new'
+            module.build(ROOT / 'MIDI/ccscope', output)
+            text = (output / 'history_checks.jsfx').read_text()
+            self.assertIn('function draw_temporal_point(', text)
+            self.assertIn('middle = (max(first_t, g_time_start)', text)
+            self.assertIn('history_verify(history_dots==1)', text)
+            self.assertNotIn('1e20', text)  # Unsupported EEL2 literal caused a native false start.
+            self.assertEqual((output / 'ccscope_utils.jsfx-inc').read_bytes(),
+                             (ROOT / 'MIDI/ccscope/ccscope_utils.jsfx-inc').read_bytes())
+            with self.assertRaises(ValueError):
+                module.build(ROOT / 'MIDI/ccscope', output)
+
+    def test_old_exact_event_probe_rejects_temporal_renderer(self):
+        module = self.load_tool('ccscope_rendering_probe')
+        with self.assertRaisesRegex(ValueError, 'ccscope_history_probe'):
+            module.graph_function((ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text())
+
+    def test_acceptance_seed_populates_both_temporal_and_raw_history(self):
+        module = self.load_tool('ccscope_acceptance_probe')
+        source = (ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text()
+        seeded = module.instrument(source, 'candidate')
+        self.assertIn('g_clock_sec = 200;', seeded)
+        self.assertIn('add_temporal_history(accept_t,', seeded)
+        unseeded = module.instrument(source, 'candidate', seed_history=False)
+        self.assertNotIn('add_temporal_history(accept_t,', unseeded)
+        self.assertNotIn('g_clock_sec = 200;', unseeded)
 
 
 class AcceptanceRunnerCleanupTests(unittest.TestCase):

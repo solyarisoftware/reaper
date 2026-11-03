@@ -19,6 +19,8 @@ import shutil
 
 
 def graph_function(source: str) -> str:
+    if 'function draw_temporal_point(' in source:
+        raise ValueError('Temporal history intentionally changes graph commands; use ccscope_history_probe.py instead of exact-event differential tests')
     start = source.index('function draw_cc_data_lines(')
     end = source.index('\n/**', start)
     result = source[start:end].rstrip()

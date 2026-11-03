@@ -71,7 +71,46 @@ MEM_GRAPH_NEXT = 18772;       // 18772..20771 next point, MAX_HISTORY_ITEMS slot
 MEM_GRAPH_X = 20772;          // 20772..22771 copied point x, MAX_HISTORY_ITEMS slots
 MEM_GRAPH_Y = 22772;          // 22772..24771 copied point y, MAX_HISTORY_ITEMS slots
 
+// Temporal history is independent of the raw-event diagnostic ring. Each pair
+// owns 301 slots: 30 seconds plus the partially intersected boundary bucket.
+// Seven doubles: tick tag, clear epoch, first/last time, packed first/last,
+// packed min/max, extrema order. Total memory stays below JSFX's 8M-slot default.
+MEM_TIME_HISTORY = 3120000;
+TIME_HISTORY_BUCKETS = 301;
+TIME_HISTORY_STRIDE = 7;
+TIME_HISTORY_HZ = 10;
+g_history_epoch = 1;
+// @init only: do not leave valid tags from a previous sample-rate/recompile reset.
+memset(MEM_TIME_HISTORY, 0, 2048 * TIME_HISTORY_BUCKETS * TIME_HISTORY_STRIDE);
 g_graph_generation = 0;
+
+function add_temporal_history(timestamp, pair, value) local(tick, base, packed, lo, hi, epoch) (
+  // A GUI Clear during this update must not relabel a pre-Clear event as new.
+  epoch = g_history_epoch;
+  tick = floor(timestamp * TIME_HISTORY_HZ);
+  base = MEM_TIME_HISTORY + (pair * TIME_HISTORY_BUCKETS + tick % TIME_HISTORY_BUCKETS) * TIME_HISTORY_STRIDE;
+  mem[base] != tick + 1 || mem[base + 1] != epoch ? (
+    // Publish the validity tag last; readers also verify it after copying.
+    mem[base] = 0;
+    mem[base + 1] = epoch;
+    mem[base + 2] = timestamp;
+    mem[base + 3] = timestamp;
+    mem[base + 4] = value + value * 128;
+    mem[base + 5] = value + value * 128;
+    mem[base + 6] = 0;
+    mem[base] = tick + 1;
+  ) : (
+    mem[base] = 0;
+    mem[base + 3] = timestamp;
+    mem[base + 4] = (mem[base + 4] % 128) + value * 128;
+    packed = mem[base + 5];
+    lo = packed % 128; hi = floor(packed / 128);
+    value < lo ? (lo = value; mem[base + 6] = 1;);
+    value > hi ? (hi = value; mem[base + 6] = 0;);
+    mem[base + 5] = lo + hi * 128;
+    mem[base] = tick + 1;
+  );
+);
 
 // ========== CONFIGURATION ==========
 MAX_HISTORY_ITEMS = 2000;    // Maximum history buffer size
@@ -396,6 +435,9 @@ function get_history_count() (
 
 // Clears the history buffer
 function clear_history() (
+  // Invalidate temporal history in O(1), without clearing millions of slots
+  // from the GUI thread. New events start a fresh bucket even within one tick.
+  g_history_epoch += 1;
   mem[MEM_HISTORY_WRITE] = 0;
   mem[MEM_HISTORY_COUNT] = 0;
 );

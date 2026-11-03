@@ -25,7 +25,8 @@ channel, or one CC on one channel.
     restores the default;
   - `CC` (`all` or one controller), `CH` (`all` or one channel);
   - `WIN` — the time window, 1–30 s; the time axis is labelled from `-10s` to `now`;
-  - `DOTS` — `auto` (one every 12 px), `every event`, `none`;
+  - `DOTS` — `auto` (one every 12 px), `every point`, `none`;
+    points are retained representatives, not every original MIDI event;
   - `ROWS` — `below` or `beside` (see below);
   - `FREEZE` — stops acquisition (MIDI still passes through) so a reading can be examined;
   - `CLEAR` — wipes history and metrics.
@@ -34,6 +35,15 @@ channel, or one CC on one channel.
   ~460 px of width the last cells are clipped, and at that size the plot is not much of a plot
   either. The bar spans the plot: the selectors start on its left edge and the two buttons sit
   flush with its right edge, so one vertical line runs from the controls down through the frame.
+- **Temporal history (0.7.6):** each (CC, channel) owns 301 buckets
+  of 100 ms, retaining the full maximum 30 s without competition from other
+  pairs or a rate-dependent event limit. Each bucket retains first/last values
+  and min/max, in extrema order. Extrema form a time-aggregated envelope, not
+  exact event timestamps; a partially visible boundary bucket can include up
+  to 100 ms of uncertainty. Changing `WIN` does not erase retained data.
+  Empty buckets do not invent events; old tags expire by time. Total declared
+  memory fits the default 8M JSFX slots (about 59.5 MB of doubles), so actual
+  process memory can increase compared with the previous 2,000-event ring.
 - The two filters (which CC, which channel) combine, so *CC1 on channel 3*, *every CC on
   channel 3* and *CC1 on every channel* are all selections; they share one list, and the graph
   and the bars read that list, so they cannot disagree about what is on screen.
