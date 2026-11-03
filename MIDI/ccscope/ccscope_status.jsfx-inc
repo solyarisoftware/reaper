@@ -18,7 +18,7 @@
 
 @init
 
-function draw_status_info(filtered_count, history_count) local() (
+function draw_status_info(filtered_count) local() (
   gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
   gfx_x = 10;
   gfx_y = gfx_h - STATUS_TEXT_MARGIN + 5;

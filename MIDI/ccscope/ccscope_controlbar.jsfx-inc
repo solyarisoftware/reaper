@@ -29,7 +29,7 @@
 //                                        the host draws the item text: EEL2 has no
 //                                        array of strings, so a module cannot own
 //                                        the vocabulary of someone else's list
-//   cbm_has_labels(), cbm_hover(), cbm_open(), cbm_menu_x/y/w/rows/count/scroll(),
+//   cbm_has_labels(), cbm_hover(), cbm_open(), cbm_menu_x/y/w/rows/scroll(),
 //   cbm_cell_x(i), cbm_cell_w(i)
 //                                        published state, for the host's own logic
 //                                        and for a test harness that has to know
@@ -43,8 +43,9 @@
 //
 // MEMORY
 //   The host passes the base address; the module claims nothing on its own, so the
-//   host's address-space map stays the host's. cbm_bytes() says how much block to
-//   reserve; the offsets inside it are the CBM_* constants below.
+//   host's own address-space map stays the host's and only the size (CBM_ARRAYS_END)
+//   has to be reserved there. The offsets inside the block are the CBM_* constants
+//   below.
 //
 // STATE OUTSIDE mem[]
 //   EEL2 strings cannot be stored in mem[] and cannot be indexed, so the cells'
@@ -135,9 +136,6 @@ function cbm_init(base, cells) local(i) (
   0;
 );
 
-/** How many slots of the host's mem[] this module needs */
-function cbm_bytes() ( CBM_ARRAYS_END );
-
 /** The pixels: only what a host may reasonably want to differ */
 function cbm_style(gap, pad, corner, row_h, menu_rows, menu_min_w, drop) (
   mem[g_cbm_base + CBM_ST_GAP] = gap;
@@ -184,7 +182,6 @@ function cbm_menu_x() ( mem[g_cbm_base + CBM_MENU_X] );
 function cbm_menu_y() ( mem[g_cbm_base + CBM_MENU_Y] );
 function cbm_menu_w() ( mem[g_cbm_base + CBM_MENU_W] );
 function cbm_menu_rows() ( mem[g_cbm_base + CBM_MENU_ROWS] );
-function cbm_menu_count() ( mem[g_cbm_base + CBM_MENU_COUNT] );
 function cbm_menu_scroll() ( mem[g_cbm_base + CBM_MENU_SCROLL] );
 
 // ========== VALUES: IN FROM THE HOST, OUT TO THE HOST ==========

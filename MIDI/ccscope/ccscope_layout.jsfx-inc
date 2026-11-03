@@ -41,7 +41,6 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   g_graph_start_y = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + CTRL_BAR_GAP;
   g_graph_margin_left = PLOT_LEFT;
   g_graph_margin_right = PLOT_RIGHT;  // half of "now" when it is centred on the last line
-  g_graph_margin_bottom = 10;
 
   // ========== WHICH LAYOUT: BESIDE IF ASKED AND IF IT FITS ==========
   // The column has a fixed width, so "does it fit" is a subtraction: the plot
@@ -58,7 +57,6 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
 
   g_layout_side ? (
     // ========== BESIDE: THE COLUMN OWNS THE RIGHT EDGE, THE PLOT KEEPS HEIGHT ==========
-    g_column_width = column_width;
     g_column_x = gfx_w - column_width - SIDE_PAD;
     g_graph_width = g_column_x - SIDE_COLUMN_GAP - g_graph_margin_left;
     g_graph_actual_height = max(gfx_h - g_graph_start_y - STATUS_TEXT_MARGIN - SIDE_TIME_LABEL_BAND, 40);
@@ -119,7 +117,6 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
   // Any padding here is dead space that makes the scale look like it continues
   // beyond the limits of a 7-bit controller.
   g_y_range_min = 0;
-  g_y_range_max = 127;
   g_y_range_total = 127;
 
 );

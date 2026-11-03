@@ -42,7 +42,7 @@ gmem[6] = g_clock_sec;
 gmem[7] = get_history_count();
 gmem[8] = mem[MEM_HISTORY_WRITE];
 gmem[10] = gfx_w; gmem[11] = gfx_h;
-gmem[12] = slider2; gmem[13] = g_menu_open; gmem[14] = g_hover_cell;
+gmem[12] = slider2; gmem[13] = cbm_open(); gmem[14] = cbm_hover();
 gmem[15] = g_grid_cache_valid; gmem[16] = g_layout_side;
 gmem[17] = filtered_count; gmem[18] = g_metrics_tier;
 gmem[19] = accept_grid_calls;
@@ -57,8 +57,8 @@ loop(7,
 gmem[60] = g_metrics_x; gmem[61] = g_start_y; gmem[62] = g_visible_bars;
 gmem[63] = FONT_SIZE; gmem[64] = gfx_ext_retina;
 gmem[71] = g_side_fallback; gmem[72] = g_time_end;
-gmem[73] = g_menu_x; gmem[74] = g_menu_y;
-gmem[75] = g_menu_scroll; gmem[76] = g_menu_rows;
+gmem[73] = cbm_menu_x(); gmem[74] = cbm_menu_y();
+gmem[75] = cbm_menu_scroll(); gmem[76] = cbm_menu_rows();
 gmem[77] = gfx_ext_flags;
 gmem[78] = cbm_menu_w(); gmem[79] = cbm_has_labels();
 gmem[91] = accept_cookie;
@@ -137,6 +137,12 @@ function cbm_cell_x(i) ( mem[MEM_CTL_X + i] );
 function cbm_cell_w(i) ( mem[MEM_CTL_W + i] );
 function cbm_menu_w() ( g_menu_w );
 function cbm_has_labels() ( g_bar_has_labels );
+function cbm_open() ( g_menu_open );
+function cbm_hover() ( g_hover_cell );
+function cbm_menu_x() ( g_menu_x );
+function cbm_menu_y() ( g_menu_y );
+function cbm_menu_rows() ( g_menu_rows );
+function cbm_menu_scroll() ( g_menu_scroll );
 '''
 
 

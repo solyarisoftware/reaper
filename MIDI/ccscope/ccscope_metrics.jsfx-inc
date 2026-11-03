@@ -101,7 +101,6 @@ metrics_base = 30000;
 // the total extent is 30000 + 2048 * 1502 = 3,106,096 slots.
 CC_BLOCK_SIZE = 2 + (MAX_EVENTS_PER_CC * 3);
 CHANNELS_PER_CC = 16;
-CC_METRICS_BLOCKS = 128 * CHANNELS_PER_CC;  // 2048 total blocks
 
 /**
  * Gets the memory address for a specific (CC#, Channel) pair's metrics block

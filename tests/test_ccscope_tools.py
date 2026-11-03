@@ -41,9 +41,9 @@ class MemoryMapTests(unittest.TestCase):
         self.replace('TIME_HISTORY_BUCKETS = 301;', 'TIME_HISTORY_BUCKETS = 1000;')
         self.assertTrue(any('8M-slot' in error for error in MEMORY.check(self.source)))
 
-    def test_detects_graph_index_overlap(self):
-        self.replace('MEM_GRAPH_Y = 22772;', 'MEM_GRAPH_Y = 20772;')
-        self.assertTrue(any('MEM_GRAPH' in error and 'overlaps' in error
+    def test_detects_control_bar_block_overlap(self):
+        self.replace('MEM_CBM_BASE = 12612;', 'MEM_CBM_BASE = 2304;')  # inside MEM_CC_SORTED
+        self.assertTrue(any('MEM_CBM' in error and 'overlaps' in error
                             for error in MEMORY.check(self.source)))
 
     def test_history_growth_requires_resizing_all_ranges(self):

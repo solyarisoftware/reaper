@@ -42,8 +42,6 @@ def check(root: Path) -> list[str]:
         'MEM_HISTORY_WRITE': 1, 'MEM_HISTORY_COUNT': 1,
         'MEM_NEXT_COLOR': 1, 'MEM_PAIR_LIST_COUNT': 1,
         'MEM_CBM_BASE': c['MEM_CBM_SIZE'],
-        'MEM_GRAPH_SELECTED': pairs, 'MEM_GRAPH_HEAD': pairs, 'MEM_GRAPH_TAIL': pairs,
-        'MEM_GRAPH_NEXT': history, 'MEM_GRAPH_X': history, 'MEM_GRAPH_Y': history,
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],
         'MEM_TIME_HISTORY': pairs * c['TIME_HISTORY_BUCKETS'] * c['TIME_HISTORY_STRIDE'],
     }
@@ -76,7 +74,7 @@ def main() -> int:
     for error in errors:
         print(f'FAIL: {error}')
     if not errors:
-        print('PASS: all CCScope ranges, graph index, pair keys and metric capacity fit')
+        print('PASS: all CCScope ranges, pair keys, control-bar block and metric capacity fit')
     return bool(errors)
 
 

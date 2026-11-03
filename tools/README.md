@@ -51,7 +51,7 @@ The UI reports completion. Namespace `CCScopeRenderingTest23` also exposes:
 | 23 / 24 | Expected / actual command count |
 
 To verify the test can fail, add `+ 1` to the generated candidate's
-`x = mem[MEM_GRAPH_X + point]` assignment. The test must fail. Regenerate the
+`x = mem[MEM_CC_SORTED + pair]` assignment. The test must fail. Regenerate the
 unmodified probe afterward. Never apply this mutation to production sources.
 
 ## Native grid-pixel regression

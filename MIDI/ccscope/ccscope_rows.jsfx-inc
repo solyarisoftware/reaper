@@ -238,7 +238,7 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
  * window stays clean the rest of the time, and nothing has to be read in the
  * README before the numbers make sense.
  */
-function draw_metric_tooltip() local(i, y_pos, hit, bx, by, bw, bh, lh) (
+function draw_metric_tooltip() local(i, y_pos, hit, bx, by, bw, bh) (
   hit = 0;
   y_pos = g_start_y;
   i = 0;

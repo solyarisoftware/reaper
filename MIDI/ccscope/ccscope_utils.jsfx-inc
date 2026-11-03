@@ -60,21 +60,16 @@ MEM_HISTORY_COUNT = 12609;    // item count
 MEM_NEXT_COLOR = 12610;       // next colour index to assign
 MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
 
-// GUI-owned graph index: the audio writer never accesses these ranges. Build
-// chronological per-pair lists once per frame, then draw in the usual pair order.
-MEM_GRAPH_SELECTED = 12628;   // 12628..14675 frame generation per dense pair key
-MEM_GRAPH_HEAD = 14676;       // 14676..16723 first visible point per pair
-MEM_GRAPH_TAIL = 16724;       // 16724..18771 last visible point per pair
-MEM_GRAPH_NEXT = 18772;       // 18772..20771 next point, MAX_HISTORY_ITEMS slots
-MEM_GRAPH_X = 20772;          // 20772..22771 copied point x, MAX_HISTORY_ITEMS slots
-MEM_GRAPH_Y = 22772;          // 22772..24771 copied point y, MAX_HISTORY_ITEMS slots
-
 // The control-bar module owns a block of its own: geometry, values and pointer
 // state of the cells and of the open list. Its internal layout is declared in
 // ccscope_controlbar.jsfx-inc (the CBM_* constants); only the size lives here,
 // because the address space has one owner and one checker.
-MEM_CBM_BASE = 24772;         // 24772..24867 control-bar module block
+MEM_CBM_BASE = 12612;         // 12612..12707 control-bar module block
 MEM_CBM_SIZE = 96;
+
+// The temporal ring is the only large range, and it starts high so the small
+// per-key ranges above stay readable as a block: 0..12707 is everything that is
+// indexed by CC, channel or cell, and 3120000 is the ring behind it.
 
 // Temporal history is independent of the raw-event diagnostic ring. Each pair
 // owns 301 slots: 30 seconds plus the partially intersected boundary bucket.
@@ -87,7 +82,6 @@ TIME_HISTORY_HZ = 10;
 g_history_epoch = 1;
 // @init only: do not leave valid tags from a previous sample-rate/recompile reset.
 memset(MEM_TIME_HISTORY, 0, 2048 * TIME_HISTORY_BUCKETS * TIME_HISTORY_STRIDE);
-g_graph_generation = 0;
 
 function add_temporal_history(timestamp, pair, value) local(tick, base, packed, lo, hi, epoch) (
   // A GUI Clear during this update must not relabel a pre-Clear event as new.
@@ -167,31 +161,6 @@ function assign_color_to_cc(cc_num) local(color_idx, current_idx) (
     // Increment for next CC (cycle 0-11)
     mem[MEM_NEXT_COLOR] = (current_idx + 1) % COLOR_PALETTE_SIZE;
   );
-);
-
-// Sets gfx color variables (gfx_r, gfx_g, gfx_b, gfx_a) to the color
-// assigned to the given CC number (independent of channel)
-function get_cc_color(cc_num) local(color_idx, base) (
-  // Get assigned color index
-  color_idx = mem[MEM_CC_COLORS + cc_num];
-  
-  // Safety check: if not assigned, assign now
-  color_idx < 0 ? (
-    assign_color_to_cc(cc_num);
-    color_idx = mem[MEM_CC_COLORS + cc_num];
-  );
-  
-  // Additional safety: ensure color index is valid
-  color_idx < 0 || color_idx >= COLOR_PALETTE_SIZE ? (
-    color_idx = 0;
-  );
-  
-  // Get color from palette and set gfx variables
-  base = MEM_COLOR_PALETTE + (color_idx * 3);
-  gfx_r = mem[base];
-  gfx_g = mem[base + 1];
-  gfx_b = mem[base + 2];
-  gfx_a = 1;
 );
 
 // Sets gfx color for a (CC#, Channel) pair. The hue belongs to the CC number
@@ -303,13 +272,6 @@ function is_cc_active(cc_num) (
   mem[MEM_CC_ACTIVE + cc_num]
 );
 
-// Checks if a specific (CC#, Channel) pair has been received
-// (a CC value is always 0..127, so testing the stored value cannot tell
-// "received 0" from "never received": ask the channel bitmask instead)
-function is_cc_channel_active(cc_num, channel) (
-  (mem[MEM_CC_CHANNEL_ACTIVE + cc_num] & (1 << channel)) != 0
-);
-
 /**
  * Builds the list of (CC#, Channel) pairs that are both ACTIVE and VISIBLE.
  *
@@ -403,35 +365,6 @@ function add_to_history_with_channel(timestamp, cc_num, channel, cc_value) local
 // Automatically overwrites oldest data when full
 
 
-/**
- * Retrieves a history item by index (0 = oldest, count-1 = newest)
- * Returns base memory address of quadruplet, or -1 if invalid index
- * Access data as: mem[base] = timestamp, mem[base+1] = cc_num, 
- *                 mem[base+2] = channel, mem[base+3] = value
- * @param index History index (0 = oldest)
- * @return Memory base address or -1
- */
-function get_history(index) local(count, write_pos, actual_pos, base)
-(
-  count = mem[MEM_HISTORY_COUNT];
-  index >= count ? (
-    -1  // Invalid index
-  ) : (
-    write_pos = mem[MEM_HISTORY_WRITE];
-    
-    // Calculate actual position in circular buffer
-    count < MAX_HISTORY_ITEMS ? (
-      // Buffer not full yet, items are sequential from 0
-      actual_pos = index;
-    ) : (
-      // Buffer is full, oldest item is at write_pos
-      actual_pos = (write_pos + index) % MAX_HISTORY_ITEMS;
-    );
-    
-    base = MEM_HISTORY_BASE + (actual_pos * 4);  // 4 items per entry
-    base  // Return base address
-  );
-);
 
 // Returns the current number of items in history
 function get_history_count() (

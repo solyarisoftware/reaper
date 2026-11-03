@@ -234,105 +234,8 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
   );
 );
 
-/**
- * Draws CC data lines and points on the graph
- * 
- * One history traversal builds chronological point lists for the shared
- * filtered selection. The lists are drawn in pair order, preserving trace
- * overlap, line order and the selected dot-spacing policy.
- *
- * The index is GUI-owned; acquisition history and metric algorithms are unchanged.
- * 
- * @param visible_count Number of (CC#, channel) pairs in the visible selection
- */
 // Retained exact-event renderer for differential developer probes. Production
 // uses the bounded temporal renderer below; this diagnostic ring is not retention.
-function draw_cc_data_lines_exact(visible_count) local(history_count, cc_idx, pair,
-                                                 cc_num, channel, first_point, prev_x, prev_y,
-                                                 hist_idx, base, h_time, h_val, tail, point, x, y,
-                                                 last_dot_x) (
-  // Mark this frame's selection without clearing all 2048 pair slots. Selection
-  // still comes exclusively from the shared filtered list, not another filter.
-  g_graph_generation += 1;
-  cc_idx = 0;
-  loop(visible_count,
-    pair = get_visible_cc_channel_pair(cc_idx);
-    pair >= 0 ? (
-      mem[MEM_GRAPH_SELECTED + pair] = g_graph_generation;
-      mem[MEM_GRAPH_HEAD + pair] = -1;
-      mem[MEM_GRAPH_TAIL + pair] = -1;
-    );
-    cc_idx += 1;
-  );
-
-  // One history traversal, regardless of selected pair count. Copy coordinates
-  // into GUI-owned memory and link each pair's points in chronological order.
-  // The source ring remains concurrently writable, as before: this index is
-  // not a claim of an atomic audio/GUI snapshot.
-  history_count = get_history_count();
-  hist_idx = 0;
-  visible_count > 0 && g_time_window > 0 ? (
-    loop(history_count,
-      base = get_history(hist_idx);
-      base >= 0 ? (
-        h_time = mem[base];
-        h_time >= g_time_start && h_time <= g_time_end ? (
-          pair = make_cc_channel_key(mem[base + 1], mem[base + 2]);
-          mem[MEM_GRAPH_SELECTED + pair] == g_graph_generation ? (
-            h_val = mem[base + 3];
-            mem[MEM_GRAPH_X + hist_idx] = g_graph_margin_left
-              + ((h_time - g_time_start) / g_time_window) * g_graph_width;
-            mem[MEM_GRAPH_Y + hist_idx] = g_graph_start_y + g_graph_actual_height
-              - ((h_val - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
-            mem[MEM_GRAPH_NEXT + hist_idx] = -1;
-            tail = mem[MEM_GRAPH_TAIL + pair];
-            tail >= 0 ? mem[MEM_GRAPH_NEXT + tail] = hist_idx
-                      : mem[MEM_GRAPH_HEAD + pair] = hist_idx;
-            mem[MEM_GRAPH_TAIL + pair] = hist_idx;
-          );
-        );
-      );
-      hist_idx += 1;
-    );
-  );
-
-  // Preserve pair draw order (including overlap at trace intersections), line
-  // order and dot spacing. Pairs without visible points do no history searches.
-  cc_idx = 0;
-  loop(visible_count,
-    pair = get_visible_cc_channel_pair(cc_idx);
-    pair >= 0 ? (
-      cc_num = key_to_cc(pair);
-      channel = key_to_channel(pair);
-      get_cc_channel_color(cc_num, channel);
-      first_point = 1;
-      last_dot_x = -1000;
-      prev_x = 0;
-      prev_y = 0;
-      point = mem[MEM_GRAPH_HEAD + pair];
-      while(point >= 0) (
-        x = mem[MEM_GRAPH_X + point];
-        y = mem[MEM_GRAPH_Y + point];
-        first_point == 0 ? gfx_line(prev_x, prev_y, x, y);
-        slider5 != 2 ? (
-          slider5 == 1 ? (
-            gfx_circle(x, y, 2, 1);
-          ) : (
-            (x - last_dot_x) >= DOT_MIN_SPACING ? (
-              gfx_circle(x, y, 2, 1);
-              last_dot_x = x;
-            );
-          );
-        );
-        prev_x = x;
-        prev_y = y;
-        first_point = 0;
-        point = mem[MEM_GRAPH_NEXT + point];
-      );
-    );
-    cc_idx += 1;
-  );
-);
 
 // Draw one retained representative. DOTS means retained points, not every input
 // event: temporal aggregation deliberately bounds detail at high event density.
@@ -355,6 +258,17 @@ function draw_temporal_point(t, value) local(x, y) (
   );
 );
 
+/**
+ * Draws CC data lines and points on the graph
+ * 
+ * One history traversal builds chronological point lists for the shared
+ * filtered selection. The lists are drawn in pair order, preserving trace
+ * overlap, line order and the selected dot-spacing policy.
+ *
+ * The index is GUI-owned; acquisition history and metric algorithms are unchanged.
+ * 
+ * @param visible_count Number of (CC#, channel) pairs in the visible selection
+ */
 function draw_cc_data_lines(visible_count) local(i, pair, tick, last_tick, base,
                                                epoch, first_t, last_t, ends, extremes,
                                                order, middle, lo, hi) (

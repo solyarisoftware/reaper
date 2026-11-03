@@ -330,7 +330,6 @@ PLOT_RIGHT = 16;         // the plot's right margin: the bar ends on the same ve
 CTRL_BAR_TOP = 6;        // gap between the top of the canvas and the bar
 CTRL_BAR_HEIGHT = 24;    // the bar itself
 CTRL_BAR_GAP = 8;        // between the bar and the plot
-CTRL_BAR_PAD = 8;        // smallest margin left at the right edge of the bar
 CTRL_CELL_GAP = 6;       // between cells
 CTRL_CELL_PAD = 6;       // inside a cell
 CTRL_CORNER = 2;         // px cut from each cell corner: what reads as rounded
@@ -352,11 +351,9 @@ g_visible_bars = 0;
 g_graph_start_y = 0;
 g_graph_margin_left = 0;
 g_graph_margin_right = 0;
-g_graph_margin_bottom = 0;
 g_graph_width = 0;
 g_graph_actual_height = 0;
 g_y_range_min = 0;
-g_y_range_max = 0;
 g_y_range_total = 0;
 
 // ========== WHERE THE PAIR LIST LIVES ==========
@@ -367,7 +364,6 @@ g_y_range_total = 0;
 g_layout_side = 0;
 g_side_fallback = 0;
 g_column_x = 0;
-g_column_width = 0;
 
 // Row geometry, computed once in calculate_layout(): the bars function and the
 // tooltip hit test read these, so there is one definition of where a row starts.
@@ -398,21 +394,13 @@ g_col_tmg_q_r = 0;       // right edge of the timing quality word (and of the in
 // ========== CONTROL BAR STATE ==========
 // The bar's own state -- cell geometry, values, the open list, the pointer edges
 // -- lives in mem[MEM_CBM_BASE .. +MEM_CBM_SIZE], owned by the control-bar module
-// (ccscope_controlbar.jsfx-inc). EEL2 arrays cannot be trusted for this: measured
-// here, writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME
-// seven numbers for both -- two arrays had been given the same memory, so every
-// cell was placed at its own width. mem[] with explicit offsets is what the
-// plugin uses, and tools/check_ccscope_memory.py verifies the ranges.
-//
-// The five variables below are a PROJECTION of that state, published because the
-// acceptance probe reads them and because the pipeline reads at a glance what the
-// pointer is doing. They are refreshed once per frame by ctl_publish_state().
-g_menu_open = 0;         // index of the cell whose list is open, 0 = closed
-g_menu_x = 0;            // where that list is drawn
-g_menu_y = 0;
-g_menu_rows = 0;
-g_menu_scroll = 0;
-g_hover_cell = 0;        // the cell under the pointer, computed once per frame
+// (ccscope_controlbar.jsfx-inc), and is read through its accessors. Nothing here
+// mirrors it: a copy kept for someone else's convenience is a second truth and a
+// second thing to update. EEL2 arrays cannot be trusted for this: measured here,
+// writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME seven
+// numbers for both -- two arrays had been given the same memory, so every cell was
+// placed at its own width. mem[] with explicit offsets is what the plugin uses,
+// and tools/check_ccscope_memory.py verifies the ranges.
 
 // ========== TIME WINDOW VARIABLES ==========
 // One clock for the whole plugin: the audio timeline, advanced by samplesblock
@@ -425,7 +413,6 @@ g_clock_sec = 0;         // end of the last processed block, in seconds
 
 g_prev_freeze = 0;       // slider2 edge detection
 g_freeze_time = 0;       // clock value when Freeze was engaged
-g_prev_clear = 0;        // slider4 edge detection
 
 g_time_window = 0;
 g_time_start = 0;
@@ -626,17 +613,6 @@ function ctl_draw_menu_items() local(r, i, y) (
   0;
 );
 
-/** The published projection of the bar's state, once per frame */
-function ctl_publish_state() (
-  g_menu_open = cbm_open();
-  g_menu_x = cbm_menu_x();
-  g_menu_y = cbm_menu_y();
-  g_menu_rows = cbm_menu_rows();
-  g_menu_scroll = cbm_menu_scroll();
-  g_hover_cell = cbm_hover();
-  0;
-);
-
 /**
  * Processes incoming MIDI messages in the audio block
  * 
@@ -729,7 +705,6 @@ ctl_layout();
 cbm_mouse();
 ctl_apply_changes();
 ctl_push_texts();
-ctl_publish_state();
 
 // ========== SLIDER EDGES ==========
 // Freeze: remember the instant, so the window and the numbers describe it
@@ -777,8 +752,7 @@ draw_cc_data_lines(filtered_count);
 draw_cc_bars();
 
 // Get history count for status display
-history_count = get_history_count();
-draw_status_info(filtered_count, history_count);
+draw_status_info(filtered_count);
 
 // On top of everything: the explanation of the numbers under the pointer
 draw_metric_tooltip();
