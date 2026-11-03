@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="b944d3867177ef619c52db0c934f55761cbb0837">
+<index version="1" name="solyarisoftware reaper" commit="8513186625e1019ecd4cbc0a553657ed9136d65b">
   <category name="MIDI/ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -435,6 +435,78 @@
         <source>https://github.com/solyarisoftware/reaper/raw/b944d3867177ef619c52db0c934f55761cbb0837/MIDI/ccscope/ccscope.jsfx</source>
         <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/b944d3867177ef619c52db0c934f55761cbb0837/MIDI/ccscope/ccscope_utils.jsfx-inc</source>
         <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/b944d3867177ef619c52db0c934f55761cbb0837/MIDI/ccscope/ccscope_metrics.jsfx-inc</source>
+      </version>
+      <version name="0.7.5" author="Giorgio Robino" time="2026-11-03T12:25:13Z">
+        <changelog><![CDATA[0.7.5 Index graph points with one history traversal while preserving pair
+      draw order and dot spacing. Cache the static grid, with direct drawing
+      for unsupported image sizes, and skip undisplayed metric calculations.
+      History capacity and requested GUI refresh rate are unchanged.
+      Validation and measured limits: GitHub issue #23.
+0.7.4 The bar now spans the plot: the first cell starts on the plot's left
+      edge, the two buttons sit flush with its right edge, and the rule under
+      the bar is gone (the top edge of the plot's frame is already that line).
+      Cells have their corners cut by two pixels -- JSFX has no rounded rect,
+      and at 24 px that chamfer is what reads as a corner; the engaged button
+      turns amber altogether, border included; and with the labels on, the
+      value sits against the caret so a cell whose value grows keeps its text
+      where the eye left it.
+0.7.3 The control bar sits on the window's own black instead of a lighter
+      strip, and its first cell starts on the plot's left edge -- one
+      vertical line through the whole plugin. Two details: the caret
+      brightens with its cell (it is the part that promises a list), and a
+      hairline separates the five selectors from the two buttons, because
+      one kind opens something and the other acts.
+0.7.2 The three metrics are columns, not a sentence. Messages, Motion and
+      Timing now start at fixed x, and inside them the numbers are aligned
+      at their right edge, so 6, 16 and 123 end on the same pixel and the
+      quality words (slow/fast, steady/erratic) no longer push what follows
+      them. Same four forms as before -- labels with quality, labels only,
+      values only in the column beside the plot, count only -- now chosen by
+      measuring the reserved fields instead of the text of a row.
+0.7.1 Identical to 0.7.0 in behaviour: the entry for 0.7.0 was published with
+      the old changelog text, because the index publishes this block and it
+      still started at 0.6.4 when that version was indexed.
+0.7.0 The plugin draws its own controls: the seven sliders are declared with a
+      leading "-" in their name, so REAPER's strip disappears while the
+      parameters keep working (automation, presets, the Param button) and the
+      window gets back 190 px of height -- about eleven rows of pairs. A bar
+      of cells at the top of the canvas takes their place: click opens the
+      list, the wheel steps the value, a right click restores the default.
+0.6.4 Slider 7 (layout): the pair list can sit beside the plot instead of
+      under it. In the column the rows keep the same 16 px, so a wide window
+      shows about twice as many pairs as the same window with the list
+      below, and the plot keeps the whole height. Too narrow a window for
+      the column falls back to the list below and says so.
+0.6.3 Every pair gets a row: the bar area is no longer capped at 35% of the
+      window, the plot has a floor instead, so extending the window shows
+      more (CC, channel) pairs instead of only a taller graph. When rows
+      still do not fit, the status line says so and says a taller window
+      fits more.
+0.6.2 Channel filter: slider 6 keeps one MIDI channel (or all), combining with
+      the CC filter. Both filters are applied while the visible pair list is
+      built, so the graph and the bars cannot disagree about what is on
+      screen, and "showing N of M" counts the filtered set.
+0.6.1 Packaging fix: 0.6.0 was indexed with the includes under their old names
+      (midi_cc_*.jsfx-inc), so it could not load. Everything is renamed after
+      the package here. Use this version.
+0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
+      ccscope.jsfx: uninstall the old one, it is no longer in the repository).
+      Readable: one colour per (CC, channel) instead of per CC, labelled time
+      axis, metrics that degrade instead of running off the edge, plain value
+      next to each bar, Freeze and Clear, exact 1 s window (counts were up to
+      10% high), 500 events/s per pair instead of 200, jitter that ignores
+      gaps, reports how many intervals it used, and says n/a when there are
+      too few to mean anything.
+0.5.2 Correctness pass: the (CC, channel) key no longer overflows its memory
+      range, slider 1 filters the graph and the bars together, bars can no
+      longer be drawn under the status line, the metrics block and the
+      event timestamps are sized and taken correctly (jitter was quantised
+      to the audio block and offset by the callback's scheduling).
+0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
+0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/8513186625e1019ecd4cbc0a553657ed9136d65b/MIDI/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/8513186625e1019ecd4cbc0a553657ed9136d65b/MIDI/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/8513186625e1019ecd4cbc0a553657ed9136d65b/MIDI/ccscope/ccscope_metrics.jsfx-inc</source>
       </version>
     </reapack>
   </category>
