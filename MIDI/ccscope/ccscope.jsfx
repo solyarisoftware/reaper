@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.7
+// @version 0.7.8
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -40,6 +40,11 @@
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.7.8 Fix artificial staircases on CC ramps: do not repeat endpoint extrema
+//         at the bucket midpoint. Two events now form one diagonal segment;
+//         genuine interior peaks/troughs and clipped boundary envelopes remain.
+//         History format, memory layout, metrics and MIDI are unchanged.
+//         Native regression checks cover all DOTS modes and both boundaries.
 //   0.7.7 Structure only: the five panels moved to their own includes
 //         (ccscope_layout, ccscope_plot, ccscope_rows, ccscope_status) and the
 //         control bar became a general-purpose module (ccscope_controlbar) that
@@ -253,7 +258,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.7
+version: 0.7.8
 date: 2026-11-03
 
 // Import utility libraries

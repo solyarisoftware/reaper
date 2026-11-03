@@ -81,6 +81,21 @@ class HistoryProbeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.build(ROOT / 'MIDI/ccscope', output)
 
+    def test_probe_includes_diagonal_geometry_and_envelope_regressions(self):
+        module = self.load_tool('ccscope_history_probe')
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new'
+            module.build(ROOT / 'MIDI/ccscope', output)
+            text = (output / 'history_checks.jsfx').read_text()
+            self.assertIn(module.DIAGONAL_CASES, text)
+            self.assertIn('history_x1=x1; history_y1=y1;', text)
+            self.assertIn('history_mode=0;\nloop(3,', text)
+            self.assertIn('history_lines==1 && history_horizontal==0 && history_vertical==0', text)
+            self.assertIn('history_lines==2 && history_horizontal==0 && history_vertical==0', text)
+            self.assertIn('history_low==0 && history_high==107', text)
+            self.assertIn('g_time_start=1.05;', text)
+            self.assertIn('g_time_end=1.05;', text)
+
     def test_old_exact_event_probe_rejects_temporal_renderer(self):
         module = self.load_tool('ccscope_rendering_probe')
         with self.assertRaisesRegex(ValueError, 'ccscope_history_probe'):

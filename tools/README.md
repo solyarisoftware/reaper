@@ -145,8 +145,13 @@ The probe copies current storage code and extracts the actual production rendere
 intercepting only `gfx_line`/`gfx_circle` to capture its output. It tests a 40,000
 message/s synthetic history across 20 pairs for 32 s, all 2048 dense keys, sparse
 pairs, spike endpoints/ordered extrema, same-tick Clear, duplicate markers,
-partially visible boundary envelopes and expired bucket tags. Results are in
-`CCScopeHistory5` gmem: `[0]` checks, `[1]` failures, `[2]` completed. A green result
+partially visible boundary envelopes and expired bucket tags. Geometry regressions
+also require two rising/falling events in one bucket to produce a single diagonal,
+not horizontal/vertical/horizontal steps, in every `DOTS` mode. They check the
+segment endpoints, constant-value segments, retained interior peaks/troughs, and
+both clipped boundaries. These are independent expected-geometry assertions: an
+A/B comparison alone would pass if both versions shared the same rendering bug.
+Results are in `CCScopeHistory5` gmem: `[0]` checks, `[1]` failures, `[2]` completed. A green result
 requires completed=1 and failures=0; loading an FX alone is not a compile oracle.
 Native loops test deterministic storage logic, not real-time schedulability.
 

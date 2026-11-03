@@ -234,9 +234,6 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
   );
 );
 
-// Retained exact-event renderer for differential developer probes. Production
-// uses the bounded temporal renderer below; this diagnostic ring is not retention.
-
 // Draw one retained representative. DOTS means retained points, not every input
 // event: temporal aggregation deliberately bounds detail at high event density.
 function draw_temporal_point(t, value) local(x, y) (
@@ -261,17 +258,18 @@ function draw_temporal_point(t, value) local(x, y) (
 /**
  * Draws CC data lines and points on the graph
  * 
- * One history traversal builds chronological point lists for the shared
- * filtered selection. The lists are drawn in pair order, preserving trace
- * overlap, line order and the selected dot-spacing policy.
- *
- * The index is GUI-owned; acquisition history and metric algorithms are unchanged.
+ * Walks each visible pair's temporal buckets in chronological order. First and
+ * last values use their retained timestamps; interior extrema use the clipped
+ * bucket midpoint. An extremum already represented by a visible endpoint is not
+ * drawn again at the midpoint: that would manufacture H/V/H steps on ramps.
+ * Pair draw order, the history format and metric algorithms are unchanged.
  * 
  * @param visible_count Number of (CC#, channel) pairs in the visible selection
  */
 function draw_cc_data_lines(visible_count) local(i, pair, tick, last_tick, base,
                                                epoch, first_t, last_t, ends, extremes,
-                                               order, middle, lo, hi) (
+                                               order, middle, lo, hi, first_val, last_val,
+                                               first_visible, last_visible, show_lo, show_hi) (
   epoch = g_history_epoch;
   last_tick = floor(g_time_end * TIME_HISTORY_HZ);
   i = 0;
@@ -290,19 +288,30 @@ function draw_cc_data_lines(visible_count) local(i, pair, tick, last_tick, base,
           // are not an atomic snapshot; the same limitation applies to raw history.
           mem[base] == tick + 1 && mem[base + 1] == epoch ? (
             lo = extremes % 128; hi = floor(extremes / 128);
-            // Extrema are an envelope, not individual timestamped events.
+            first_val = ends % 128; last_val = floor(ends / 128);
+            first_visible = first_t >= g_time_start && first_t <= g_time_end;
+            last_visible = last_t >= g_time_start && last_t <= g_time_end;
+            // A visible endpoint already represents its extremum. Drawing that
+            // value again at the midpoint creates a false horizontal plateau,
+            // then a vertical jump, even for just two events on a simple ramp.
+            // Hidden endpoints must not suppress the boundary bucket envelope.
+            show_lo = (!first_visible || lo != first_val) && (!last_visible || lo != last_val);
+            show_hi = (!first_visible || hi != first_val) && (!last_visible || hi != last_val);
+            // Interior extrema remain an envelope, not exact timestamped events.
             // Clip their representative time to the visible part of the bucket
             // so a partially intersected boundary cannot discard the envelope.
             middle = (max(first_t, g_time_start) + min(last_t, g_time_end)) * 0.5;
-            draw_temporal_point(first_t, ends % 128);
+            draw_temporal_point(first_t, first_val);
             lo != hi && last_t >= g_time_start && first_t <= g_time_end ? (
               order == 0 ? (
-                draw_temporal_point(middle, lo); draw_temporal_point(middle, hi);
+                show_lo ? draw_temporal_point(middle, lo);
+                show_hi ? draw_temporal_point(middle, hi);
               ) : (
-                draw_temporal_point(middle, hi); draw_temporal_point(middle, lo);
+                show_hi ? draw_temporal_point(middle, hi);
+                show_lo ? draw_temporal_point(middle, lo);
               );
             );
-            draw_temporal_point(last_t, floor(ends / 128));
+            draw_temporal_point(last_t, last_val);
           );
         );
         tick += 1;

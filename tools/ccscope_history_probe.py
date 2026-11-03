@@ -9,6 +9,63 @@ import argparse
 import shutil
 
 
+DIAGONAL_CASES = '''
+// Regression: endpoint extrema must not be repeated at the bucket midpoint.
+// These are geometry checks on actual draw commands, not A/B comparisons.
+g_time_start=1; g_time_end=2; g_time_window=1;
+history_mode=0;
+loop(3,
+ slider5=history_mode;
+ // Rising: two events in one bucket must produce one diagonal, not H/V/H.
+ clear_history(); add_temporal_history(1.01,0,20); add_temporal_history(1.09,0,100);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==1 && history_horizontal==0 && history_vertical==0);
+ history_verify(abs(history_x1-10)<0.000001 && abs(history_y1-107)<0.000001);
+ history_verify(abs(history_x2-90)<0.000001 && abs(history_y2-27)<0.000001);
+ // Falling: same contract, with the extrema order reversed.
+ clear_history(); add_temporal_history(1.01,0,100); add_temporal_history(1.09,0,20);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==1 && history_horizontal==0 && history_vertical==0);
+ history_verify(abs(history_x1-10)<0.000001 && abs(history_y1-27)<0.000001);
+ history_verify(abs(history_x2-90)<0.000001 && abs(history_y2-107)<0.000001);
+ // A monotonic interior event must not turn the endpoint extrema into a step.
+ clear_history(); add_temporal_history(1.01,0,20);
+ add_temporal_history(1.05,0,60); add_temporal_history(1.09,0,100);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==1 && history_horizontal==0 && history_vertical==0);
+ // Constant endpoints still form a legitimate horizontal segment.
+ clear_history(); add_temporal_history(1.01,0,64); add_temporal_history(1.09,0,64);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==1 && history_horizontal==1 && history_vertical==0);
+ // A genuine interior peak must survive: removing all extrema is not a fix.
+ clear_history(); add_temporal_history(1.01,0,20);
+ add_temporal_history(1.05,0,127); add_temporal_history(1.09,0,20);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==2 && history_horizontal==0 && history_vertical==0);
+ history_verify(history_low==0 && history_high==107);
+ // A genuine interior trough must survive too.
+ clear_history(); add_temporal_history(1.01,0,100);
+ add_temporal_history(1.05,0,0); add_temporal_history(1.09,0,100);
+ history_reset_capture(); draw_cc_data_lines(1);
+ history_verify(history_lines==2 && history_horizontal==0 && history_vertical==0);
+ history_verify(history_low==27 && history_high==127);
+ history_mode+=1;
+);
+// The first endpoint is outside WIN: its extremum must still survive at the
+// clipped representative time, even if its value equals that hidden endpoint.
+slider5=1; clear_history();
+add_temporal_history(1.01,0,0); add_temporal_history(1.09,0,100);
+g_time_start=1.05; g_time_end=2; g_time_window=0.95;
+history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_lines==1 && history_high==127 && history_low==27);
+// Symmetric right boundary: a hidden last endpoint cannot suppress its maximum.
+clear_history(); add_temporal_history(1.01,0,20); add_temporal_history(1.09,0,127);
+g_time_start=1; g_time_end=1.05; g_time_window=0.05;
+history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_lines==1 && history_low==0 && history_high==107);
+'''
+
+
 def build(source: Path, output: Path) -> None:
     if output.exists():
         raise ValueError('Output must be a new temporary directory')
@@ -24,6 +81,9 @@ def build(source: Path, output: Path) -> None:
 function history_line(x1,y1,x2,y2) (
  history_lines+=1; history_low=min(history_low,min(y1,y2));
  history_high=max(history_high,max(y1,y2));
+ x1!=x2 && y1==y2 ? history_horizontal+=1;
+ x1==x2 && y1!=y2 ? history_vertical+=1;
+ history_x1=x1; history_y1=y1; history_x2=x2; history_y2=y2;
 );
 function history_circle(x,y,r,fill) (
  history_dots+=1; history_low=min(history_low,y); history_high=max(history_high,y);
@@ -35,6 +95,8 @@ function history_slot(t,p) (
 );
 function history_reset_capture() (
  history_lines=0; history_dots=0; history_low=1000000; history_high=-1000000;
+ history_horizontal=0; history_vertical=0;
+ history_x1=0; history_y1=0; history_x2=0; history_y2=0;
 );
 '''
     cases = '''
@@ -134,8 +196,9 @@ add_temporal_history(1.08,0,127);
 g_time_start=32; g_time_end=62; g_time_window=30;
 history_reset_capture(); draw_cc_data_lines(1);
 history_verify(history_lines==0 && history_dots==0);
-gmem[0]=history_checks; gmem[1]=history_failures; gmem[2]=1;
 '''
+    cases += DIAGONAL_CASES
+    cases += '\ngmem[0]=history_checks; gmem[1]=history_failures; gmem[2]=1;\n'
     output.mkdir(parents=True)
     shutil.copy2(source / 'ccscope_utils.jsfx-inc', output / 'ccscope_utils.jsfx-inc')
     probe = ('desc:CCScope temporal history native checks\noptions:gmem=CCScopeHistory5\n'

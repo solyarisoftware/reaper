@@ -3,6 +3,21 @@
 Notable changes only — what someone using the plugin would notice. For the full history,
 including every intermediate step, `git log`.
 
+## 0.7.8 — 2026-11-03
+
+- **CC ramps no longer acquire artificial staircases:** extrema already represented
+  by visible first/last endpoints are not repeated at the bucket midpoint. Two
+  events at different times now form one diagonal instead of horizontal/vertical/
+  horizontal segments. Genuine interior peaks and troughs remain visible, including
+  envelopes in partially visible boundary buckets.
+- History format, memory layout, metrics and MIDI pass-through are unchanged.
+  Interior extrema still have approximate bucket-level timing; this is not an
+  exact reconstruction of every original MIDI event.
+- Native expected-geometry regression checks cover rising/falling ramps, constant
+  segments, internal peaks/troughs, all `DOTS` modes and both clipped boundaries.
+  The expanded retention/renderer probe passes 14,153 checks with zero failures;
+  the previous renderer fails 23 of those checks.
+
 ## 0.7.7 — 2026-11-03
 
 - **Nothing visible changed.** The plugin is now one conductor and five library files:
