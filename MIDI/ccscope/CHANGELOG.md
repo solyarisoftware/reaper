@@ -3,6 +3,23 @@
 Notable changes only — what someone using the plugin would notice. For the full history,
 including every intermediate step, `git log`.
 
+## 0.7.7 — 2026-11-03
+
+- **Nothing visible changed.** The plugin is now one conductor and five library files:
+  `ccscope_layout` (frame geometry, metric columns), `ccscope_plot` (time window, grid,
+  image cache, traces), `ccscope_rows` (bars, metric fields, explanation panel),
+  `ccscope_status` (the line at the bottom) and `ccscope_controlbar`.
+- `ccscope_controlbar` is a general-purpose control bar — a row of cells with dropdown
+  lists, a toggle and an action button, measured from their text — that knows nothing about
+  MIDI or about this plugin's parameters, so it can be reused by another effect. It owns no
+  parameter: the plugin pushes values and texts in and applies what comes back with
+  `sliderchange()`, which is what keeps automation and the Param list working exactly as
+  before.
+- Everything on screen is drawn at the same coordinates, in the same colours, in the same
+  order. The package has seven files now instead of three: let ReaPack update it, and do not
+  copy `ccscope.jsfx` alone — a missing include is a plugin that will not load, which is what
+  0.6.1 shipped.
+
 ## 0.7.6 — 2026-11-03
 
 - **History spans the requested time window:** a per-pair 100 ms temporal ring

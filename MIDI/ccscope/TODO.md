@@ -27,8 +27,9 @@ The proposal holds the protocols, the limitations and the acceptance criteria.
 
 - **A GUI library was evaluated and not adopted.** Tukan's `tk_gui_tools.jsfx-inc` has no
   dropdowns, which is what the enum parameters need; Geraint Luff's `ui-lib.jsfx-inc` has them but
-  declares no license, so it cannot be vendored into this MIT repository. The bar is ~200 lines of
-  our own code and needs neither.
+  declares no license, so it cannot be vendored into this MIT repository. The bar is our own
+  code and needs neither: as of 0.7.7 it is `ccscope_controlbar.jsfx-inc`, a module that knows
+  no parameter and no MIDI vocabulary, so a third-party effect can copy it and keep its own.
 - **An overlay panel for the parameters** — `−`/`+` steppers and a value in clear — is the next
   step if the bar starts to feel tight: a JSFX has no text input without a library, and the `CC`
   list can scroll. [Discussion #13](https://github.com/solyarisoftware/reaper/discussions/13)
