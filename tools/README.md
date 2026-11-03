@@ -107,6 +107,14 @@ it activates only that window's top-level ancestor. Test-held buttons and the
 saved pointer position are cleaned up on normal exit and manual script termination.
 Project save/quit operations are not performed by the exit handler.
 
+Before the interaction test the runner measures the bar twice, once per variant, and
+writes `geometry-<variant>.txt`: the canvas, the centre of each cell, the labels tier, the
+metrics tier, the layout mode, and for every selector the position, width, row count and
+scroll of its open list. Two files that differ by one number mean something moved. A package
+from before the panels were split is instrumented in place and gets a compatibility shim, so
+the same telemetry asks the same questions of both sides and an A/B run across a refactor is
+possible at all.
+
 The runner captures `@gfx` elapsed time and audio-block elapsed time separately,
 and compares every delivered input/output MIDI message and sample offset. Input
 is observed **after host delivery**, not taken from the generator's pre-host order:

@@ -191,6 +191,30 @@ local function wheel_cell(i,amount)
   native_input('wheel',amount)
   wait(0.15)
 end
+-- The bar's geometry, measured once per variant: the cell centres, the labels
+-- tier, and the position, width, rows and scroll of each selector's open list.
+-- Comparing two variants' files is how a refactor proves it changed nothing.
+local function geometry(variant)
+  setup(variant,{streams=20,seed=20,win=10}); wait(0.25)
+  local out = assert(io.open(dir..'geometry-'..variant..'.txt','w'))
+  local function put(name, value) out:write(string.format('%s=%.6f\n', name, value)) end
+  put('canvas_w', g(10)); put('canvas_h', g(11))
+  for i=1,7 do put('cell'..i..'_x', g(40+i)) end
+  put('labels_tier', g(79)); put('metrics_tier', g(18))
+  put('layout_side', g(16)); put('side_fallback', g(71))
+  put('visible_bars', g(62)); put('metrics_x', g(60)); put('start_y', g(61))
+  for i=1,5 do
+    cell(i)
+    assert(g(13)==i,'Selector did not open while measuring geometry')
+    put('menu'..i..'_x', g(73)); put('menu'..i..'_y', g(74))
+    put('menu'..i..'_w', g(78)); put('menu'..i..'_rows', g(76))
+    put('menu'..i..'_scroll', g(75))
+    click(10, g(11)-40)                    -- outside the list: it closes, nothing else reacts
+    assert(g(13)==0,'Selector did not close while measuring geometry')
+  end
+  out:close()
+  say('GEOMETRY '..variant..' canvas='..g(10)..'x'..g(11))
+end
 local function ui_test()
   setup('candidate',{streams=20,seed=20,win=10}); wait(0.25)
   local cookie=g(91)
@@ -277,6 +301,7 @@ local co=coroutine.create(function()
       for _,variant in ipairs({'baseline','candidate'}) do collect(cfg,variant) end
     end
   end
+  geometry('baseline'); geometry('candidate')
   ui_test(); return embed_test()
 end)
 local start=reaper.time_precise()

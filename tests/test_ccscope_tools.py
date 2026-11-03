@@ -241,6 +241,28 @@ class Eel2OrderTests(unittest.TestCase):
             self.assertNotIn(word, text, 'the bar module must stay reusable: no parameters of its own')
 
 
+class CrossSplitProbeTests(unittest.TestCase):
+    def test_pre_split_package_builds_with_a_compatibility_shim(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'ccscope_acceptance_probe', ROOT / 'tools/ccscope_acceptance_probe.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        legacy = dict(instrument=module.instrument, shim=module.LEGACY_SHIM)
+        self.assertIn('cbm_cell_x(i)', legacy['shim'])
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / 'legacy'
+            base.mkdir()
+            for name in ('ccscope.jsfx', 'ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
+                shutil.copy2(ROOT / 'MIDI/ccscope' / name, base / name)
+            text = (base / 'ccscope.jsfx').read_text()
+            built = legacy['instrument'](text, 'baseline', legacy=True)
+            self.assertIn('function cbm_cell_x(i)', built)
+            self.assertIn('cbm_cell_x(accept_i)', built)
+            self.assertNotIn('function cbm_cell_x(i)',
+                             legacy['instrument'](text, 'candidate'))
+
+
 class AcceptanceRunnerCleanupTests(unittest.TestCase):
     def test_real_cleanup_is_registered_and_idempotent(self):
         lua = shutil.which('lua5.4') or shutil.which('lua')

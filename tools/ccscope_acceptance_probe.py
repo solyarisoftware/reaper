@@ -60,6 +60,7 @@ gmem[71] = g_side_fallback; gmem[72] = g_time_end;
 gmem[73] = g_menu_x; gmem[74] = g_menu_y;
 gmem[75] = g_menu_scroll; gmem[76] = g_menu_rows;
 gmem[77] = gfx_ext_flags;
+gmem[78] = cbm_menu_w(); gmem[79] = cbm_has_labels();
 gmem[91] = accept_cookie;
 gmem[4] = accept_gfx_seq;
 '''
@@ -128,8 +129,19 @@ def provides(source: Path) -> list[Path]:
     return [source / name for name in names]
 
 
+LEGACY_SHIM = '''
+// Probe-only adapter for a package from before the split: the telemetry asks the
+// same questions of both variants, and the pre-split bar answered them through
+// the host globals and memory ranges it kept in ccscope.jsfx.
+function cbm_cell_x(i) ( mem[MEM_CTL_X + i] );
+function cbm_cell_w(i) ( mem[MEM_CTL_W + i] );
+function cbm_menu_w() ( g_menu_w );
+function cbm_has_labels() ( g_bar_has_labels );
+'''
+
+
 def instrument(source: str, variant: str, *, seed_history: bool = True,
-               temporal: bool = True) -> str:
+               temporal: bool = True, legacy: bool = False) -> str:
     """Instrument the conductor: metadata, gmem, the audio clock and telemetry.
 
     Only ccscope.jsfx is touched here: it owns desc/options and the @block,
@@ -158,7 +170,7 @@ gmem[5] = accept_block_seq;
         if source.count(old) != 1:
             raise ValueError(f'Unexpected source boundary: {old!r}')
         source = source.replace(old, new)
-    return source + TELEMETRY
+    return source + (LEGACY_SHIM if legacy else '') + TELEMETRY
 
 
 def instrument_plot(source: str) -> str:
@@ -202,7 +214,8 @@ def main() -> None:
                 (target / name).write_text(hook(panel.read_text()))
             else:
                 main_text = hook(main_text)
-        (target / 'ccscope.jsfx').write_text(instrument(main_text, variant))
+        legacy = not (path.parent / 'ccscope_controlbar.jsfx-inc').exists()
+        (target / 'ccscope.jsfx').write_text(instrument(main_text, variant, legacy=legacy))
     (args.output / 'generator.jsfx').write_text(GENERATOR)
     # Observe the delivered input, not the generator's pre-host emission order:
     # REAPER may canonicalize simultaneous bank/program/note events between FX.
