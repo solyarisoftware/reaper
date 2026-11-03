@@ -16,3 +16,14 @@ jobs:
       run:  gem install reapack-index
     - name: Validate packages
       run:  reapack-index --check
+  rendering-tools:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Fetch repository
+      uses: actions/checkout@v4
+    - name: Install Lua for acceptance-runner cleanup tests
+      run: sudo apt-get update && sudo apt-get install -y lua5.4
+    - name: Check CCScope memory ranges
+      run: python3 tools/check_ccscope_memory.py
+    - name: Test rendering tools
+      run: python3 -m unittest discover -s tests -v

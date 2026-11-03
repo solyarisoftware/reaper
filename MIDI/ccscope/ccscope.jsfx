@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.4
+// @version 0.7.5
 // @about
 //   Real-time visualization of MIDI Continuous Controller (CC) messages with two
 //   display modes: a scrolling time graph and current-value bars, plus performance
@@ -35,6 +35,11 @@
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
 // @changelog
+//   0.7.5 Index graph points with one history traversal while preserving pair
+//         draw order and dot spacing. Cache the static grid, with direct drawing
+//         for unsupported image sizes, and skip undisplayed metric calculations.
+//         History capacity and requested GUI refresh rate are unchanged.
+//         Validation and measured limits: GitHub issue #23.
 //   0.7.4 The bar now spans the plot: the first cell starts on the plot's left
 //         edge, the two buttons sit flush with its right edge, and the rule under
 //         the bar is gone (the top edge of the plot's frame is already that line).
@@ -220,8 +225,8 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.4
-date: 2026-11-01
+version: 0.7.5
+date: 2026-11-03
 
 // Import utility libraries
 import ccscope_utils.jsfx-inc
@@ -274,6 +279,9 @@ STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
 TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
 DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
+GRID_CACHE_IMAGE = 0;    // GUI-only offscreen image, not a scrolling trace bitmap
+GRID_CACHE_MAX_DIM = 2048; // documented gfx_setimgdim limit; larger canvases draw directly
+g_grid_cache_valid = 0;
 Y_LABEL_OFFSET = 26;     // px left of the plot: the left edge of the value labels,
                          //  and of the bar rows, so all text hangs from one vertical
 
@@ -355,7 +363,7 @@ g_col_tmg_q_r = 0;       // right edge of the timing quality word (and of the in
 // writing g_ctl_x[i] and g_ctl_w[i] and reading them back returned the SAME seven
 // numbers for both -- two arrays had been given the same memory, so every cell
 // was placed at its own width. mem[] with explicit offsets is what the rest of
-// the plugin uses, and tools/jsfx_memmap_check.py verifies the ranges.
+// the plugin uses, and tools/check_ccscope_memory.py verifies the ranges.
 g_bar_has_labels = 1;
 g_bar_total = 0;
 
@@ -1215,10 +1223,18 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       gfx_printf("%d", val);
 
       events_ps = get_events_per_second_cc_channel(cc_num, channel);
-      rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
-      rate_q = get_rate_quality(rate_ps);
-      jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
-      jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
+      // Count-only rows do not display Motion or Timing. Do not walk their
+      // buffers to calculate values that draw_row_metrics() will discard.
+      rate_ps = 0;
+      rate_q = "";
+      jitter_ms = -1;
+      jitter_q = "";
+      events_ps > 0 && g_metrics_tier > 0 ? (
+        rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
+        rate_q = get_rate_quality(rate_ps);
+        jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
+        jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
+      );
 
       // The three numbers, in three fixed columns: see draw_row_metrics().
       draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos);
@@ -1371,97 +1387,162 @@ function draw_time_grid() local(k, t, x_pos, tick_interval, label_interval, is_m
   gfx_setfont(1, "Arial", FONT_SIZE);
 );
 
+// The relative ruler and value grid do not move with the traces. Cache only
+// this static layer; rows, controls and traces keep their normal draw order.
+function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
+  w = ceil(gfx_w);
+  h = ceil(gfx_h);
+  w > 0 && h > g_graph_start_y && w <= GRID_CACHE_MAX_DIM && h <= GRID_CACHE_MAX_DIM
+    && g_graph_width > 0 && g_graph_actual_height >= 0 ? (
+    gfx_getimgdim(GRID_CACHE_IMAGE, iw, ih);
+    rebuild = !g_grid_cache_valid || iw != w || ih != h
+      || g_grid_cache_w != w || g_grid_cache_h != h
+      || g_grid_cache_left != g_graph_margin_left
+      || g_grid_cache_top != g_graph_start_y
+      || g_grid_cache_width != g_graph_width
+      || g_grid_cache_height != g_graph_actual_height
+      || g_grid_cache_window != g_time_window
+      || g_grid_cache_font != FONT_SIZE
+      || g_grid_cache_scale != gfx_ext_retina;
+    rebuild ? (
+      g_grid_cache_valid = 0;
+      iw != w || ih != h ? gfx_setimgdim(GRID_CACHE_IMAGE, w, h);
+      gfx_getimgdim(GRID_CACHE_IMAGE, iw, ih);
+      iw == w && ih == h ? (
+        gfx_dest = GRID_CACHE_IMAGE;
+        gfx_mode = 0;
+        gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+        gfx_rect(0, 0, w, h, 1);
+        draw_graph_background();
+        draw_time_grid();
+        gfx_dest = -1;
+        g_grid_cache_w = w;
+        g_grid_cache_h = h;
+        g_grid_cache_left = g_graph_margin_left;
+        g_grid_cache_top = g_graph_start_y;
+        g_grid_cache_width = g_graph_width;
+        g_grid_cache_height = g_graph_actual_height;
+        g_grid_cache_window = g_time_window;
+        g_grid_cache_font = FONT_SIZE;
+        g_grid_cache_scale = gfx_ext_retina;
+        g_grid_cache_valid = 1;
+      );
+    );
+    g_grid_cache_valid ? (
+      // Do not overwrite the control bar already drawn above the plot. Copy
+      // 1:1, ignoring image alpha and filtering, then restore normal drawing.
+      top = max(0, floor(g_graph_start_y));
+      gfx_a = 1;
+      gfx_mode = 6;
+      gfx_blit(GRID_CACHE_IMAGE, 1, 0, 0, top, w, h - top, 0, top, w, h - top);
+      gfx_mode = 0;
+    ) : (
+      draw_graph_background();
+      draw_time_grid();
+    );
+  ) : (
+    g_grid_cache_valid = 0;
+    draw_graph_background();
+    draw_time_grid();
+  );
+);
+
 /**
  * Draws CC data lines and points on the graph
  * 
- * For each active (CC#, Channel) pair (or selected CC#):
- * - Scans through history buffer
- * - Filters data within visible time window
- * - Draws lines connecting consecutive points
- * - Draws dots at each data point
- * - Draws border around graph area
- * 
- * Uses color assigned to each CC number (shared across channels)
+ * One history traversal builds chronological point lists for the shared
+ * filtered selection. The lists are drawn in pair order, preserving trace
+ * overlap, line order and the selected dot-spacing policy.
+ *
+ * The index is GUI-owned; acquisition history and metric algorithms are unchanged.
  * 
  * @param visible_count Number of (CC#, channel) pairs in the visible selection
  */
-function draw_cc_data_lines(visible_count) local(history_count, cc_idx, cc_channel_pair,
-                                                 cc_num, channel, first_point, prev_x, prev_y, hist_idx, base,
-                                                 h_time, h_cc, h_channel, h_val, relative_time, x, y,
+function draw_cc_data_lines(visible_count) local(history_count, cc_idx, pair,
+                                                 cc_num, channel, first_point, prev_x, prev_y,
+                                                 hist_idx, base, h_time, h_val, tail, point, x, y,
                                                  last_dot_x) (
-  history_count = get_history_count();
-
-  // Exactly the same selection the bars use: one filtered list, built upstream
+  // Mark this frame's selection without clearing all 2048 pair slots. Selection
+  // still comes exclusively from the shared filtered list, not another filter.
+  g_graph_generation += 1;
   cc_idx = 0;
-
   loop(visible_count,
-    cc_channel_pair = get_visible_cc_channel_pair(cc_idx);
+    pair = get_visible_cc_channel_pair(cc_idx);
+    pair >= 0 ? (
+      mem[MEM_GRAPH_SELECTED + pair] = g_graph_generation;
+      mem[MEM_GRAPH_HEAD + pair] = -1;
+      mem[MEM_GRAPH_TAIL + pair] = -1;
+    );
+    cc_idx += 1;
+  );
 
-    cc_channel_pair >= 0 ? (
-      cc_num = key_to_cc(cc_channel_pair);
-      channel = key_to_channel(cc_channel_pair);
-      
-      // Same colour family as the bar for this (CC, channel)
+  // One history traversal, regardless of selected pair count. Copy coordinates
+  // into GUI-owned memory and link each pair's points in chronological order.
+  // The source ring remains concurrently writable, as before: this index is
+  // not a claim of an atomic audio/GUI snapshot.
+  history_count = get_history_count();
+  hist_idx = 0;
+  visible_count > 0 && g_time_window > 0 ? (
+    loop(history_count,
+      base = get_history(hist_idx);
+      base >= 0 ? (
+        h_time = mem[base];
+        h_time >= g_time_start && h_time <= g_time_end ? (
+          pair = make_cc_channel_key(mem[base + 1], mem[base + 2]);
+          mem[MEM_GRAPH_SELECTED + pair] == g_graph_generation ? (
+            h_val = mem[base + 3];
+            mem[MEM_GRAPH_X + hist_idx] = g_graph_margin_left
+              + ((h_time - g_time_start) / g_time_window) * g_graph_width;
+            mem[MEM_GRAPH_Y + hist_idx] = g_graph_start_y + g_graph_actual_height
+              - ((h_val - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
+            mem[MEM_GRAPH_NEXT + hist_idx] = -1;
+            tail = mem[MEM_GRAPH_TAIL + pair];
+            tail >= 0 ? mem[MEM_GRAPH_NEXT + tail] = hist_idx
+                      : mem[MEM_GRAPH_HEAD + pair] = hist_idx;
+            mem[MEM_GRAPH_TAIL + pair] = hist_idx;
+          );
+        );
+      );
+      hist_idx += 1;
+    );
+  );
+
+  // Preserve pair draw order (including overlap at trace intersections), line
+  // order and dot spacing. Pairs without visible points do no history searches.
+  cc_idx = 0;
+  loop(visible_count,
+    pair = get_visible_cc_channel_pair(cc_idx);
+    pair >= 0 ? (
+      cc_num = key_to_cc(pair);
+      channel = key_to_channel(pair);
       get_cc_channel_color(cc_num, channel);
-      
-      // Scan through history and draw this (CC, Channel) pair's data
       first_point = 1;
       last_dot_x = -1000;
       prev_x = 0;
       prev_y = 0;
-      
-      hist_idx = 0;
-      loop(history_count,
-        base = get_history(hist_idx);
-        base >= 0 ? (
-          h_time = mem[base];
-          h_cc = mem[base + 1];
-          h_channel = mem[base + 2];
-          h_val = mem[base + 3];
-          
-          // Check if this entry matches current (CC, Channel) pair and is within time window
-          h_cc == cc_num && h_channel == channel && h_time >= g_time_start && h_time <= g_time_end ? (
-            g_time_window > 0 ? (
-              // Calculate X position using RELATIVE time from window start
-              relative_time = h_time - g_time_start;
-              x = g_graph_margin_left + (relative_time / g_time_window) * g_graph_width;
-              
-              // Calculate Y position with padding
-              y = g_graph_start_y + g_graph_actual_height - ((h_val - g_y_range_min) / g_y_range_total) * g_graph_actual_height;
-              
-              // Draw line from previous point
-              first_point == 0 ? (
-                gfx_line(prev_x, prev_y, x, y);
-              );
-              
-              // Dots: Auto draws one every DOT_MIN_SPACING pixels, decided from
-              // the points themselves (so the drawing cannot change when the
-              // transport stops); Every event is the raw picture, and it is the
-              // expensive one; None is a plain line.
-              slider5 != 2 ? (
-                slider5 == 1 ? (
-                  gfx_circle(x, y, 2, 1);
-                ) : (
-                  (x - last_dot_x) >= DOT_MIN_SPACING ? (
-                    gfx_circle(x, y, 2, 1);
-                    last_dot_x = x;
-                  );
-                );
-              );
-              
-              prev_x = x;
-              prev_y = y;
-              first_point = 0;
+      point = mem[MEM_GRAPH_HEAD + pair];
+      while(point >= 0) (
+        x = mem[MEM_GRAPH_X + point];
+        y = mem[MEM_GRAPH_Y + point];
+        first_point == 0 ? gfx_line(prev_x, prev_y, x, y);
+        slider5 != 2 ? (
+          slider5 == 1 ? (
+            gfx_circle(x, y, 2, 1);
+          ) : (
+            (x - last_dot_x) >= DOT_MIN_SPACING ? (
+              gfx_circle(x, y, 2, 1);
+              last_dot_x = x;
             );
           );
         );
-        hist_idx += 1;
+        prev_x = x;
+        prev_y = y;
+        first_point = 0;
+        point = mem[MEM_GRAPH_NEXT + point];
       );
     );
-    
     cc_idx += 1;
   );
-  
 );
 
 /**
@@ -1689,8 +1770,7 @@ g_metrics_now = g_time_end;
 
 // ========== DRAW UI ELEMENTS ==========
 draw_control_bar();
-draw_graph_background();
-draw_time_grid();
+draw_cached_graph_background();
 draw_cc_data_lines(filtered_count);
 draw_cc_bars();
 

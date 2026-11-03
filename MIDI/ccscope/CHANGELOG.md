@@ -3,6 +3,15 @@
 Notable changes only — what someone using the plugin would notice. For the full history,
 including every intermediate step, `git log`.
 
+## 0.7.5 — 2026-11-03
+
+- **Less per-frame graph work**: one history traversal builds the per-pair point lists,
+  the static grid is cached, and count-only rows skip undisplayed metric calculations.
+  Pair draw order, coordinates and dot spacing are preserved; oversized canvases draw
+  the grid directly.
+- History capacity and the requested GUI refresh rate are unchanged. Measurements,
+  native validation and coverage limits: https://github.com/solyarisoftware/reaper/issues/23
+
 ## 0.7.4 — 2026-11-01
 
 - **The bar spans the plot**: the first cell starts on the plot's left edge and `FREEZE`/`CLEAR`

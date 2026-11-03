@@ -97,8 +97,8 @@ metrics_base = 30000;
 
 // 1502 = two header slots plus the events. The block size follows from the
 // layout above; typing a round number here is what corrupted the next pair's
-// header on every 200th event (0.5.1). tools/jsfx_memmap_check.py verifies it,
-// and the whole area still fits mem[]: 30000 + 2048 * 1502 < 3.1 M slots.
+// header on every 200th event (0.5.1). tools/check_ccscope_memory.py verifies it;
+// the total extent is 30000 + 2048 * 1502 = 3,106,096 slots.
 CC_BLOCK_SIZE = 2 + (MAX_EVENTS_PER_CC * 3);
 CHANNELS_PER_CC = 16;
 CC_METRICS_BLOCKS = 128 * CHANNELS_PER_CC;  // 2048 total blocks

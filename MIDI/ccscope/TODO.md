@@ -51,6 +51,10 @@ channel filter, done in 0.6.2; [#8](../../issues/8) all pairs visible, done in 0
 | [#18](../../issues/18) | metric names, units and explanatory tooltips |
 | [#17](../../issues/17) | recent input activity in the status line |
 
+Completed in 0.7.5: [#23](https://github.com/solyarisoftware/reaper/issues/23),
+rendering performance. Validation and measured limits stay in that issue; history
+retention remains the separate bug #5.
+
 An open issue is not a promise of implementation, priority or a delivery date.
 
 ## Feature requests — the roadmap

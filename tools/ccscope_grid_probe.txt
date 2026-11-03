@@ -1,0 +1,93 @@
+// Native cache/direct pixel comparison driver, assembled by the Python builder.
+// Logical size changes exercise invalidation and fallback on the same framebuffer;
+// this is not a substitute for real OS-window resize or HiDPI testing.
+probe_case = 0;
+probe_pixels = 0;
+gmem[20] = 0;
+gmem[21] = 0;
+@gfx 1000 720
+gfx_clear = 0;
+gfx_mode = 0;
+probe_real_w = gfx_w;
+probe_real_h = gfx_h;
+probe_case < 18 && gmem[20] != -1 ? (
+  slider3 = probe_case == 2 ? 1 : probe_case == 3 ? 30 : 10;
+  slider7 = probe_case == 4 ? 1 : 0;
+  gfx_w = probe_case == 5 ? min(800, probe_real_w) :
+    (probe_case == 8 || probe_case == 10) ? 2048 : probe_case == 9 ? 2049 : probe_real_w;
+  gfx_h = probe_case == 6 ? min(600, probe_real_h) :
+    probe_case == 12 ? 2049 : probe_case == 13 ? 2048 : probe_real_h;
+  FONT_SIZE = probe_case == 15 ? 18 : 16;
+  gfx_ext_retina = probe_case == 16 ? 2 : 0;
+  calculate_layout(4);
+  g_time_window = slider3;
+  g_time_end = 100 + probe_case * 0.375;
+  g_time_start = g_time_end - g_time_window;
+  gfx_setfont(1, "Arial", FONT_SIZE);
+
+  gfx_dest = -1;
+  gfx_mode = 0;
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+  gfx_rect(0, 0, probe_real_w, probe_real_h, 1);
+  // A nonblack control-band sentinel catches a blit that erases the controls.
+  gfx_r = 0.2; gfx_g = 0.4; gfx_b = 0.6;
+  gfx_rect(0, 0, probe_real_w, g_graph_start_y, 1);
+  probe_before = probe_grid_builds;
+  draw_cached_graph_background();
+  probe_rebuilds = probe_grid_builds - probe_before;
+  probe_rebuilds != (probe_case == 1 ? 0 : 1) ? gmem[20] = -1;
+  (gfx_dest != -1 || gfx_mode != 0) ? gmem[20] = -1;
+  // The second frame must reuse the image; oversize canvases must not cache.
+  probe_case == 1 && !g_grid_cache_valid ? gmem[20] = -1;
+  (probe_case == 9 || probe_case == 12) && g_grid_cache_valid ? gmem[20] = -1;
+
+  gfx_getimgdim(1, probe_iw, probe_ih);
+  (probe_iw != probe_real_w || probe_ih != probe_real_h) ?
+    gfx_setimgdim(1, probe_real_w, probe_real_h);
+  gfx_dest = 1;
+  gfx_mode = 0;
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+  gfx_rect(0, 0, probe_real_w, probe_real_h, 1);
+  gfx_r = 0.2; gfx_g = 0.4; gfx_b = 0.6;
+  gfx_rect(0, 0, probe_real_w, g_graph_start_y, 1);
+  draw_graph_background();
+  draw_time_grid();
+
+  probe_y = 0;
+  while(probe_y < min(gfx_h, probe_real_h) && gmem[20] != -1) (
+    probe_x = 0;
+    while(probe_x < min(gfx_w, probe_real_w) && gmem[20] != -1) (
+      gfx_x = probe_x; gfx_y = probe_y;
+      gfx_dest = 1;
+      gfx_getpixel(probe_er, probe_eg, probe_eb);
+      gfx_dest = -1;
+      gfx_getpixel(probe_ar, probe_ag, probe_ab);
+      abs(probe_er - probe_ar) > 0.000001
+        || abs(probe_eg - probe_ag) > 0.000001
+        || abs(probe_eb - probe_ab) > 0.000001 ? (
+        gmem[20] = -1;
+        gmem[22] = probe_x;
+        gmem[23] = probe_y;
+        gmem[24] = abs(probe_er - probe_ar) + abs(probe_eg - probe_ag) + abs(probe_eb - probe_ab);
+      );
+      probe_pixels += 1;
+      probe_x += 1;
+    );
+    probe_y += 1;
+  );
+  gfx_dest = -1;
+  gfx_mode = 0;
+  gfx_w = probe_real_w;
+  gfx_h = probe_real_h;
+  probe_case += 1;
+  gmem[21] = probe_case;
+  gmem[25] = probe_pixels;
+  probe_case == 18 && gmem[20] != -1 ? gmem[20] = 1;
+);
+gfx_dest = -1;
+gfx_mode = 0;
+gfx_r = gmem[20] == -1 ? 1 : 0.2;
+gfx_g = gmem[20] == -1 ? 0.2 : 0.8;
+gfx_b = 0.2; gfx_a = 1;
+gfx_x = 20; gfx_y = 10;
+gfx_printf("Grid pixel regression: %d / 18, status %d", probe_case, gmem[20]);
