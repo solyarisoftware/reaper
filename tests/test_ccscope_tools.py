@@ -164,6 +164,52 @@ class Eel2OrderTests(unittest.TestCase):
                     problems.append(f'{name} calls {call}, declared later')
         self.assertEqual(problems, [], 'EEL2 requires the callee to be declared first')
 
+    def test_calls_match_declared_arity(self):
+        """EEL2 checks arity at compile time: a stray argument is a plugin that will not load."""
+        import re
+        text = self.combined()
+        clean = re.sub(r'"(?:[^"\\]|\\.)*"', '@', text)
+
+        def split_args(piece):
+            if not piece.strip():
+                return []
+            depth, args, current = 0, [], ''
+            for char in piece:
+                if char in '([':
+                    depth += 1
+                if char in ')]':
+                    depth -= 1
+                if char == ',' and depth == 0:
+                    args.append(current)
+                    current = ''
+                else:
+                    current += char
+            args.append(current)
+            return args
+
+        declared = {}
+        for match in re.finditer(r'^function\s+([A-Za-z_]\w*)\s*\(([^)]*)\)[^\n(]*\(', clean, re.M):
+            declared[match.group(1)] = len(split_args(match.group(2)))
+        self.assertGreater(len(declared), 90, 'the package must be parsed, not skipped')
+        problems = []
+        for match in re.finditer(r'\b([A-Za-z_]\w*)\s*\(', clean):
+            name = match.group(1)
+            if name not in declared or clean[:match.start()].rstrip().endswith('function'):
+                continue
+            index, depth, current = match.end(), 1, ''
+            while index < len(clean) and depth:
+                char = clean[index]
+                if char == '(':
+                    depth += 1
+                if char == ')':
+                    depth -= 1
+                if depth:
+                    current += char
+                index += 1
+            if len(split_args(current)) != declared[name]:
+                problems.append(f'{name}: declared {declared[name]}, called with {len(split_args(current))}')
+        self.assertEqual(problems, [])
+
     def test_module_block_fits_the_declared_size(self):
         import re
         source = ROOT / 'MIDI/ccscope'

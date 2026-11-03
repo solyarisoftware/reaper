@@ -191,11 +191,18 @@ def main() -> None:
         files = provides(path.parent)
         for file in files:
             shutil.copy2(file, target / file.name)
-        (target / 'ccscope_plot.jsfx-inc').write_text(
-            instrument_plot((path.parent / 'ccscope_plot.jsfx-inc').read_text()))
-        (target / 'ccscope_rows.jsfx-inc').write_text(
-            instrument_rows((path.parent / 'ccscope_rows.jsfx-inc').read_text()))
-        (target / 'ccscope.jsfx').write_text(instrument(path.read_text(), variant))
+        # The drawing hooks live in the panels; a package from before the split
+        # keeps them in the conductor, and comparing across the split is exactly
+        # what this probe is for. So: instrument the panel where there is one.
+        main_text = path.read_text()
+        for name, hook in (('ccscope_plot.jsfx-inc', instrument_plot),
+                           ('ccscope_rows.jsfx-inc', instrument_rows)):
+            panel = path.parent / name
+            if panel.exists():
+                (target / name).write_text(hook(panel.read_text()))
+            else:
+                main_text = hook(main_text)
+        (target / 'ccscope.jsfx').write_text(instrument(main_text, variant))
     (args.output / 'generator.jsfx').write_text(GENERATOR)
     # Observe the delivered input, not the generator's pre-host emission order:
     # REAPER may canonicalize simultaneous bank/program/note events between FX.
