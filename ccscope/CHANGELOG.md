@@ -4,6 +4,16 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.12.2 — 2026-11-04
+
+- **The changelog ReaPack shows is this release's, not the whole history.** The `@changelog`
+  block in `ccscope.jsfx` had carried every entry since 0.5, and ReaPack displays whatever the
+  block holds — so all eight years of it appeared under each version. `reapack-index` preserves
+  previous versions' changelogs on its own; the block now holds the current version only.
+  Reported by X-Raym in the
+  [forum thread](https://forum.cockos.com/showpost.php?p=2972723&postcount=23). Nothing changed
+  in the plugin.
+
 ## 0.12.1 — 2026-11-04
 
 - **The version the status line prints is the published one again.** 0.12.0 still showed 0.11.1:

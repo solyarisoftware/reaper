@@ -99,6 +99,10 @@ using the plugin, not for the person reading the code:
   out of date; it is not kept.
 - **The `@about` header in the package source is the description ReaPack displays**, so it
   follows the same rule as the README: what it does for the user, not how it is implemented.
+- **The `@changelog` header holds the current version only.** ReaPack displays whatever the block
+  contains, so a full history kept there is displayed in full under every release;
+  `reapack-index` preserves previous versions' changelogs on its own. The history belongs in
+  `CHANGELOG.md`, which ReaPack does not publish.
 
 ## Optional support
 
