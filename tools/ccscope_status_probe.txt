@@ -1,27 +1,31 @@
 // Native status-line decision and geometry probe, assembled by the Python builder.
 //
-// It exercises calculate_layout() and draw_status_info() across widths, heights,
-// flow states, pair counts and warning conditions, and checks the three things that
-// make the status area a contract rather than a drawing:
+// It exercises draw_status_info() across widths, flow states and warning conditions
+// and checks what makes the status line a contract rather than a drawing:
 //
-//   1. the line count follows the monotone rule -- decided from the capacity of a
-//      ONE-line status, and once two lines are chosen the rows still do not fit;
-//   2. the metric form is the richest that fits the line it is drawn on, and the
-//      warnings of GitHub issue #17 §4 are never dropped, at any width;
-//   3. a drawn version ends exactly on the bottom line's right margin, and a line
-//      whose content fits never draws past it.
+//   1. the metric form is the richest that fits, and no richer;
+//   2. the version is drawn only when the chosen content plus it fits, and it ends
+//      exactly on the right margin of the line;
+//   3. the warnings of GitHub issue #17 §4 are never dropped, at any width;
+//   4. a line whose content fits never draws past the right margin.
 //
 // The oracle re-applies the policy from the same primitives (status_build,
 // status_measure), which is the point: the policy lives in one place.
 //
+// A second line was implemented and measured in 0.10.0 and removed in 0.11.0: it
+// cost two rows of pairs on a 60-pair session and its trigger made the choice
+// bistable around the row capacity. This probe is the one-line contract.
+//
 // gmem namespace CCScopeStatusTest: 20 status (0 running, 1 passed, -1 failed),
 // 21 completed case, 22 failing case, 23 expected form, 24 actual form,
-// 25 expected line count, 26 actual line count.
+// 27 failing check.
 
 probe_case = 0;
-probe_cases = 360;
+probe_cases = 180;
+gmem[20] = 0;
+gmem[21] = 0;
 
-// Which assertion failed: a probe that says "case 207" without saying why costs a
+// Which assertion failed: a probe that says "case 105" without saying why costs a
 // round trip through REAPER to diagnose.
 function probe_fail(code) (
   gmem[20] = -1;
@@ -29,8 +33,6 @@ function probe_fail(code) (
   gmem[27] = code;
   0;
 );
-gmem[20] = 0;
-gmem[21] = 0;
 
 // Nine widths, from "nothing fits" to wider than any window this plugin is used in.
 function probe_width(i) (
@@ -72,23 +74,23 @@ function probe_apply_state(state) local() (
 function probe_apply_warning(warn) (
   g_visible_bars = 40;
   g_side_fallback = 0;
-  warn == 1 || warn == 3 ? ( g_visible_bars = 2; );   // geometry overrides this below
+  warn == 1 || warn == 3 ? ( g_visible_bars = 2; );
   warn == 2 || warn == 3 ? ( g_side_fallback = 1; );
 );
 
 // The policy, re-derived: the richest form whose CONTENT fits, because the version
 // is the first thing to go -- never a reason to shorten the numbers.
-function probe_form_that_fits(scope, avail) local(w3, w2) (
+function probe_form_that_fits(avail) local(w3, w2) (
   status_build(probe_count, 3);
-  w3 = status_measure(scope);
+  w3 = status_measure();
   status_build(probe_count, 2);
-  w2 = status_measure(scope);
+  w2 = status_measure();
   w3 <= avail ? 3 : w2 <= avail ? 2 : 1;
 );
 
-function probe_version_fits(scope, form, avail) local() (
+function probe_version_fits(form, avail) local() (
   status_build(probe_count, form);
-  status_measure(scope) + g_st_ver_w + 8 <= avail;
+  status_measure() + g_st_ver_w + 8 <= avail;
 );
 
 @gfx 1000 720
@@ -106,78 +108,45 @@ probe_case < probe_cases && gmem[20] != -1 ? (
   gfx_w = probe_width(probe_case % 9);
   probe_state = floor(probe_case / 9) % 5;
   probe_warn = floor(probe_case / 45) % 4;
-  probe_rows = floor(probe_case / 180) % 2;
   probe_apply_state(probe_state);
-  // A tall count of pairs is what asks for the second line; states without data
-  // keep zero, because "no pairs" is the point of Waiting.
-  probe_rows && probe_count > 0 ? ( probe_count = 60; );
-
-  calculate_layout(probe_count);
-  // The layout decides how many rows are on screen; the warning follows from it.
-  probe_warn == 1 || probe_warn == 3 ? ( g_visible_bars = min(g_visible_bars, 2); );
+  probe_apply_warning(probe_warn);
 
   probe_avail = gfx_w - 20;
-  probe_expected_lines = probe_count > g_one_line_max_bars ? 2 : 1;
-
   draw_status_info(probe_count);
 
   // Snapshot what the implementation decided before asking the oracle anything: the
   // oracle rebuilds the pieces, and a flag read afterwards would be the oracle's.
-  probe_got_lines = g_status_lines;
   probe_got_form = g_st_form;
   probe_got_ver = g_st_ver;
   probe_got_wv = g_st_has_wv;
   probe_got_ws = g_st_has_ws;
-  probe_got_rate = g_st_has_rate;
-  probe_got_streams = g_st_has_streams;
-  probe_got_note = g_st_has_note;
-  probe_got_wA = g_st_wA;
-  probe_got_wB = g_st_wB;
   probe_got_w = g_st_w;
   probe_got_end_x = gfx_x;
   probe_got_end_y = gfx_y;
-  probe_got_y1 = g_st_y1;
   probe_got_y2 = g_st_y2;
 
-  // 1. the monotone rule, checked on the number the decision was made from
-  probe_got_lines != probe_expected_lines ? (
-    gmem[25] = probe_expected_lines;
-    gmem[26] = probe_got_lines;
-    probe_fail(1);
-  );
-  // ...and its stability: paying for the second line must not have made it fit
-  probe_got_lines == 2 && g_max_bars >= probe_count ? ( probe_fail(2); );
-  probe_got_lines == 1 && g_max_bars != g_one_line_max_bars ? ( probe_fail(3); );
-
-  // 2. the metric detail and the version, on the line they are drawn on
-  // Two lines are reserved by the rows, but drawn only when the lower one has
-  // numbers to show: otherwise the implementation falls back to a single line.
-  probe_scope = (probe_got_lines == 2 && (probe_got_rate || probe_got_streams)) ? 2 : 0;
-  probe_expected_form = (probe_state == 1 || probe_state == 2)
-                        ? probe_form_that_fits(probe_scope, probe_avail) : 3;
+  // 1. the metric detail: only Receiving has one to sacrifice
+  probe_expected_form = (probe_state == 1 || probe_state == 2) ? probe_form_that_fits(probe_avail) : 3;
   (probe_state == 1 || probe_state == 2) && probe_got_form != probe_expected_form ? (
     gmem[23] = probe_expected_form;
     gmem[24] = probe_got_form;
     probe_fail(4);
   );
-  probe_expected_ver = probe_version_fits(probe_scope, probe_expected_form, probe_avail) ? 1 : 0;
+
+  // 2. the version, in what is left after the content has been decided
+  probe_expected_ver = probe_version_fits(probe_expected_form, probe_avail) ? 1 : 0;
   probe_got_ver != probe_expected_ver ? ( probe_fail(5); );
 
   // 3. the warnings are the reason the line exists: they never disappear
   probe_count > g_visible_bars && !probe_got_wv ? ( probe_fail(6); );
   g_side_fallback && !probe_got_ws ? ( probe_fail(7); );
 
-  // 4. geometry: the numbers fit their line, and the version ends on the margin
-  probe_got_lines == 2 ? (
-    probe_got_wB > probe_avail ? ( probe_fail(8); );
-    probe_got_wA > probe_avail && probe_got_note ? ( probe_fail(9); );
-    probe_got_y1 != probe_got_y2 - STATUS_LINE_SPACING ? ( probe_fail(10); );
-  ) : (
-    probe_got_w <= probe_avail ? ( probe_got_end_x > gfx_w - 10 + 1 ? ( probe_fail(11); ); );
-  );
+  // 4. geometry: content that fits stays inside the margin, and a drawn version
+  //    ends on it, on the line's baseline
+  probe_got_w <= probe_avail ? ( probe_got_end_x > gfx_w - 10 + 1 ? ( probe_fail(8); ); );
   probe_got_ver ? (
-    abs(probe_got_end_x - (gfx_w - 10)) > 2 ? ( probe_fail(12); );
-    probe_got_end_y != probe_got_y2 ? ( probe_fail(13); );
+    abs(probe_got_end_x - (gfx_w - 10)) > 2 ? ( probe_fail(9); );
+    probe_got_end_y != probe_got_y2 ? ( probe_fail(10); );
   );
 
   probe_case += 1;
@@ -195,6 +164,5 @@ gfx_printf("Status line: %d / %d cases, status %d", probe_case, probe_cases, gme
 gmem[20] == -1 ? (
   gfx_x = 20;
   gfx_y = 44;
-  gfx_printf("failed case %d check %d: form %d (expected %d), lines %d (expected %d)",
-             gmem[22], gmem[27], gmem[24], gmem[23], gmem[26], gmem[25]);
+  gfx_printf("failed case %d check %d: form %d (expected %d)", gmem[22], gmem[27], gmem[24], gmem[23]);
 );

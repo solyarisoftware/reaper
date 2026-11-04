@@ -4,6 +4,15 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.11.0 — 2026-11-04
+
+- **The second status line is gone.** It was implemented in 0.10.0 for the cases where the pairs
+  do not all fit; measured on a 60-pair session at 1016×790 it cost two rows of pairs (24 instead
+  of 26), and its trigger makes the choice bistable: the `showing N of M` warning appears exactly
+  when the shorter layout is in force, so "one line (rows fit, no warning)" and "two lines
+  (warning, rows still do not fit)" are both stable, and which one you get depends on history.
+  One line it is, with the metric detail shortened before the warning is touched.
+
 ## 0.10.1 — 2026-11-04
 
 - **The two status lines sit one text line apart**, not one reserved margin apart. The margin

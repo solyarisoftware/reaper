@@ -5,9 +5,8 @@
 //
 // OWNS: the geometry of the frame. calculate_layout() decides the plot floor, the
 // rows below the plot (or the column beside it), the row geometry that the bar
-// rows and the metric columns hang from, the EFFECTIVE layout mode together with
-// the fallback flag the status line explains, and how many lines the status area
-// gets (one or two, by the monotone rule in g_status_lines). calculate_metric_columns()
+// rows and the metric columns hang from, and the EFFECTIVE layout mode together
+// with the fallback flag the status line explains. calculate_metric_columns()
 // measures the three metric fields and picks which of its four forms fits.
 //
 // READS: gfx_w, gfx_h, slider7 and the constants declared in ccscope.jsfx @init
@@ -35,10 +34,7 @@
  * 
  * @param filtered_count Number of (CC#, Channel) pairs to display in bars section
  */
-// One layout pass, with the status height as an argument instead of a constant.
-// calculate_layout() runs it twice: once to learn what a one-line status would
-// allow, once with the margin the decision produced.
-function layout_pass(filtered_count, status_margin) local(required_bar_height, max_bar_height,
+function calculate_layout(filtered_count) local(required_bar_height, max_bar_height,
                                                min_graph_height, available_bar_space,
                                                column_width, side_needed_width) (
 
@@ -63,9 +59,9 @@ function layout_pass(filtered_count, status_margin) local(required_bar_height, m
     // ========== BESIDE: THE COLUMN OWNS THE RIGHT EDGE, THE PLOT KEEPS HEIGHT ==========
     g_column_x = gfx_w - column_width - SIDE_PAD;
     g_graph_width = g_column_x - SIDE_COLUMN_GAP - g_graph_margin_left;
-    g_graph_actual_height = max(gfx_h - g_graph_start_y - status_margin - SIDE_TIME_LABEL_BAND, 40);
+    g_graph_actual_height = max(gfx_h - g_graph_start_y - STATUS_TEXT_MARGIN - SIDE_TIME_LABEL_BAND, 40);
     g_graph_height = g_graph_start_y + g_graph_actual_height;
-    g_bars_height = gfx_h - status_margin - g_graph_start_y;
+    g_bars_height = gfx_h - STATUS_TEXT_MARGIN - g_graph_start_y;
 
     // Rows start at the top of the window, beside the plot, and run down to the
     // status line: the list uses the whole height, which is the whole point.
@@ -77,13 +73,13 @@ function layout_pass(filtered_count, status_margin) local(required_bar_height, m
     g_value_x = g_bar_x + g_bar_width + 8;
     g_metrics_x = g_value_x + SIDE_VALUE_WIDTH;
 
-    g_max_bars = max(floor((gfx_h - g_start_y - status_margin) / (BAR_HEIGHT + BAR_SPACING)), 0);
+    g_max_bars = max(floor((gfx_h - g_start_y - STATUS_TEXT_MARGIN) / (BAR_HEIGHT + BAR_SPACING)), 0);
     g_visible_bars = min(filtered_count, g_max_bars);
   ) : (
     // ========== BELOW: THE ROWS TAKE HEIGHT FROM THE PLOT ==========
     // Minimum height needed for the bar section: one row per (CC, channel)
     // pair, plus the status line and the gap under the graph.
-    required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + status_margin + BAR_SECTION_TOP_GAP;
+    required_bar_height = (filtered_count * (BAR_HEIGHT + BAR_SPACING)) + STATUS_TEXT_MARGIN + BAR_SECTION_TOP_GAP;
     required_bar_height = max(required_bar_height, MIN_BAR_SECTION);
 
     // The plot keeps its minimum share of the window and the bars take what is
@@ -112,7 +108,7 @@ function layout_pass(filtered_count, status_margin) local(required_bar_height, m
     g_metrics_x = g_bar_x + g_bar_width + 32;
 
     // How many bars really fit between the graph and the status line
-    available_bar_space = gfx_h - g_start_y - status_margin;
+    available_bar_space = gfx_h - g_start_y - STATUS_TEXT_MARGIN;
     g_max_bars = max(floor(available_bar_space / (BAR_HEIGHT + BAR_SPACING)), 0);
     g_visible_bars = min(filtered_count, g_max_bars);
   );
@@ -123,30 +119,6 @@ function layout_pass(filtered_count, status_margin) local(required_bar_height, m
   g_y_range_min = 0;
   g_y_range_total = 127;
 
-);
-
-/**
- * Decides how many lines the status area gets, then lays out for it
- *
- * The rule is monotone on purpose. The line count is decided by comparing the
- * filtered pair count with the capacity computed for a ONE-line status -- never
- * with the capacity of the policy currently in force. If everything fits with one
- * line, one line it is; otherwise two, and the rows still do not all fit after
- * paying for the second line, so the decision cannot come back. Measuring the text
- * instead would close a loop: the "showing N of M" warning would cost the height
- * that could have removed it.
- *
- * g_one_line_max_bars keeps the number the decision was made from, so the native
- * probe can check the rule rather than trust it.
- */
-function calculate_layout(filtered_count) (
-  layout_pass(filtered_count, STATUS_TEXT_MARGIN);
-  g_one_line_max_bars = g_max_bars;
-  g_status_lines = filtered_count > g_one_line_max_bars ? 2 : 1;
-  g_status_margin = STATUS_TEXT_MARGIN * g_status_lines;
-  g_status_lines == 2 ? (
-    layout_pass(filtered_count, g_status_margin);
-  );
 );
 
 /**
