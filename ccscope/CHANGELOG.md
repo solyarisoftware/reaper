@@ -4,6 +4,20 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.12.0 — 2026-11-04
+
+- **The WIN list offers six windows — 1, 2, 5, 10, 20 and 30 s — instead of the thirty between 1
+  and 30**, so it opens fully visible rather than hiding 18 of its rows behind a scroll. The
+  parameter is unchanged: still any whole second from 1 to 30, so presets, automation and the
+  Param list keep their meaning. A window the list does not offer, written by a preset or by
+  automation, is shown as it is (`12s`) with no row highlighted. Issue
+  [#25](https://github.com/solyarisoftware/reaper/issues/25).
+- **The wheel over WIN steps through those six values** rather than adding seconds, so the pointer
+  cannot land on a window the menu cannot select. On the other selectors nothing changes.
+- The control bar's lists became data instead of arithmetic (`cbm_list()`), and the memory checker
+  now compares the module's own block size with the reservation in `ccscope_utils.jsfx-inc`, so a
+  block that outgrows its range fails the check instead of overwriting what follows it.
+
 ## 0.11.1 — 2026-11-04
 
 - **The state word is lit by intensity**, so "is anything arriving?" is answered before the word

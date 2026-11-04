@@ -13,6 +13,7 @@ import re
 def check(root: Path) -> list[str]:
     utils = (root / 'ccscope_utils.jsfx-inc').read_text()
     metrics = (root / 'ccscope_metrics.jsfx-inc').read_text()
+    controlbar = (root / 'ccscope_controlbar.jsfx-inc').read_text()
     constants: dict[str, int] = {}
     for name, expr in re.findall(
         r'^\s*([A-Za-z_]\w*)\s*=\s*([A-Za-z_0-9+*/() \t-]+?)\s*;',
@@ -42,6 +43,7 @@ def check(root: Path) -> list[str]:
         'MEM_HISTORY_WRITE': 1, 'MEM_HISTORY_COUNT': 1,
         'MEM_NEXT_COLOR': 1, 'MEM_PAIR_LIST_COUNT': 1,
         'MEM_CBM_BASE': c['MEM_CBM_SIZE'],
+        'MEM_WIN_LIST': c['MEM_WIN_LIST_SIZE'],
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],
         'MEM_TIME_HISTORY': pairs * c['TIME_HISTORY_BUCKETS'] * c['TIME_HISTORY_STRIDE'],
     }
@@ -58,6 +60,15 @@ def check(root: Path) -> list[str]:
         errors.append('Temporal history cannot retain the full 30-second window')
     if c['TIME_HISTORY_STRIDE'] != 7:
         errors.append('Temporal history fields do not fit declared stride')
+    # The module declares its own block end; the host declares how much room it
+    # reserved. A block that grew past its reservation would overwrite the list
+    # tables placed after it, silently.
+    block_end = re.search(r'^CBM_ARRAYS_END\s*=\s*(\d+)\s*;', controlbar, re.M)
+    if not block_end:
+        errors.append('Cannot identify the control-bar block size')
+    elif c['MEM_CBM_SIZE'] < int(block_end[1]):
+        errors.append(f"Control-bar block needs {block_end[1]} slots, "
+                      f"MEM_CBM_SIZE reserves {c['MEM_CBM_SIZE']}")
     if max(end for _, end, _ in regions) > 8388608:
         errors.append('Memory ranges exceed the default JSFX 8M-slot capacity')
     if any(start < 0 or end <= start for start, end, _ in regions):

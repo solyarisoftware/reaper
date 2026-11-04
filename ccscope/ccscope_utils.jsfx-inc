@@ -64,11 +64,18 @@ MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
 // state of the cells and of the open list. Its internal layout is declared in
 // ccscope_controlbar.jsfx-inc (the CBM_* constants); only the size lives here,
 // because the address space has one owner and one checker.
-MEM_CBM_BASE = 12612;         // 12612..12707 control-bar module block
-MEM_CBM_SIZE = 96;
+MEM_CBM_BASE = 12612;         // 12612..12723 control-bar module block
+MEM_CBM_SIZE = 112;
+
+// The rows the control bar's menus offer, where a menu is not a range. One list
+// lives here today: the time window, offered as 1, 2, 5, 10, 20, 30 seconds.
+// The parameter keeps its 1..30 domain, so presets and automation are untouched;
+// only the menu is shorter, and a value it does not offer still reads correctly.
+MEM_WIN_LIST = 12724;         // 12724..12729 the WIN cell's list values
+MEM_WIN_LIST_SIZE = 6;
 
 // The temporal ring is the only large range, and it starts high so the small
-// per-key ranges above stay readable as a block: 0..12707 is everything that is
+// per-key ranges above stay readable as a block: 0..12729 is everything that is
 // indexed by CC, channel or cell, and 3120000 is the ring behind it.
 
 // Temporal history is independent of the raw-event diagnostic ring. Each pair

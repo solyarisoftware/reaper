@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.11.1
+// @version 0.12.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -42,6 +42,10 @@ desc:CCScope
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.12.0 The WIN list offers six windows -- 1, 2, 5, 10, 20, 30 s -- and opens
+//          fully visible instead of hiding 18 of its thirty rows behind a scroll.
+//          The parameter still accepts any whole second in 1..30, so presets and
+//          automation keep their meaning; the wheel steps through the six.
 //   0.11.1 The state word is lit by intensity: dim when nothing has ever arrived,
 //          grey when it arrived and went quiet, bright while it speaks, amber when
 //          frozen. Colour stays redundant with the word, never its only carrier.
@@ -137,7 +141,7 @@ desc:CCScope
 //   short, wide window still shows every pair); the plot keeps a minimum share
 //   of the window in the first case and the full height in the second
 // - Unique persistent color per CC from 12-color palette (shared across channels)
-// - Configurable time window (1-30 seconds)
+// - Configurable time window (1-30 seconds, offered as 1, 2, 5, 10, 20, 30)
 // - Monitor all CCs simultaneously or focus on a single CC
 // - Filter by MIDI channel (all channels, or one of the 16), combinable with the
 //   CC filter
@@ -177,7 +181,7 @@ desc:CCScope
 // CONTROLS:
 // - Slider 1: CC to Monitor (0 = All CCs, 1-127 = specific CC)
 // - Slider 2: Freeze, stops acquisition (the MIDI keeps flowing through)
-// - Slider 3: Time Window in seconds (1-30)
+// - Slider 3: Time Window in seconds (1-30; the menu offers 1, 2, 5, 10, 20, 30)
 // - Slider 4: Clear history and metrics (resets itself to 0)
 // - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
 // - Slider 6: Channel to Monitor (0 = All channels, 1-16 = one MIDI channel)
@@ -456,6 +460,18 @@ cbm_cell(4, 1, 0, 2, 0);        // dots on the traces
 cbm_cell(5, 1, 0, 1, 0);        // where the pair list lives
 cbm_cell(6, 2, 0, 1, 0);        // Freeze
 cbm_cell(7, 3, 0, 1, 0);        // Clear
+
+// The WIN cell offers a ladder instead of every second in 1..30. The parameter
+// itself is unchanged -- a preset still says 10, automation can still write 12 --
+// and only the menu is shorter: six rows, one screenful, no scroll. A value the
+// ladder does not hold is shown as it is, with no row highlighted.
+mem[MEM_WIN_LIST + 0] = 1;
+mem[MEM_WIN_LIST + 1] = 2;
+mem[MEM_WIN_LIST + 2] = 5;
+mem[MEM_WIN_LIST + 3] = 10;
+mem[MEM_WIN_LIST + 4] = 20;
+mem[MEM_WIN_LIST + 5] = 30;
+cbm_list(3, MEM_WIN_LIST, MEM_WIN_LIST_SIZE);
 
 // ========== FUNCTION DEFINITIONS ==========
 

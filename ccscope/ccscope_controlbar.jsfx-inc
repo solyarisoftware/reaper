@@ -10,6 +10,9 @@
 //                                        the pixels the host wants; called once
 //   cbm_cell(i, kind, min, max, def)     0 numeric list, 1 enum list, 2 toggle,
 //                                        3 action (a button that sets 1)
+//   cbm_list(i, base, count)             the values a cell's list offers, in the
+//                                        host's memory; without it the list is
+//                                        the integer range min..max
 //   cbm_group_right(k)                   the last k cells hang on the right edge
 //   cbm_value_push(i, v)                 the host's value for cell i
 //   cbm_text(i, #key, #key_w, #val, #val_w)
@@ -40,6 +43,12 @@
 //   in, applies what came out (sliderchange() is the host's business) and formats
 //   every string. That is what makes this file reusable: no global called slider1,
 //   no constant of one plugin's palette.
+//
+//   It never decides which values a list offers either. The rows are the host's
+//   data: a table when the list is sparse (1, 2, 5, 10, 20, 30 seconds), the
+//   range min..max only when the host leaves it arithmetic (CC numbers, channels).
+//   A cell's value is always a value of the host's parameter, never a position,
+//   so a parameter that holds something the list does not show still reads right.
 //
 // MEMORY
 //   The host passes the base address; the module claims nothing on its own, so the
@@ -103,8 +112,10 @@ CBM_DEF = 72;         // 72..79  what a right click restores
 CBM_VAL = 80;         // 80..87  the value the host last pushed, or the one the
                       //         pointer chose and the host has yet to apply
 CBM_APL = 88;         // 88..95  the value in force in the host
+CBM_LBASE = 96;       // 96..103 mem address of a cell's list table, 0 = range
+CBM_LCOUNT = 104;     // 104..111 how many entries that table holds
 CBM_MAX_CELLS = 8;
-CBM_ARRAYS_END = 96;
+CBM_ARRAYS_END = 112;
 
 g_cbm_base = 0;
 
@@ -163,6 +174,21 @@ function cbm_cell(i, kind, minv, maxv, defv) (
   0;
 );
 
+/**
+ * Publishes the values a cell's list offers, written by the host in its own memory
+ *
+ * Without it the list is the integer range min..max, which is right for CC
+ * numbers and channels and wrong for anything chosen from a ladder.
+ *
+ * @param base  first slot of the host's table, `count` values in ascending order
+ * @param count how many entries the table holds
+ */
+function cbm_list(i, base, count) (
+  mem[g_cbm_base + CBM_LBASE + i] = max(0, base);
+  mem[g_cbm_base + CBM_LCOUNT + i] = max(1, count);
+  0;
+);
+
 function cbm_cells() ( mem[g_cbm_base + CBM_N] );
 
 function cbm_group_right(k) ( mem[g_cbm_base + CBM_GROUP_RIGHT] = max(0, min(cbm_cells(), k)); );
@@ -171,6 +197,20 @@ function cbm_kind(i) ( mem[g_cbm_base + CBM_KIND + i] );
 function cbm_is_selector(i) ( cbm_kind(i) <= 1 );
 function cbm_min(i) ( mem[g_cbm_base + CBM_MIN + i] );
 function cbm_max(i) ( mem[g_cbm_base + CBM_MAX + i] );
+
+// The values a list offers, and where they live. Without a table it is the
+// integer range min..max; with one it is the host's, in ascending order.
+function cbm_list_base(i) ( mem[g_cbm_base + CBM_LBASE + i] );
+
+function cbm_list_count(i) (
+  cbm_list_base(i) ? mem[g_cbm_base + CBM_LCOUNT + i] : cbm_max(i) - cbm_min(i) + 1;
+);
+
+function cbm_list_value(i, k) local(base) (
+  base = cbm_list_base(i);
+  base ? mem[base + k] : cbm_min(i) + k;
+);
+
 function cbm_default(i) ( mem[g_cbm_base + CBM_DEF + i] );
 function cbm_value(i) ( mem[g_cbm_base + CBM_VAL + i] );
 function cbm_has_labels() ( mem[g_cbm_base + CBM_HAS_LABELS] );
@@ -223,6 +263,49 @@ function cbm_applied(i, v) local(bit) (
   // EEL2 has no unary complement: ~ is bitwise XOR, so the bit is subtracted,
   // and only if it is still set -- applying twice must not re-arm the cell.
   (mem[g_cbm_base + CBM_DIRTY] & bit) ? ( mem[g_cbm_base + CBM_DIRTY] -= bit; );
+  0;
+);
+
+// ========== A LIST THAT IS NOT A RANGE ==========
+
+/**
+ * The position of v in a cell's list, or of the entry just below it
+ *
+ * A list is not always a range: the time window offers 1, 2, 5, 10, 20, 30 s
+ * while the parameter still accepts every integer in between, so a value the
+ * list does not hold is a normal state and not an error -- automation writes
+ * one. The list then opens on the entry below it, which is where the eye would
+ * look for it.
+ *
+ * LOOPS: call it from plain code, not from inside another loop().
+ */
+function cbm_list_position(i, v) local(k, n, pos) (
+  n = cbm_list_count(i);
+  pos = 0;
+  k = 0;
+  loop(n,
+    cbm_list_value(i, k) <= v ? ( pos = k; );
+    k += 1;
+  );
+  pos;
+);
+
+/**
+ * Moves a cell to the entry `dir` places away from the one it is on
+ *
+ * The wheel steps through what the list offers, not through the raw value: on a
+ * ladder, +1 second lands between two entries and leaves the cell showing a
+ * value the menu cannot select. A value that sits between two entries moves to
+ * the neighbouring one, in the direction of travel.
+ */
+function cbm_step_list(i, dir) local(pos, n, target) (
+  n = cbm_list_count(i);
+  pos = cbm_list_position(i, cbm_value(i));
+  target = pos + dir;
+  // Off the ladder: coming down lands on the entry below, going up on the one
+  // above -- never on the value already in force.
+  (dir < 0 && cbm_list_value(i, pos) != cbm_value(i)) ? ( target = pos; );
+  cbm_set(i, cbm_list_value(i, max(0, min(n - 1, target))));
   0;
 );
 
@@ -415,14 +498,14 @@ function cbm_open_menu(i) local(cur, rows) (
   mem[g_cbm_base + CBM_MENU_OPEN] = 0;
   cbm_is_selector(i) ? (
     mem[g_cbm_base + CBM_MENU_OPEN] = i;
-    mem[g_cbm_base + CBM_MENU_COUNT] = cbm_max(i) - cbm_min(i) + 1;
+    mem[g_cbm_base + CBM_MENU_COUNT] = cbm_list_count(i);
     rows = min(mem[g_cbm_base + CBM_MENU_COUNT], mem[g_cbm_base + CBM_ST_MENU_ROWS]);
     mem[g_cbm_base + CBM_MENU_ROWS] = rows;
     mem[g_cbm_base + CBM_MENU_W] = max(mem[g_cbm_base + CBM_W + i], mem[g_cbm_base + CBM_ST_MENU_W]);
     mem[g_cbm_base + CBM_MENU_X] = mem[g_cbm_base + CBM_X + i];
     mem[g_cbm_base + CBM_MENU_Y] = mem[g_cbm_base + CBM_TOP] + mem[g_cbm_base + CBM_HEIGHT]
                                   + mem[g_cbm_base + CBM_ST_DROP];
-    cur = cbm_value(i) - cbm_min(i);
+    cur = cbm_list_position(i, cbm_value(i));
     mem[g_cbm_base + CBM_MENU_SCROLL] = max(0, min(cur - floor(rows / 2),
                                                   mem[g_cbm_base + CBM_MENU_COUNT] - rows));
   );
@@ -440,7 +523,7 @@ function cbm_row_y(r) (
 );
 
 function cbm_row_value(r) (
-  cbm_min(cbm_open()) + mem[g_cbm_base + CBM_MENU_SCROLL] + r;
+  cbm_list_value(cbm_open(), mem[g_cbm_base + CBM_MENU_SCROLL] + r);
 );
 
 function cbm_row_hovered(r) local(y, hit) (
@@ -460,7 +543,7 @@ function cbm_row_is_current(r) ( (cbm_row_value(r) == cbm_value(cbm_open())) ? 1
  * Returns 1 when the press was inside the open list (and acted on it), so the
  * caller knows the click was consumed even after the list has closed.
  */
-function cbm_menu_press(px, py) local(used, r, v, h) (
+function cbm_menu_press(px, py) local(used, r, h) (
   used = 0;
   cbm_open() > 0 ? (
     h = mem[g_cbm_base + CBM_MENU_ROWS] * mem[g_cbm_base + CBM_ST_ROW] + 4;
@@ -468,9 +551,8 @@ function cbm_menu_press(px, py) local(used, r, v, h) (
      && px <= mem[g_cbm_base + CBM_MENU_X] + mem[g_cbm_base + CBM_MENU_W]
      && py >= mem[g_cbm_base + CBM_MENU_Y] && py <= mem[g_cbm_base + CBM_MENU_Y] + h) ? (
       r = floor((py - mem[g_cbm_base + CBM_MENU_Y] - 2) / mem[g_cbm_base + CBM_ST_ROW]);
-      v = cbm_min(cbm_open()) + mem[g_cbm_base + CBM_MENU_SCROLL] + r;
-      (r >= 0 && r < mem[g_cbm_base + CBM_MENU_ROWS] && v <= cbm_max(cbm_open())) ? (
-        cbm_set(cbm_open(), v);
+      (r >= 0 && r < mem[g_cbm_base + CBM_MENU_ROWS]) ? (
+        cbm_set(cbm_open(), cbm_list_value(cbm_open(), mem[g_cbm_base + CBM_MENU_SCROLL] + r));
       );
       used = 1;
     );
@@ -533,7 +615,10 @@ function cbm_mouse() local(down, rdown, wd, used, hit) (
                                                     mem[g_cbm_base + CBM_MENU_COUNT] - mem[g_cbm_base + CBM_MENU_ROWS]));
     ) : (
       hit > 0 ? (
-        cbm_is_selector(hit) ? ( cbm_set(hit, cbm_value(hit) + cbm_wheel_steps(wd)); );
+        cbm_is_selector(hit) ? (
+          cbm_list_base(hit) ? ( cbm_step_list(hit, cbm_wheel_steps(wd)); )
+                             : ( cbm_set(hit, cbm_value(hit) + cbm_wheel_steps(wd)); );
+        );
       );
     );
   );
