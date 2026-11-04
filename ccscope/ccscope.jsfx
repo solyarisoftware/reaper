@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.9
+// @version 0.8.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -31,7 +31,7 @@
 //   GitHub https://github.com/solyarisoftware/reaper
 //   Issues https://github.com/solyarisoftware/reaper/issues
 //   Discussions https://github.com/solyarisoftware/reaper/discussions
-// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope/ccscope.png
+// @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/ccscope/ccscope.png
 // @provides
 //   ccscope_utils.jsfx-inc
 //   ccscope_metrics.jsfx-inc
@@ -41,9 +41,11 @@
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
-//   0.7.9 Documentation release, no change in behaviour: shorter package
-//         description, no sliders mentioned (hidden since 0.7.0), and the
-//         roadmap left to the repository's issues and discussions.
+//   0.8.0 The package moved from MIDI/ccscope to ccscope, so ReaPack installs it
+//         in Effects/ccscope and sees a different package: remove the old one
+//         after updating, and re-add the effect to projects that used it. Also a
+//         shorter description, no sliders mentioned (hidden since 0.7.0), and the
+//         roadmap left to the issues and discussions.
 //   0.7.8 CC ramps draw as straight diagonals instead of an artificial
 //         staircase; genuine peaks, troughs and clipped boundaries remain.
 //   0.7.7 Nothing visible changed: one conductor plus five library files, so a
@@ -216,7 +218,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.9
+version: 0.8.0
 date: 2026-11-03
 
 // Import utility libraries

@@ -18,7 +18,7 @@ class MemoryMapTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.source = Path(self.temp.name)
         for name in ('ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
-            shutil.copy2(ROOT / 'MIDI/ccscope' / name, self.source / name)
+            shutil.copy2(ROOT / 'ccscope' / name, self.source / name)
 
     def replace(self, old, new):
         path = self.source / 'ccscope_utils.jsfx-inc'
@@ -70,22 +70,22 @@ class HistoryProbeTests(unittest.TestCase):
         module = self.load_tool('ccscope_history_probe')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'new'
-            module.build(ROOT / 'MIDI/ccscope', output)
+            module.build(ROOT / 'ccscope', output)
             text = (output / 'history_checks.jsfx').read_text()
             self.assertIn('function draw_temporal_point(', text)
             self.assertIn('middle = (max(first_t, g_time_start)', text)
             self.assertIn('history_verify(history_dots==1)', text)
             self.assertNotIn('1e20', text)  # Unsupported EEL2 literal caused a native false start.
             self.assertEqual((output / 'ccscope_utils.jsfx-inc').read_bytes(),
-                             (ROOT / 'MIDI/ccscope/ccscope_utils.jsfx-inc').read_bytes())
+                             (ROOT / 'ccscope/ccscope_utils.jsfx-inc').read_bytes())
             with self.assertRaises(ValueError):
-                module.build(ROOT / 'MIDI/ccscope', output)
+                module.build(ROOT / 'ccscope', output)
 
     def test_probe_includes_diagonal_geometry_and_envelope_regressions(self):
         module = self.load_tool('ccscope_history_probe')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'new'
-            module.build(ROOT / 'MIDI/ccscope', output)
+            module.build(ROOT / 'ccscope', output)
             text = (output / 'history_checks.jsfx').read_text()
             self.assertIn(module.DIAGONAL_CASES, text)
             self.assertIn('history_x1=x1; history_y1=y1;', text)
@@ -99,11 +99,11 @@ class HistoryProbeTests(unittest.TestCase):
     def test_old_exact_event_probe_rejects_temporal_renderer(self):
         module = self.load_tool('ccscope_rendering_probe')
         with self.assertRaisesRegex(ValueError, 'ccscope_history_probe'):
-            module.graph_function((ROOT / 'MIDI/ccscope/ccscope_plot.jsfx-inc').read_text())
+            module.graph_function((ROOT / 'ccscope/ccscope_plot.jsfx-inc').read_text())
 
     def test_acceptance_seed_populates_both_temporal_and_raw_history(self):
         module = self.load_tool('ccscope_acceptance_probe')
-        source = (ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text()
+        source = (ROOT / 'ccscope/ccscope.jsfx').read_text()
         seeded = module.instrument(source, 'candidate')
         self.assertIn('g_clock_sec = 200;', seeded)
         self.assertIn('add_temporal_history(accept_t,', seeded)
@@ -115,7 +115,7 @@ class HistoryProbeTests(unittest.TestCase):
 class PackageLayoutTests(unittest.TestCase):
     def test_every_include_is_provided_present_and_imported(self):
         import importlib.util
-        source = ROOT / 'MIDI/ccscope'
+        source = ROOT / 'ccscope'
         main = (source / 'ccscope.jsfx').read_text()
         spec = importlib.util.spec_from_file_location(
             'ccscope_acceptance_probe', ROOT / 'tools/ccscope_acceptance_probe.py')
@@ -131,7 +131,7 @@ class PackageLayoutTests(unittest.TestCase):
     def test_panels_do_not_call_each_other(self):
         """A panel reads the frame state; it calls no other panel's function."""
         import re
-        source = ROOT / 'MIDI/ccscope'
+        source = ROOT / 'ccscope'
         panels = ['ccscope_layout', 'ccscope_plot', 'ccscope_rows',
                   'ccscope_status', 'ccscope_controlbar']
         owner, bodies = {}, []
@@ -156,7 +156,7 @@ class Eel2OrderTests(unittest.TestCase):
 
     def combined(self):
         import re
-        source = ROOT / 'MIDI/ccscope'
+        source = ROOT / 'ccscope'
         main = (source / 'ccscope.jsfx').read_text()
         order = [line.split()[1] for line in main.splitlines() if line.startswith('import ')]
         parts = [(source / name).read_text() for name in order]
@@ -227,7 +227,7 @@ class Eel2OrderTests(unittest.TestCase):
 
     def test_module_block_fits_the_declared_size(self):
         import re
-        source = ROOT / 'MIDI/ccscope'
+        source = ROOT / 'ccscope'
         module = (source / 'ccscope_controlbar.jsfx-inc').read_text()
         utils = (source / 'ccscope_utils.jsfx-inc').read_text()
         constants = {m.group(1): int(m.group(2)) for m in
@@ -248,7 +248,7 @@ class Eel2OrderTests(unittest.TestCase):
 
     def test_module_never_touches_a_slider(self):
         import re
-        text = (ROOT / 'MIDI/ccscope/ccscope_controlbar.jsfx-inc').read_text()
+        text = (ROOT / 'ccscope/ccscope_controlbar.jsfx-inc').read_text()
         text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
         text = re.sub(r'//[^\n]*', '', text)
         for word in ('slider1', 'slider2', 'slider3', 'slider4', 'slider5',
@@ -259,14 +259,14 @@ class Eel2OrderTests(unittest.TestCase):
 class ReleaseMetadataTests(unittest.TestCase):
     def test_reapack_tag_matches_the_jsfx_version(self):
         import re
-        text = (ROOT / 'MIDI/ccscope/ccscope.jsfx').read_text()
+        text = (ROOT / 'ccscope/ccscope.jsfx').read_text()
         tag = re.search(r'^//\s*@version\s+(\S+)', text, re.M)
         meta = re.search(r'^version:\s*(\S+)', text, re.M)
         self.assertIsNotNone(tag, 'ReaPack reads @version, not the JSFX metadata line')
         self.assertIsNotNone(meta)
         self.assertEqual(tag.group(1), meta.group(1),
                          'the tag ReaPack publishes and the plugin version must be the same')
-        changelog = (ROOT / 'MIDI/ccscope/CHANGELOG.md').read_text()
+        changelog = (ROOT / 'ccscope/CHANGELOG.md').read_text()
         self.assertIn(f'## {meta.group(1)} ', changelog,
                       'a released version needs its entry in CHANGELOG.md')
 
@@ -284,7 +284,7 @@ class CrossSplitProbeTests(unittest.TestCase):
             base = Path(directory) / 'legacy'
             base.mkdir()
             for name in ('ccscope.jsfx', 'ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
-                shutil.copy2(ROOT / 'MIDI/ccscope' / name, base / name)
+                shutil.copy2(ROOT / 'ccscope' / name, base / name)
             text = (base / 'ccscope.jsfx').read_text()
             built = legacy['instrument'](text, 'baseline', legacy=True)
             self.assertIn('function cbm_cell_x(i)', built)

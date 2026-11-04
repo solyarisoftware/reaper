@@ -18,21 +18,23 @@ folder inside your REAPER resource directory (`Effects/<category>/` on Windows).
 
 | Package | ReaPack category | What it does |
 |---|---|---|
-| [CCScope](MIDI/ccscope/) | `MIDI/ccscope` | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
+| [CCScope](ccscope/) | `ccscope` | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
 
-Each package keeps its documentation next to its sources — README, changelog, roadmap, screenshot:
+Each package keeps its documentation next to its sources — README, changelog, screenshots:
 
-- [`MIDI/ccscope/`](MIDI/ccscope/) — [README](MIDI/ccscope/README.md) · [changelog](MIDI/ccscope/CHANGELOG.md)
+- [`ccscope/`](ccscope/) — [README](ccscope/README.md) · [changelog](ccscope/CHANGELOG.md)
 
 Issues and discussions are the roadmap for each package; no separate roadmap file is kept.
 
 ## How this repository is organised
 
-This is a ReaPack repository, so **the folder tree is the package taxonomy**: a file in
-`MIDI/ccscope/` is installed as `Effects/MIDI/ccscope/<file>` and appears under the
-*MIDI/ccscope* category in ReaPack. The `index.xml` at the root is generated from the files'
-metadata headers by [reapack-index](https://github.com/cfillion/reapack-index) running in GitHub
-Actions — do not edit it by hand.
+This is a ReaPack repository, so **the folder tree is the package taxonomy**: `ccscope/` is
+installed as `Effects/ccscope/<file>` and appears under the *ccscope* category in ReaPack, and a
+file placed in `MIDI/foo/` would land in `Effects/MIDI/foo/` under the *MIDI/foo* category. One
+folder level per category level — not a copy of REAPER's resource tree. The `index.xml` at the
+root is generated from the files' metadata headers by
+[reapack-index](https://github.com/cfillion/reapack-index) running in GitHub Actions — do not
+edit it by hand.
 
 Each package lives in its own folder, with everything it needs: the sources, the includes it
 imports (which resolve relative to it), and its own documentation.

@@ -68,7 +68,7 @@ def check(root: Path) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source', type=Path,
-                    default=Path(__file__).resolve().parent.parent / 'MIDI/ccscope')
+                    default=Path(__file__).resolve().parent.parent / 'ccscope')
     args = ap.parse_args()
     errors = check(args.source)
     for error in errors:

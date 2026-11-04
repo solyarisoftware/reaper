@@ -4,11 +4,14 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
-## 0.7.9 — 2026-11-04
+## 0.8.0 — 2026-11-04
 
-- Documentation release, no change in behaviour: a shorter README aimed at the user, one-line
-  changelog entries, and a ReaPack description that no longer describes sliders (hidden since
-  0.7.0). The roadmap is now Issues and Discussions only, so `TODO.md` is gone.
+- **The package moved to `ccscope/`** (it was `MIDI/ccscope/`), so ReaPack installs it in
+  `Effects/ccscope/` and sees it as a different package: after updating, remove the old
+  `MIDI/ccscope` one. Projects that used the plugin lose the effect reference — re-add it.
+- **Documentation trimmed**: the README is a product page, the changelog is one line per change,
+  and the roadmap is Issues and Discussions only (`TODO.md` removed). The description ReaPack
+  shows no longer talks about sliders, hidden since 0.7.0.
 
 ## 0.7.8 — 2026-11-03
 

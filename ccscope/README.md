@@ -56,7 +56,7 @@ plugin useful beyond faders — to check a rate limit in a JSFX of your own, for
 
 Via ReaPack: *Extensions → ReaPack → Import a repository*, paste
 `https://github.com/solyarisoftware/reaper/raw/master/index.xml`, then synchronize. The package
-is in the `MIDI/ccscope` category. Install it from ReaPack rather than copying `ccscope.jsfx`
+is in the `ccscope` category. Install it from ReaPack rather than copying `ccscope.jsfx`
 alone: the plugin is one conductor plus its `.jsfx-inc` companions, and a missing include is a
 plugin that will not load.
 

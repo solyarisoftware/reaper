@@ -210,7 +210,7 @@ history_verify(history_lines==0 && history_dots==0);
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=Path(__file__).resolve().parent.parent / 'MIDI/ccscope')
+    parser.add_argument('--source', type=Path, default=Path(__file__).resolve().parent.parent / 'ccscope')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     build(args.source, args.output)

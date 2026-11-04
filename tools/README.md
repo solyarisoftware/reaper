@@ -26,7 +26,7 @@ package files (read from the plugin's `@provides` block) and instruments the plo
 panel it imports:
 
 ```text
-python3 tools/ccscope_rendering_probe.py --reference <reference.jsfx> --source MIDI/ccscope --output <resource>/Effects/CCScopeGraphTest
+python3 tools/ccscope_rendering_probe.py --reference <reference.jsfx> --source ccscope --output <resource>/Effects/CCScopeGraphTest
 ```
 
 With the operator's permission, load `ccscope_rendering_probe.jsfx` in an empty,
@@ -59,7 +59,7 @@ unmodified probe afterward. Never apply this mutation to production sources.
 Build to a **different** temporary effects directory:
 
 ```text
-python3 tools/ccscope_rendering_probe.py --grid --source MIDI/ccscope --output <resource>/Effects/CCScopeGridTest
+python3 tools/ccscope_rendering_probe.py --grid --source ccscope --output <resource>/Effects/CCScopeGridTest
 ```
 
 Load the generated probe alone and open its UI. It compares cached output against
@@ -86,7 +86,7 @@ the baseline `ccscope.jsfx`, and the includes listed in its `@provides` block ar
 taken from the same directory:
 
 ```text
-python3 tools/ccscope_acceptance_probe.py --reference <baseline>/ccscope.jsfx --candidate MIDI/ccscope/ccscope.jsfx --output <resource>/Effects/CCScopeAcceptance23
+python3 tools/ccscope_acceptance_probe.py --reference <baseline>/ccscope.jsfx --candidate ccscope/ccscope.jsfx --output <resource>/Effects/CCScopeAcceptance23
 ```
 
 The output directory must not already exist. Copy `ccscope_acceptance_runner.lua`

@@ -3,7 +3,7 @@
 
 Usage:
     python3 tools/ccscope_rendering_probe.py --reference <baseline.jsfx> \
-        --source MIDI/ccscope --output <temporary-effects-directory>
+        --source ccscope --output <temporary-effects-directory>
 
 Load ccscope_rendering_probe.jsfx in a disposable REAPER project. The probe
 executes the actual reference and candidate graph functions, intercepting only
@@ -142,7 +142,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--reference', type=Path)
     ap.add_argument('--grid', action='store_true', help='Compare cached/direct grid pixels instead of graph commands')
-    ap.add_argument('--source', type=Path, default=Path('MIDI/ccscope'))
+    ap.add_argument('--source', type=Path, default=Path('ccscope'))
     ap.add_argument('--output', type=Path, required=True)
     args = ap.parse_args()
     main = (args.source / 'ccscope.jsfx').read_text()
