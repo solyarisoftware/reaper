@@ -17,7 +17,8 @@ class MemoryMapTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.source = Path(self.temp.name)
-        for name in ('ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc'):
+        for name in ('ccscope_utils.jsfx-inc', 'ccscope_metrics.jsfx-inc',
+                     'ccscope_controlbar.jsfx-inc'):
             shutil.copy2(ROOT / 'ccscope' / name, self.source / name)
 
     def replace(self, old, new):
@@ -44,6 +45,12 @@ class MemoryMapTests(unittest.TestCase):
     def test_detects_control_bar_block_overlap(self):
         self.replace('MEM_CBM_BASE = 12612;', 'MEM_CBM_BASE = 2304;')  # inside MEM_CC_SORTED
         self.assertTrue(any('MEM_CBM' in error and 'overlaps' in error
+                            for error in MEMORY.check(self.source)))
+
+    def test_control_bar_block_must_fit_its_reservation(self):
+        # The module grew by the list-table slots; the reservation has to follow.
+        self.replace('MEM_CBM_SIZE = 112;', 'MEM_CBM_SIZE = 96;')
+        self.assertTrue(any('Control-bar block needs' in error
                             for error in MEMORY.check(self.source)))
 
     def test_history_growth_requires_resizing_all_ranges(self):

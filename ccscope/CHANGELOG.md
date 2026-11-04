@@ -4,6 +4,16 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.12.1 — 2026-11-04
+
+- **The version the status line prints is the published one again.** 0.12.0 still showed 0.11.1:
+  the JSFX `version:` line and `CCSCOPE_VERSION` are two further copies of the number beside the
+  ReaPack `@version`, and neither moved. The tests that compare the three exist, and they were run
+  only after the release — the check workflow was still queued when the tag went up. Issue
+  [#25](https://github.com/solyarisoftware/reaper/issues/25).
+- The memory checker now skips the control-bar block-size comparison when a fixture carries no
+  module file, instead of raising, and a test covers the comparison itself.
+
 ## 0.12.0 — 2026-11-04
 
 - **The WIN list offers six windows — 1, 2, 5, 10, 20 and 30 s — instead of the thirty between 1

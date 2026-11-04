@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.12.0
+// @version 0.12.1
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -42,6 +42,9 @@ desc:CCScope
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.12.1 The status line prints the published version again: 0.12.0 said 0.11.1,
+//          because the JSFX version: line and CCSCOPE_VERSION are two further
+//          copies of the number beside the ReaPack tag.
 //   0.12.0 The WIN list offers six windows -- 1, 2, 5, 10, 20, 30 s -- and opens
 //          fully visible instead of hiding 18 of its thirty rows behind a scroll.
 //          The parameter still accepts any whole second in 1..30, so presets and
@@ -253,7 +256,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.11.1
+version: 0.12.1
 date: 2026-11-04
 
 // Import utility libraries
@@ -313,7 +316,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.11.1";
+CCSCOPE_VERSION = "0.12.1";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair
