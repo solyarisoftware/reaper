@@ -1,0 +1,155 @@
+// Native status-line decision and geometry probe, assembled by the Python builder.
+//
+// It exercises draw_status_info() across widths, flow states and warning conditions
+// and compares what it decided with a decision re-derived here from the same
+// primitives (status_build/status_measure), which is the point: the policy lives in
+// one place, and this file re-applies it independently.
+//
+// What it asserts:
+//   1. the metric form is the richest that fits, and no richer;
+//   2. the version is drawn only when the chosen content plus it fits;
+//   3. the two warnings of GitHub issue #17 §4 are never dropped, at any width;
+//   4. a line whose content fits never draws past the right margin, and a drawn
+//      version ends exactly on it.
+//
+// Widths and states are chosen to straddle the transitions rather than to look
+// plausible: the interesting pixels are where a field is about to be sacrificed.
+//
+// gmem namespace CCScopeStatusTest: 20 status (0 running, 1 passed, -1 failed),
+// 21 completed case, 22 failing case, 23 expected form, 24 actual form,
+// 25 expected version flag, 26 actual version flag.
+
+probe_case = 0;
+probe_cases = 180;
+gmem[20] = 0;
+gmem[21] = 0;
+
+// Nine widths, from "nothing fits" to wider than any window this plugin is used in.
+function probe_width(i) (
+  i == 0 ? 180 : i == 1 ? 220 : i == 2 ? 260 : i == 3 ? 300 : i == 4 ? 360 :
+  i == 5 ? 420 : i == 6 ? 520 : i == 7 ? 700 : 1016;
+);
+
+// Five states: Waiting, Receiving with one stream, Receiving with four, Idle, Frozen.
+function probe_apply_state(state) local() (
+  slider1 = 0;
+  slider6 = 0;
+  slider2 = 0;
+  g_sel_streams = 0;
+  g_sel_channels = 0;
+  g_sel_msg_s = 0;
+  probe_count = 0;
+
+  state == 0 ? (
+    probe_count = 0;                       // Waiting: the selection holds no pair with data
+  ) : state == 1 ? (
+    probe_count = 2;                       // Receiving: one stream on one channel
+    g_sel_streams = 1;
+    g_sel_channels = 1;
+    g_sel_msg_s = 20;
+  ) : state == 2 ? (
+    probe_count = 7;                       // Receiving: several streams, plural text
+    g_sel_streams = 4;
+    g_sel_channels = 3;
+    g_sel_msg_s = 240;
+  ) : state == 3 ? (
+    probe_count = 5;                       // Idle: data exists, nothing in the last second
+  ) : (
+    probe_count = 5;                       // Frozen: the parameter wins over the rest
+    slider2 = 1;
+  );
+);
+
+function probe_apply_warning(warn) (
+  g_visible_bars = 40;
+  g_side_fallback = 0;
+  warn == 1 || warn == 3 ? ( g_visible_bars = 2; );
+  warn == 2 || warn == 3 ? ( g_side_fallback = 1; );
+);
+
+// The policy, re-derived: the richest form that fits, then the version in what is left.
+function probe_form_that_fits(avail) local(w3, w2) (
+  status_build(probe_count, 3);
+  status_measure();
+  w3 = g_st_w;
+  status_build(probe_count, 2);
+  status_measure();
+  w2 = g_st_w;
+  w3 <= avail ? 3 : w2 <= avail ? 2 : 1;
+);
+
+function probe_version_fits(form, avail) local() (
+  status_build(probe_count, form);
+  status_measure();
+  g_st_w + g_st_ver_w + 8 <= avail;
+);
+
+@gfx 1000 720
+gfx_clear = 0;
+gfx_mode = 0;
+gfx_setfont(1, "Arial", FONT_SIZE);
+gfx_h = 720;
+
+// The widths the oracle needs are measured by draw_status_info() itself, on its
+// first call. Without that call the oracle would treat the version as zero pixels
+// wide and demand it in windows that cannot hold it.
+g_st_ready == 0 ? ( draw_status_info(0); );
+
+probe_case < probe_cases && gmem[20] != -1 ? (
+  gfx_w = probe_width(probe_case % 9);
+  probe_state = floor(probe_case / 9) % 5;
+  probe_warn = floor(probe_case / 45) % 4;
+  probe_apply_state(probe_state);
+  probe_apply_warning(probe_warn);
+
+  probe_avail = gfx_w - 20;
+  // Only Receiving has a metric detail to sacrifice: the other states draw one form,
+  // so the implementation keeps g_st_form at its richest value and there is nothing to
+  // compare. The version test below uses that same form, and its width is identical.
+  probe_receiving = probe_state == 1 || probe_state == 2;
+  probe_expected_form = probe_receiving ? probe_form_that_fits(probe_avail) : 3;
+  probe_expected_ver = probe_version_fits(probe_expected_form, probe_avail) ? 1 : 0;
+
+  draw_status_info(probe_count);
+
+  // 1. the decision itself
+  probe_receiving && g_st_form != probe_expected_form ? (
+    gmem[20] = -1;
+    gmem[22] = probe_case;
+    gmem[23] = probe_expected_form;
+    gmem[24] = g_st_form;
+  );
+  g_st_ver != probe_expected_ver ? (
+    gmem[20] = -1;
+    gmem[22] = probe_case;
+    gmem[25] = probe_expected_ver;
+    gmem[26] = g_st_ver;
+  );
+
+  // 2. the warnings are the reason the line exists: they never disappear
+  probe_count > g_visible_bars && !g_st_has_wv ? ( gmem[20] = -1; gmem[22] = probe_case; );
+  g_side_fallback && !g_st_has_ws ? ( gmem[20] = -1; gmem[22] = probe_case; );
+
+  // 3. when the content fits, the line stops before the right margin, and a drawn
+  //    version ends on it (the margin is 10 px on both sides)
+  g_st_w <= probe_avail && gfx_x > gfx_w - 10 + 1 ? ( gmem[20] = -1; gmem[22] = probe_case; );
+  g_st_ver && abs(gfx_x - (gfx_w - 10)) > 2 ? ( gmem[20] = -1; gmem[22] = probe_case; );
+
+  probe_case += 1;
+  gmem[21] = probe_case;
+  probe_case == probe_cases && gmem[20] != -1 ? ( gmem[20] = 1; );
+);
+
+gfx_r = gmem[20] == -1 ? 1 : 0.2;
+gfx_g = gmem[20] == -1 ? 0.2 : 0.8;
+gfx_b = 0.2;
+gfx_a = 1;
+gfx_x = 20;
+gfx_y = 20;
+gfx_printf("Status line: %d / %d cases, status %d", probe_case, probe_cases, gmem[20]);
+gmem[20] == -1 ? (
+  gfx_x = 20;
+  gfx_y = 44;
+  gfx_printf("failed case %d: form %d (expected %d), version %d (expected %d)",
+             gmem[22], gmem[24], gmem[23], gmem[26], gmem[25]);
+);

@@ -112,6 +112,55 @@ class HistoryProbeTests(unittest.TestCase):
         self.assertNotIn('g_clock_sec = 200;', unseeded)
 
 
+class StatusProbeTests(unittest.TestCase):
+    def load_tool(self, name):
+        spec = importlib.util.spec_from_file_location(name, ROOT / 'tools' / (name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_probe_checks_the_real_status_module(self):
+        module = self.load_tool('ccscope_rendering_probe')
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'status'
+            target = module.build_status(ROOT / 'ccscope', output)
+            text = target.read_text()
+            # the module arrives through the import, so it is a copied file, not text
+            port = (output / 'ccscope_status.jsfx-inc').read_text()
+            self.assertIn('function draw_status_info(count)', port)
+            self.assertIn('probe_form_that_fits(', text)
+            self.assertIn('draw_status_info(probe_count);', text)
+            self.assertIn('options:gmem=CCScopeStatusTest', text)
+            self.assertIn('desc:CCScope status-line probe', text)
+            # the probe drives the real module, not a copy of it
+            self.assertEqual((output / 'ccscope_status.jsfx-inc').read_bytes(),
+                             (ROOT / 'ccscope/ccscope_status.jsfx-inc').read_bytes())
+
+    def test_probe_refuses_a_module_that_changed_shape(self):
+        module = self.load_tool('ccscope_rendering_probe')
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'ccscope'
+            shutil.copytree(ROOT / 'ccscope', source)
+            port = source / 'ccscope_status.jsfx-inc'
+            port.write_text(port.read_text().replace('function draw_status_info(count)',
+                                                      'function draw_status_info(count, extra)'))
+            with self.assertRaisesRegex(ValueError, 'changed signature'):
+                module.build_status(source, Path(directory) / 'out')
+
+    def test_driver_only_calls_functions_the_plugin_declares(self):
+        driver = (ROOT / 'tools/ccscope_status_probe.txt').read_text()
+        source = ''.join(p.read_text() for p in (ROOT / 'ccscope').glob('ccscope*.jsfx*'))
+        import re
+        for called in set(re.findall(r'\b(status_build|status_measure|draw_status_info)\(', driver)):
+            self.assertIn(f'function {called}(', source,
+                          f'the driver calls {called}() but the plugin does not declare it')
+
+    def test_the_two_warnings_are_asserted_by_the_probe(self):
+        driver = (ROOT / 'tools/ccscope_status_probe.txt').read_text()
+        self.assertIn('probe_count > g_visible_bars && !g_st_has_wv', driver)
+        self.assertIn('g_side_fallback && !g_st_has_ws', driver)
+
+
 class PackageLayoutTests(unittest.TestCase):
     def test_every_include_is_provided_present_and_imported(self):
         import importlib.util

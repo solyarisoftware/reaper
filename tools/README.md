@@ -77,6 +77,32 @@ resize, embedded-display and real HiDPI testing. For a red-capability check,
 change only the generated probe's cache-blit `top` to zero: erasing the sentinel
 must fail. Regenerate the normal probe afterward.
 
+## Native status-line decisions (#17)
+
+Build to a **third** temporary effects directory:
+
+```text
+python3 tools/ccscope_rendering_probe.py --status --source ccscope --output <resource>/Effects/CCScopeStatusTest
+```
+
+Load the generated probe alone and open its UI. The status line is a decision before
+it is a drawing: which metric form fits, whether the version still fits beside it, and
+which warnings the width can hold. The probe drives the real `draw_status_info()` over
+180 cases — nine widths from 180 to 1016 px, five flow states, four warning combinations
+— and compares each decision with the same policy re-derived from `status_build()` and
+`status_measure()`. It also asserts the invariants that must hold at every width: the
+two warnings of issue #17 §4 are never dropped, content that fits never draws past the
+right margin, and a drawn version ends exactly on it.
+
+Status and completed case count use gmem indices 20/21; on failure 22 is the case and
+23/24, 25/26 are the expected/actual form and version flag. It reads globals
+(`g_st_form`, `g_st_ver`, `g_st_w`, `g_st_ver_w`), and refuses to build when
+`draw_status_info()` changes signature or those globals disappear — a probe that
+silently measures the wrong thing is worse than no probe.
+
+Red-capability check: change one width in the generated probe's `probe_width()` so a
+case can no longer fit its richest form, and the run must fail. Regenerate afterwards.
+
 ## Native UI, MIDI and audio-thread acceptance (Windows)
 
 `ccscope_acceptance_probe.py` builds instrumented copies of an unmodified baseline

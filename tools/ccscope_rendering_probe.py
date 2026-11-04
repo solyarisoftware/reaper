@@ -138,13 +138,45 @@ gfx_printf("Graph command regression: %d / 630, status %d", probe_case, gmem[20]
 '''
 
 
+def build_status(source: Path, output: Path) -> Path:
+    """Assemble the status-line probe: the real source plus the recorded driver.
+
+    Refuses to build when the module it probes has changed shape: a probe that
+    silently reads globals the plugin no longer has is worse than no probe.
+    """
+    port = (source / 'ccscope_status.jsfx-inc').read_text()
+    if port.count('function draw_status_info(count)') != 1:
+        raise ValueError('draw_status_info() changed signature; update the status probe')
+    for name in ('g_st_form', 'g_st_ver', 'g_st_w', 'g_st_ver_w'):
+        if f'{name} =' not in port:
+            raise ValueError(f'the status module no longer declares {name!r}')
+
+    main = (source / 'ccscope.jsfx').read_text().split('\n@block\n', 1)[0]
+    main = main.replace('desc:CCScope', 'desc:CCScope status-line probe')
+    main = main.replace('options:no_meter', 'options:no_meter\noptions:gmem=CCScopeStatusTest')
+    driver = Path(__file__).with_name('ccscope_status_probe.txt').read_text()
+
+    output.mkdir(parents=True, exist_ok=True)
+    for path in provides(source):
+        shutil.copy2(path, output / path.name)
+    target = output / 'ccscope_status_probe.jsfx'
+    target.write_text(main + '\n' + driver)
+    return target
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--reference', type=Path)
     ap.add_argument('--grid', action='store_true', help='Compare cached/direct grid pixels instead of graph commands')
+    ap.add_argument('--status', action='store_true',
+                    help='Check the status line decisions and geometry instead of graph commands')
     ap.add_argument('--source', type=Path, default=Path('ccscope'))
     ap.add_argument('--output', type=Path, required=True)
     args = ap.parse_args()
+    if args.status:
+        target = build_status(args.source, args.output)
+        print(f'Built native status-line probe: {target}')
+        return
     main = (args.source / 'ccscope.jsfx').read_text()
     plot_name = 'ccscope_plot.jsfx-inc'
     plot = (args.source / plot_name).read_text()
