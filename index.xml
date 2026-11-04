@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="7b92192926f35a3fb51bff462671d5e96f1bac16">
+<index version="1" name="solyarisoftware reaper" commit="190f1de33889a23e63b81fd20f99aabd07131266">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -555,6 +555,91 @@
         <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7b92192926f35a3fb51bff462671d5e96f1bac16/ccscope/ccscope_rows.jsfx-inc</source>
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7b92192926f35a3fb51bff462671d5e96f1bac16/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7b92192926f35a3fb51bff462671d5e96f1bac16/ccscope/ccscope_controlbar.jsfx-inc</source>
+      </version>
+      <version name="0.11.1" author="Giorgio Robino" time="2026-11-04T15:14:10Z">
+        <changelog><![CDATA[0.11.1 The state word is lit by intensity: dim when nothing has ever arrived,
+       grey when it arrived and went quiet, bright while it speaks, amber when
+       frozen. Colour stays redundant with the word, never its only carrier.
+0.11.0 The second status line is gone: measured on a 60-pair session it cost
+       two rows of pairs, and its trigger -- the "showing N of M" warning --
+       makes the choice bistable around the row capacity, because the warning
+       appears exactly when the shorter layout is in force. One line, with the
+       metric detail shortened before the warning.
+0.10.1 The two status lines sit one text line apart instead of one reserved
+       margin apart: the margin includes the air around the text, and stacking
+       two of them left a gap that read as a blank row between the lines.
+0.10.0 The status area takes a second line when the pairs do not all fit with
+       one, and only then: the rule is monotone on the pair count, so the plot
+       keeps its height when it can and the "showing N of M" warning cannot
+       bounce it. With the second line reserved but no numbers to show --
+       Waiting, Idle, Frozen -- the text stays on one line.
+0.9.0 The status line reports the flow it observes instead of repeating the
+      settings: Waiting, Receiving, Idle or Frozen, with the streams,
+      channels and messages per second of the current selection, scoped to
+      the CC and channel filters. The package version sits at the right edge.
+      The summary is computed every 100 ms, not per frame. GitHub issue #17.
+0.8.3 The plugin is listed under its name in REAPER's browser again: the
+      desc: line had moved to line 225, and REAPER reads description lines
+      only within the first 150 lines of the file (measured), so it fell
+      back to the file path. desc: is now the first line. No behaviour change.
+0.8.2 The plugin is called CCScope in REAPER's effect list: the name no
+      longer carries the "(MIDI CC oscilloscope)" explanation, which reads
+      as part of the name in a browser of names. Nothing else changed.
+0.8.1 Packaging fix: the description ReaPack shows is the package's own
+      @about again, without the repository README appended to it. Nothing
+      changed in the plugin.
+0.8.0 The package moved from MIDI/ccscope to ccscope, so ReaPack installs it
+      in Effects/ccscope and sees a different package: remove the old one
+      after updating, and re-add the effect to projects that used it. Also a
+      shorter description, no sliders mentioned (hidden since 0.7.0), and the
+      roadmap left to the issues and discussions.
+0.7.8 CC ramps draw as straight diagonals instead of an artificial
+      staircase; genuine peaks, troughs and clipped boundaries remain.
+0.7.7 Nothing visible changed: one conductor plus five library files, so a
+      change touches one file. Update through ReaPack.
+0.7.6 History spans the whole chosen time window at any event rate, and
+      changing WIN keeps what was retained. Spikes stay as an envelope.
+      Limits and validation: GitHub issue #5.
+0.7.5 Less work per frame, same picture: cheaper redraws on busy sessions.
+      Capacity and GUI refresh rate unchanged. GitHub issue #23.
+0.7.4 The control bar spans the plot, flush left and right, with cut
+      corners; the engaged button turns amber. Narrow windows put the two
+      buttons after the selectors.
+0.7.3 The bar sits on the window's own black, aligned with the plot's left
+      edge: one vertical line through the whole plugin.
+0.7.2 The three metrics are fixed columns with right-aligned numbers, so a
+      changing value no longer shifts what follows it.
+0.7.1 No change in behaviour: a packaging fix, 0.7.0 shipped with the
+      previous release notes.
+0.7.0 The plugin draws its own control bar, seven cells in place of the
+      slider strip, which cost 190 px of window height. Automation,
+      presets and the Param button keep working.
+0.6.5 The "now" edge of the graph is a single line: no tick on the frame.
+0.6.4 The pair list can sit beside the plot, roughly doubling the pairs a
+      short, wide window shows; too narrow a window falls back and says so.
+0.6.3 A taller window shows more pairs, not only a taller graph; the status
+      line says how many are on screen.
+0.6.2 Channel filter, combining with the CC filter: graph, bars and the
+      "showing N of M" line read the same filtered list.
+0.6.1 Packaging fix: 0.6.0 could not load. Use 0.6.1 or newer.
+0.6.0 Renamed to CCScope (was "MIDI CC Visualizer"): uninstall the old
+      package. One colour per (CC, channel), labelled time axis, Freeze and
+      Clear, DOTS as a choice, and metrics corrected: exactly one second,
+      500 events/s per pair, jitter that ignores gaps.
+0.5.2 Correctness pass, no new features: CC values from 10 upwards no longer
+      overwrote each other's data, one filter for graph and bars, and jitter
+      measured on the audio-sample clock.
+0.5.1 Cleaner bar layout: explicit Events/Rate/Jitter labels.
+0.5   Multi-channel support: CC data, colours and metrics tracked per
+      (CC, channel).]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/190f1de33889a23e63b81fd20f99aabd07131266/ccscope/ccscope_controlbar.jsfx-inc</source>
       </version>
     </reapack>
   </category>
