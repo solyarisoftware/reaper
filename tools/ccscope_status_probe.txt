@@ -1,29 +1,35 @@
 // Native status-line decision and geometry probe, assembled by the Python builder.
 //
-// It exercises draw_status_info() across widths, flow states and warning conditions
-// and checks what makes the status line a contract rather than a drawing:
+// It exercises calculate_layout() and draw_status_info() across widths, flow
+// states, row layouts and selection sizes, and checks what makes the status line a
+// contract rather than a drawing:
 //
 //   1. the metric form is the richest that fits, and no richer;
 //   2. the version is drawn only when the chosen content plus it fits, and it ends
 //      exactly on the right margin of the line;
-//   3. the warnings of GitHub issue #17 §4 are never dropped, at any width;
+//   3. the two warnings of GitHub issue #17 §4 appear exactly when the layout they
+//      come from says so -- both in the rows-below layout and beside the plot --
+//      and the state word carries the intensity its state declares;
 //   4. a line whose content fits never draws past the right margin.
 //
 // The oracle re-applies the policy from the same primitives (status_build,
 // status_measure), which is the point: the policy lives in one place.
 //
-// A second line was implemented and measured in 0.10.0 and removed in 0.11.0: it
-// cost two rows of pairs on a 60-pair session and its trigger made the choice
-// bistable around the row capacity. This probe is the one-line contract.
+// One extra measurement, once per run: the cost of the selection summary in its
+// worst case (2048 pairs, 500 events each in the window). It is the only work this
+// feature added to a frame, and it runs on the prune cadence, not per frame.
 //
 // gmem namespace CCScopeStatusTest: 20 status (0 running, 1 passed, -1 failed),
 // 21 completed case, 22 failing case, 23 expected form, 24 actual form,
-// 27 failing check. Check 11 is the state-word intensity.
+// 27 failing check, 28 worst-case summary in milliseconds.
 
 probe_case = 0;
 probe_cases = 180;
+probe_perf_done = 0;
+probe_perf_ms = 0;
 gmem[20] = 0;
 gmem[21] = 0;
+gmem[28] = 0;
 
 // Which assertion failed: a probe that says "case 105" without saying why costs a
 // round trip through REAPER to diagnose.
@@ -45,7 +51,6 @@ function probe_apply_state(state) local() (
   slider1 = 0;
   slider6 = 0;
   slider2 = 0;
-  slider7 = 0;
   g_sel_streams = 0;
   g_sel_channels = 0;
   g_sel_msg_s = 0;
@@ -71,13 +76,6 @@ function probe_apply_state(state) local() (
   );
 );
 
-function probe_apply_warning(warn) (
-  g_visible_bars = 40;
-  g_side_fallback = 0;
-  warn == 1 || warn == 3 ? ( g_visible_bars = 2; );
-  warn == 2 || warn == 3 ? ( g_side_fallback = 1; );
-);
-
 // The policy, re-derived: the richest form whose CONTENT fits, because the version
 // is the first thing to go -- never a reason to shorten the numbers.
 function probe_form_that_fits(avail) local(w3, w2) (
@@ -91,6 +89,22 @@ function probe_form_that_fits(avail) local(w3, w2) (
 function probe_version_fits(form, avail) local() (
   status_build(probe_count, form);
   status_measure() + g_st_ver_w + 8 <= avail;
+);
+
+// Worst case for the selection summary: every pair, every retained event.
+function probe_fill_worst_case() local(i, base, k) (
+  i = 0;
+  loop(2048,
+    base = get_cc_channel_metrics_base(i >> 4, i & 15);
+    mem[base] = 500;
+    k = 0;
+    loop(500,
+      mem[base + 2 + (k * 3)] = g_metrics_now;
+      k += 1;
+    );
+    mem[MEM_CC_SORTED + i] = make_cc_channel_key(i >> 4, i & 15);
+    i += 1;
+  );
 );
 
 @gfx 1000 720
@@ -107,9 +121,14 @@ g_st_ready == 0 ? ( draw_status_info(0); );
 probe_case < probe_cases && gmem[20] != -1 ? (
   gfx_w = probe_width(probe_case % 9);
   probe_state = floor(probe_case / 9) % 5;
-  probe_warn = floor(probe_case / 45) % 4;
+  // 0 = rows below the plot, 1 = rows beside it; the layout decides the fallback.
+  slider7 = floor(probe_case / 45) % 2;
+  probe_size = floor(probe_case / 90) % 2;
   probe_apply_state(probe_state);
-  probe_apply_warning(probe_warn);
+  probe_size && probe_count > 0 ? ( probe_count = 60; );
+
+  // Real geometry: capacity, visible rows and the beside fallback all come from it.
+  calculate_layout(probe_count);
 
   probe_avail = gfx_w - 20;
   draw_status_info(probe_count);
@@ -140,19 +159,12 @@ probe_case < probe_cases && gmem[20] != -1 ? (
   probe_expected_ver = probe_version_fits(probe_expected_form, probe_avail) ? 1 : 0;
   probe_got_ver != probe_expected_ver ? ( probe_fail(5); );
 
-  // 3. the warnings are the reason the line exists: they never disappear
-  probe_count > g_visible_bars && !probe_got_wv ? ( probe_fail(6); );
-  g_side_fallback && !probe_got_ws ? ( probe_fail(7); );
+  // 3. the warnings follow the layout, in both layouts: hidden rows, and the
+  //    beside column that could not be built
+  (probe_count > g_visible_bars) != probe_got_wv ? ( probe_fail(6); );
+  ((slider7 == 1) && g_side_fallback) != probe_got_ws ? ( probe_fail(7); );
 
-  // 4. geometry: content that fits stays inside the margin, and a drawn version
-  //    ends on it, on the line's baseline
-  probe_got_w <= probe_avail ? ( probe_got_end_x > gfx_w - 10 + 1 ? ( probe_fail(8); ); );
-  probe_got_ver ? (
-    abs(probe_got_end_x - (gfx_w - 10)) > 2 ? ( probe_fail(9); );
-    probe_got_end_y != probe_got_y2 ? ( probe_fail(10); );
-  );
-
-  // 5. the state word's intensity: redundant with the word, so it may never be the
+  // 4. the state word's intensity: redundant with the word, so it may never be the
   //    only difference -- but it must be the one this state declares
   probe_state == 4 ? ( probe_col_r = 1.0; probe_col_g = 0.6; probe_col_b = 0.2; )
   : probe_state == 0 ? ( probe_col_r = 0.45; probe_col_g = 0.45; probe_col_b = 0.45; )
@@ -161,9 +173,28 @@ probe_case < probe_cases && gmem[20] != -1 ? (
   abs(probe_got_r - probe_col_r) > 0.001 || abs(probe_got_g - probe_col_g) > 0.001
     || abs(probe_got_b - probe_col_b) > 0.001 ? ( probe_fail(11); );
 
+  // 5. geometry: content that fits stays inside the margin, and a drawn version
+  //    ends on it, on the line's baseline
+  probe_got_w <= probe_avail ? ( probe_got_end_x > gfx_w - 10 + 1 ? ( probe_fail(8); ); );
+  probe_got_ver ? (
+    abs(probe_got_end_x - (gfx_w - 10)) > 2 ? ( probe_fail(9); );
+    probe_got_end_y != probe_got_y2 ? ( probe_fail(10); );
+  );
+
   probe_case += 1;
   gmem[21] = probe_case;
   probe_case == probe_cases && gmem[20] != -1 ? ( gmem[20] = 1; );
+);
+
+// One measurement, after the decisions: what the summary costs in its worst case.
+probe_case == probe_cases && !probe_perf_done ? (
+  g_metrics_now = 1000;
+  probe_fill_worst_case();
+  probe_t0 = time_precise();
+  update_selection_summary(2048);
+  probe_perf_ms = (time_precise() - probe_t0) * 1000;
+  probe_perf_done = 1;
+  gmem[28] = floor(probe_perf_ms * 1000);
 );
 
 gfx_r = gmem[20] == -1 ? 1 : 0.2;
@@ -177,4 +208,9 @@ gmem[20] == -1 ? (
   gfx_x = 20;
   gfx_y = 44;
   gfx_printf("failed case %d check %d: form %d (expected %d)", gmem[22], gmem[27], gmem[24], gmem[23]);
+);
+probe_perf_done ? (
+  gfx_x = 20;
+  gfx_y = 44;
+  gfx_printf("Worst-case summary (2048 pairs x 500 events): %.3f ms", probe_perf_ms);
 );

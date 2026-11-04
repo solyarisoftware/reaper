@@ -87,12 +87,18 @@ python3 tools/ccscope_rendering_probe.py --status --source ccscope --output <res
 
 Load the generated probe alone and open its UI. The status line is a decision before
 it is a drawing: which metric form fits, whether the version still fits beside it, and
-which warnings the width can hold. The probe drives the real `draw_status_info()` over
-180 cases — nine widths from 180 to 1016 px, five flow states, four warning combinations
-— and compares each decision with the same policy re-derived from `status_build()` and
-`status_measure()`. It also asserts the invariants that must hold at every width: the
-two warnings of issue #17 §4 are never dropped, content that fits never draws past the
-right margin, and a drawn version ends exactly on it.
+which warnings the width can hold. The probe drives `calculate_layout()` and the real
+`draw_status_info()` over 180 cases — nine widths from 180 to 1016 px, five flow states,
+rows below and rows beside, five or sixty pairs — and compares each decision with the
+same policy re-derived from `status_build()` and `status_measure()`. The warnings are
+checked against the geometry that produces them, not forced: hidden rows come from
+`g_visible_bars`, the beside warning from the real fallback. It also asserts that
+content which fits never draws past the right margin, that a drawn version ends exactly
+on it, and that the state word carries the intensity its state declares.
+
+After the cases it measures the selection summary in its worst case — 2048 pairs, 500
+events each in the window — and prints the elapsed milliseconds. That is the only work
+this feature added to a frame, and it runs on the prune cadence rather than per frame.
 
 Status and completed case count use gmem indices 20/21; on failure 22 is the case and
 23/24, 25/26 are the expected/actual form and version flag. It reads globals

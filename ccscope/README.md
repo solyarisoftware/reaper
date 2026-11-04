@@ -33,6 +33,36 @@ per CC, the metrics updating live. The static screenshot used by ReaPack is
   right click restores the default. The parameters stay automatable, saved in presets and listed
   under **Param**.
 
+### The status line
+
+One line under the canvas, in four states:
+
+| state | when | what it means |
+|---|---|---|
+| `Waiting` | no pair of the selection holds any data | nothing has been received yet, or `CLEAR` wiped it |
+| `Receiving` | at least one pair has a message in the rolling last second | the selection is speaking |
+| `Idle` | pairs hold data, none in the last second | it spoke, then went quiet |
+| `Frozen` | `FREEZE` is engaged | acquisition is paused; what you see is not a current observation |
+
+The state word brightens as it goes from `Waiting` to `Receiving` and turns amber on `Frozen`, so
+the answer to "is anything coming?" is visible before the wording is read. Colour never carries a
+state on its own; the word always says it too.
+
+Two numbers follow: **streams** (pairs with a message in the last second), **channels** (distinct
+channels among them) and **msg/s** (their total). All three describe the **selection**, so with a
+CC filter or a channel filter they describe the filtered set, not everything arriving at the
+track. They are computed every 100 ms, never per rendered frame.
+
+When the window cannot hold everything, fields are dropped in a fixed order: first the version at
+the right edge, then the note after the state, then the channel count, then the stream count. The
+two warnings — `showing N of M pairs` and `rows beside need a wider window` — are never dropped.
+`CLEAR` returns the state to `Waiting`, because nothing has been received since.
+
+Two limits worth knowing: the per-pair metrics buffer holds 500 events in the one-second window,
+so a pair transmitting faster than that saturates at 500 msg/s and the aggregate sums those
+saturated values; and a selection larger than the rows on screen is exactly what the
+`showing N of M` warning is for.
+
 ### What the numbers mean
 
 | | what it says |
