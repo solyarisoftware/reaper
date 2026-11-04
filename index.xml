@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="1c9a15c2754dd3e27b52d68fb4d2125ca71c6975">
+<index version="1" name="solyarisoftware reaper" commit="079889811f7c4bb329c6e4576fb7a4dd403873bf">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -821,6 +821,20 @@
         <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/1c9a15c2754dd3e27b52d68fb4d2125ca71c6975/ccscope/ccscope_rows.jsfx-inc</source>
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/1c9a15c2754dd3e27b52d68fb4d2125ca71c6975/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/1c9a15c2754dd3e27b52d68fb4d2125ca71c6975/ccscope/ccscope_controlbar.jsfx-inc</source>
+      </version>
+      <version name="0.12.2" author="Giorgio Robino" time="2026-11-04T18:39:41Z">
+        <changelog><![CDATA[0.12.2 The ReaPack changelog shows this release only. The block had kept the
+       whole history since 0.5, and ReaPack displays what it finds there for
+       every version: previous entries are preserved by reapack-index on its
+       own, so the block holds the current version. No change in the plugin.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_controlbar.jsfx-inc</source>
       </version>
     </reapack>
   </category>
