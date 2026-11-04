@@ -4,6 +4,12 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.8.3 — 2026-11-04
+
+- **REAPER lists the plugin under its name again.** The `desc:` line had drifted to line 225, and
+  REAPER reads description lines only within the first 150 lines of the file (measured: 150 yes,
+  151 no), so it silently fell back to the file path. `desc:` is now the first line.
+
 ## 0.8.2 — 2026-11-04
 
 - **The plugin is called `CCScope` in REAPER's effect list.** The name no longer carries the
