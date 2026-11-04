@@ -4,6 +4,11 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.8.1 — 2026-11-04
+
+- **No change in the plugin: a packaging fix.** The description ReaPack shows is the package's
+  own `@about` again, without the repository README appended to it.
+
 ## 0.8.0 — 2026-11-04
 
 - **The package moved to `ccscope/`** (it was `MIDI/ccscope/`), so ReaPack installs it in
