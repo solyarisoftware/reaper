@@ -1,35 +1,36 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.7.8
+// @version 0.7.9
 // @about
-//   Real-time visualization of MIDI Continuous Controller (CC) messages with two
-//   display modes: a scrolling time graph and current-value bars, plus performance
-//   metrics for hardware testing and technique analysis (events/s, rate, jitter).
+//   Shows what a MIDI controller actually sends: the shape of the movement over
+//   time, one fader bar per active CC, and how fast and how regularly each CC
+//   transmits, on each MIDI channel separately.
 //
-//   Each CC number is tracked per MIDI channel, so the same CC from different
-//   channels is displayed and measured separately.
+//   Two display modes: a scrolling time graph with a labelled axis (1-30 s
+//   window) and one bar per active CC with its current value. The same CC on
+//   different channels is a separate row, with the same hue and a different
+//   shade, and the CC and channel filters combine. Three numbers per row are
+//   measured over exactly the last second: Messages (how often the controller
+//   sends), Motion (how far the value travels, in CC units/s) and Timing (how
+//   much the spacing between messages wobbles). Pointing at them says the same
+//   thing on screen.
 //
-//   Slider 1 selects the CC to monitor (0 = all CCs) and slider 6 the MIDI channel
-//   (0 = all channels): the two filters combine, so "CC1 on channel 3" is a
-//   selection like any other. Slider 3 sets the time window in seconds (1-30).
-//   Slider 7 chooses where the pair list lives: under the plot (rows take height
-//   from the graph) or beside it, as a column on the right that uses the whole
-//   window height, which is what makes a short, wide window show every pair.
-//   Metrics are computed over a 1-second window, filtered on read, so the numbers
-//   describe exactly the second they claim to.
+//   The pair list sits below the plot or beside it, for windows that are wide
+//   and short. Freeze stops the acquisition while MIDI keeps passing through;
+//   Clear wipes history and metrics. The seven parameters are drawn as a control
+//   bar instead of REAPER sliders and stay automatable, in presets and under
+//   Param.
 //
-//   Each (CC, channel) pair has its own colour shade, the bars carry it in the
-//   label, the time axis is labelled, and Freeze stops the acquisition so a
-//   reading can be examined without it moving.
+//   Written for testing MIDI hardware: the numbers tell you whether a controller
+//   really transmits at high resolution, whether its timing is stable, and how
+//   hard you are actually moving it. Written for REAPER 6.37 or newer.
 //
-//   The three numbers per pair are named after what they mean, not after how they
-//   are computed: Messages = how many times per second the controller sends;
-//   Motion = how far the value travels per second (gesture speed);
-//   Timing = how much the spacing between messages wobbles. Pointing at them
-//   says the same thing on screen.
+//   Bugs, defined changes and the roadmap live in the repository's issues and
+//   discussions, not in the package.
 // @link
 //   GitHub https://github.com/solyarisoftware/reaper
 //   Issues https://github.com/solyarisoftware/reaper/issues
+//   Discussions https://github.com/solyarisoftware/reaper/discussions
 // @screenshot https://raw.githubusercontent.com/solyarisoftware/reaper/master/MIDI/ccscope/ccscope.png
 // @provides
 //   ccscope_utils.jsfx-inc
@@ -40,91 +41,48 @@
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
-//   0.7.8 Fix artificial staircases on CC ramps: do not repeat endpoint extrema
-//         at the bucket midpoint. Two events now form one diagonal segment;
-//         genuine interior peaks/troughs and clipped boundary envelopes remain.
-//         History format, memory layout, metrics and MIDI are unchanged.
-//         Native regression checks cover all DOTS modes and both boundaries.
-//   0.7.7 Structure only: the five panels moved to their own includes
-//         (ccscope_layout, ccscope_plot, ccscope_rows, ccscope_status) and the
-//         control bar became a general-purpose module (ccscope_controlbar) that
-//         owns no parameter -- the plugin pushes values and texts in and applies
-//         what comes out with sliderchange(). Same pixels, same behaviour, same
-//         geometry. The package now has seven files: let ReaPack update it, do
-//         not copy ccscope.jsfx alone (that is exactly the 0.6.1 failure).
-//   0.7.6 Retain up to 30 s independently for each CC/channel with 100 ms
-//         first/last/min/max buckets. DOTS shows retained representatives;
-//         extrema have approximate bucket timing, including boundary buckets.
-//         Freeze/Clear and WIN changes preserve the temporal-history contract.
-//         Storage fits the default 8M JSFX slots; metrics and MIDI unchanged.
-//         Native validation and limits: GitHub issue #5.
-//   0.7.5 Index graph points with one history traversal while preserving pair
-//         draw order and dot spacing. Cache the static grid, with direct drawing
-//         for unsupported image sizes, and skip undisplayed metric calculations.
-//         History capacity and requested GUI refresh rate are unchanged.
-//         Validation and measured limits: GitHub issue #23.
-//   0.7.4 The bar now spans the plot: the first cell starts on the plot's left
-//         edge, the two buttons sit flush with its right edge, and the rule under
-//         the bar is gone (the top edge of the plot's frame is already that line).
-//         Cells have their corners cut by two pixels -- JSFX has no rounded rect,
-//         and at 24 px that chamfer is what reads as a corner; the engaged button
-//         turns amber altogether, border included; and with the labels on, the
-//         value sits against the caret so a cell whose value grows keeps its text
-//         where the eye left it.
-//   0.7.3 The control bar sits on the window's own black instead of a lighter
-//         strip, and its first cell starts on the plot's left edge -- one
-//         vertical line through the whole plugin. Two details: the caret
-//         brightens with its cell (it is the part that promises a list), and a
-//         hairline separates the five selectors from the two buttons, because
-//         one kind opens something and the other acts.
-//   0.7.2 The three metrics are columns, not a sentence. Messages, Motion and
-//         Timing now start at fixed x, and inside them the numbers are aligned
-//         at their right edge, so 6, 16 and 123 end on the same pixel and the
-//         quality words (slow/fast, steady/erratic) no longer push what follows
-//         them. Same four forms as before -- labels with quality, labels only,
-//         values only in the column beside the plot, count only -- now chosen by
-//         measuring the reserved fields instead of the text of a row.
-//   0.7.1 Identical to 0.7.0 in behaviour: the entry for 0.7.0 was published with
-//         the old changelog text, because the index publishes this block and it
-//         still started at 0.6.4 when that version was indexed.
-//   0.7.0 The plugin draws its own controls: the seven sliders are declared with a
-//         leading "-" in their name, so REAPER's strip disappears while the
-//         parameters keep working (automation, presets, the Param button) and the
-//         window gets back 190 px of height -- about eleven rows of pairs. A bar
-//         of cells at the top of the canvas takes their place: click opens the
-//         list, the wheel steps the value, a right click restores the default.
-//   0.6.4 Slider 7 (layout): the pair list can sit beside the plot instead of
-//         under it. In the column the rows keep the same 16 px, so a wide window
-//         shows about twice as many pairs as the same window with the list
-//         below, and the plot keeps the whole height. Too narrow a window for
-//         the column falls back to the list below and says so.
-//   0.6.3 Every pair gets a row: the bar area is no longer capped at 35% of the
-//         window, the plot has a floor instead, so extending the window shows
-//         more (CC, channel) pairs instead of only a taller graph. When rows
-//         still do not fit, the status line says so and says a taller window
-//         fits more.
-//   0.6.2 Channel filter: slider 6 keeps one MIDI channel (or all), combining with
-//         the CC filter. Both filters are applied while the visible pair list is
-//         built, so the graph and the bars cannot disagree about what is on
-//         screen, and "showing N of M" counts the filtered set.
-//   0.6.1 Packaging fix: 0.6.0 was indexed with the includes under their old names
-//         (midi_cc_*.jsfx-inc), so it could not load. Everything is renamed after
-//         the package here. Use this version.
-//   0.6.0 CCScope: renamed from "MIDI CC Visualizer" (the package is a new file,
-//         ccscope.jsfx: uninstall the old one, it is no longer in the repository).
-//         Readable: one colour per (CC, channel) instead of per CC, labelled time
-//         axis, metrics that degrade instead of running off the edge, plain value
-//         next to each bar, Freeze and Clear, exact 1 s window (counts were up to
-//         10% high), 500 events/s per pair instead of 200, jitter that ignores
-//         gaps, reports how many intervals it used, and says n/a when there are
-//         too few to mean anything.
-//   0.5.2 Correctness pass: the (CC, channel) key no longer overflows its memory
-//         range, slider 1 filters the graph and the bars together, bars can no
-//         longer be drawn under the status line, the metrics block and the
-//         event timestamps are sized and taken correctly (jitter was quantised
-//         to the audio block and offset by the callback's scheduling).
-//   0.5.1 Cleaner bar layout: explicit "Events:/Rate:/Jitter:" labels, no pipe separators
-//   0.5   Multi-channel support: CC data, colors and metrics tracked per (CC#, channel)
+//   0.7.9 Documentation release, no change in behaviour: shorter package
+//         description, no sliders mentioned (hidden since 0.7.0), and the
+//         roadmap left to the repository's issues and discussions.
+//   0.7.8 CC ramps draw as straight diagonals instead of an artificial
+//         staircase; genuine peaks, troughs and clipped boundaries remain.
+//   0.7.7 Nothing visible changed: one conductor plus five library files, so a
+//         change touches one file. Update through ReaPack.
+//   0.7.6 History spans the whole chosen time window at any event rate, and
+//         changing WIN keeps what was retained. Spikes stay as an envelope.
+//         Limits and validation: GitHub issue #5.
+//   0.7.5 Less work per frame, same picture: cheaper redraws on busy sessions.
+//         Capacity and GUI refresh rate unchanged. GitHub issue #23.
+//   0.7.4 The control bar spans the plot, flush left and right, with cut
+//         corners; the engaged button turns amber. Narrow windows put the two
+//         buttons after the selectors.
+//   0.7.3 The bar sits on the window's own black, aligned with the plot's left
+//         edge: one vertical line through the whole plugin.
+//   0.7.2 The three metrics are fixed columns with right-aligned numbers, so a
+//         changing value no longer shifts what follows it.
+//   0.7.1 No change in behaviour: a packaging fix, 0.7.0 shipped with the
+//         previous release notes.
+//   0.7.0 The plugin draws its own control bar, seven cells in place of the
+//         slider strip, which cost 190 px of window height. Automation,
+//         presets and the Param button keep working.
+//   0.6.5 The "now" edge of the graph is a single line: no tick on the frame.
+//   0.6.4 The pair list can sit beside the plot, roughly doubling the pairs a
+//         short, wide window shows; too narrow a window falls back and says so.
+//   0.6.3 A taller window shows more pairs, not only a taller graph; the status
+//         line says how many are on screen.
+//   0.6.2 Channel filter, combining with the CC filter: graph, bars and the
+//         "showing N of M" line read the same filtered list.
+//   0.6.1 Packaging fix: 0.6.0 could not load. Use 0.6.1 or newer.
+//   0.6.0 Renamed to CCScope (was "MIDI CC Visualizer"): uninstall the old
+//         package. One colour per (CC, channel), labelled time axis, Freeze and
+//         Clear, DOTS as a choice, and metrics corrected: exactly one second,
+//         500 events/s per pair, jitter that ignores gaps.
+//   0.5.2 Correctness pass, no new features: CC values from 10 upwards no longer
+//         overwrote each other's data, one filter for graph and bars, and jitter
+//         measured on the audio-sample clock.
+//   0.5.1 Cleaner bar layout: explicit Events/Rate/Jitter labels.
+//   0.5   Multi-channel support: CC data, colours and metrics tracked per
+//         (CC, channel).
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -258,7 +216,7 @@
 
 desc:CCScope (MIDI CC oscilloscope)
 author: Giorgio Robino
-version: 0.7.8
+version: 0.7.9
 date: 2026-11-03
 
 // Import utility libraries

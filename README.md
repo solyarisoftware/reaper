@@ -22,7 +22,9 @@ folder inside your REAPER resource directory (`Effects/<category>/` on Windows).
 
 Each package keeps its documentation next to its sources — README, changelog, roadmap, screenshot:
 
-- [`MIDI/ccscope/`](MIDI/ccscope/) — [README](MIDI/ccscope/README.md) · [changelog](MIDI/ccscope/CHANGELOG.md) · [roadmap](MIDI/ccscope/TODO.md)
+- [`MIDI/ccscope/`](MIDI/ccscope/) — [README](MIDI/ccscope/README.md) · [changelog](MIDI/ccscope/CHANGELOG.md)
+
+Issues and discussions are the roadmap for each package; no separate roadmap file is kept.
 
 ## How this repository is organised
 

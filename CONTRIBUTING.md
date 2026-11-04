@@ -82,6 +82,24 @@ function may only call what was declared before it, so the order inside a file i
 dependency order, and `@provides` in `ccscope.jsfx` is the single list of package files — the
 probes read it, ReaPack reads it, and a forgotten entry is a plugin that will not load.
 
+## Documentation conventions
+
+Each package keeps its user documentation next to its sources, and it is written for the person
+using the plugin, not for the person reading the code:
+
+- **`README.md` is the product page.** What the tool does, how to install it, what the numbers
+  mean, where to report something. Measurements, memory layouts and pixel coordinates belong in
+  the commit that introduced them, in `CHANGELOG.md`, or in the linked issue — not on the front
+  page.
+- **`CHANGELOG.md` is one line per change**, written as the effect a user notices, with a link to
+  the issue or discussion that holds the reasoning. Notable changes only.
+- **The roadmap lives in issues and discussions, not in a file.** `bug` issues for defects,
+  `enhancement` issues for defined work with completion criteria, Discussions in **Ideas** for
+  what is still being designed. A `TODO.md` next to a package duplicates that and then drifts
+  out of date; it is not kept.
+- **The `@about` header in the package source is the description ReaPack displays**, so it
+  follows the same rule as the README: what it does for the user, not how it is implemented.
+
 ## Optional support
 
 If these tools are useful to you, you can optionally support their maintenance and development

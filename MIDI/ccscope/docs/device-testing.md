@@ -112,7 +112,7 @@ A later external measurement protocol could make these testable; MIDI alone cann
 ## Related work
 
 - ../README.md — current capabilities and metric interpretation
-- ../TODO.md — active bugs and roadmap
+- https://github.com/solyarisoftware/reaper/issues — active bugs and defined work
 - https://github.com/solyarisoftware/reaper/issues/5 — history capacity
 - https://github.com/solyarisoftware/reaper/discussions/10 — 14-bit CC pairs
 - https://github.com/solyarisoftware/reaper/discussions/12 — export
