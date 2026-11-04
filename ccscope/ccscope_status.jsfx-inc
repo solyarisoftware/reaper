@@ -3,59 +3,230 @@
 // ===================================================================
 // A library file (.jsfx-inc) imported by ccscope.jsfx.
 //
-// OWNS: one line of text at the bottom of the canvas. It answers "why is the plot
-// empty" (no data yet, or the filters select nothing), states the window and the
-// resolutions in force, and says what does not fit (rows on screen, fallback to
-// the rows below). Adding a field here -- recent input activity is what GitHub
-// issue #17 asks for -- touches this file only.
+// OWNS: one line of text at the bottom of the canvas. It says which flow the
+// plugin is observing -- Waiting, Receiving, Idle, Frozen -- reports the recent
+// activity of the selection (streams, channels, messages per second), keeps the
+// warnings that say what does not fit, and carries the package version at the
+// right edge. GitHub issue #17 defines the content; #22 will add the optional
+// source label, which lives at the start of the line, not here.
 //
-// READS: slider1..slider7, the layout counts (g_visible_bars, filtered_count,
-// g_side_fallback), STATUS_TEXT_MARGIN and gfx_w/gfx_h.
+// READS: slider1, slider2, slider6, filtered_count, g_visible_bars,
+// g_side_fallback, the selection summary (g_sel_streams, g_sel_channels,
+// g_sel_msg_s), STATUS_TEXT_MARGIN, CCSCOPE_VERSION and gfx_w/gfx_h.
 // WRITES: nothing but pixels.
+//
+// ORDER OF SACRIFICE on a narrow window: the version goes first, then the metric
+// detail (channels, then streams). The flow state and the two warnings of issue
+// #17 §4 are never dropped.
 //
 // No other panel calls into this file and this file calls no other panel.
 // ===================================================================
 
 @init
 
-function draw_status_info(filtered_count) local() (
+// Measured widths, computed on the first frame (the font is set by the conductor
+// before this file draws) and again only when the form or the text changes.
+g_st_w = 0;          // width of the content, separators included
+g_st_ver_w = 0;      // width of the version marker and its prefix
+g_st_sep_w = 0;      // width of " · "
+g_st_ready = 0;      // the three measurements above are valid
+g_st_form = 3;       // metric detail: 3 = streams + channels + rate, 2 = no channels, 1 = rate
+g_st_ver = 0;        // 1 when the version is drawn
+
+// Pieces. A piece is drawn only when its flag says it exists: the fields are
+// conditional, and an empty piece would otherwise leave a separator behind.
+#st_head = "";
+#st_streams = "";
+#st_channels = "";
+#st_rate = "";
+#st_note = "";
+#st_wv = "";
+#st_ws = "";
+#st_sep = " · ";
+#st_ver = "";
+
+g_st_has_streams = 0;
+g_st_has_channels = 0;
+g_st_has_rate = 0;
+g_st_has_note = 0;
+g_st_has_wv = 0;
+g_st_has_ws = 0;
+
+// Fills the pieces for one state and one richness of metric detail. The caller
+// measures them: this function draws nothing.
+//
+// The four states are derived, not stored: Frozen is the parameter, Waiting is
+// "the selection holds no pair with data", Receiving is "some pair has a message
+// in the rolling last second" (the summary's stream count), and Idle is the
+// remainder -- data exists, nothing arrived in that second. Clear wipes the data,
+// so after Clear the state is Waiting, not Idle: nothing has been received since.
+function status_build(count, form) (
+  g_st_has_streams = 0;
+  g_st_has_channels = 0;
+  g_st_has_rate = 0;
+  g_st_has_note = 0;
+
+  slider2 != 0 ? (
+    #st_head = "Frozen";
+    #st_note = "acquisition paused; MIDI passes through";
+    g_st_has_note = 1;
+  ) : count == 0 ? (
+    slider1 != 0 ? (
+      slider6 != 0 ? (
+        sprintf(#st_head, "Waiting for CC%02d/CH%02d", slider1, slider6);
+      ) : (
+        sprintf(#st_head, "Waiting for CC%02d", slider1);
+      );
+    ) : (
+      slider6 != 0 ? (
+        sprintf(#st_head, "Waiting for CH%02d", slider6);
+      ) : (
+        #st_head = "Waiting";
+      );
+    );
+    #st_note = "no CC data yet";
+    g_st_has_note = 1;
+  ) : g_sel_streams == 0 ? (
+    #st_head = "Idle";
+    #st_note = "no matching CC in the last second";
+    g_st_has_note = 1;
+  ) : (
+    #st_head = "Receiving";
+    sprintf(#st_rate, "%d msg/s", g_sel_msg_s);
+    g_st_has_rate = 1;
+
+    form >= 2 ? (
+      g_sel_streams == 1 ? (
+        sprintf(#st_streams, "1 stream");
+      ) : (
+        sprintf(#st_streams, "%d streams", g_sel_streams);
+      );
+      g_st_has_streams = 1;
+    );
+
+    form >= 3 ? (
+      g_sel_channels == 1 ? (
+        sprintf(#st_channels, "1 channel");
+      ) : (
+        sprintf(#st_channels, "%d channels", g_sel_channels);
+      );
+      g_st_has_channels = 1;
+    );
+  );
+
+  // The two warnings of issue #17 §4: they are the reason the line exists, so
+  // they are built for every state and never shortened away.
+  g_st_has_wv = 0;
+  g_st_has_ws = 0;
+  count > g_visible_bars ? (
+    sprintf(#st_wv, "showing %d of %d pairs (taller window fits more)", g_visible_bars, count);
+    g_st_has_wv = 1;
+  );
+  g_side_fallback ? (
+    #st_ws = "rows beside need a wider window";
+    g_st_has_ws = 1;
+  );
+);
+
+// Sums the widths of the pieces that exist. One measure per piece: no string is
+// concatenated, so there is nothing to keep in sync with what gets drawn.
+function status_measure() local(w, tw, th) (
+  gfx_measurestr(#st_head, tw, th);
+  w = tw;
+  g_st_has_streams ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_streams, tw, th);
+    w += tw;
+  );
+  g_st_has_channels ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_channels, tw, th);
+    w += tw;
+  );
+  g_st_has_rate ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_rate, tw, th);
+    w += tw;
+  );
+  g_st_has_note ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_note, tw, th);
+    w += tw;
+  );
+  g_st_has_wv ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_wv, tw, th);
+    w += tw;
+  );
+  g_st_has_ws ? (
+    w += g_st_sep_w;
+    gfx_measurestr(#st_ws, tw, th);
+    w += tw;
+  );
+  g_st_w = w;
+);
+
+// Left to right: the state, the metric detail, the warnings, and the version
+// flush with the right edge so it reads as provenance rather than as a field.
+function draw_status_info(count) local(tw, th, avail) (
+  !g_st_ready ? (
+    gfx_measurestr(#st_sep, tw, th);
+    g_st_sep_w = tw;
+    strcpy(#st_ver, CCSCOPE_VERSION);
+    gfx_measurestr("v", tw, th);
+    g_st_ver_w = tw;
+    gfx_measurestr(#st_ver, tw, th);
+    g_st_ver_w += tw;
+    g_st_ready = 1;
+  );
+
+  avail = gfx_w - 20;   // 10 px left margin, 10 px right margin
+  g_st_ver = 0;
+
+  // The content must fit before anything else can be decided: it is the only
+  // part that carries a warning.
+  status_build(count, 3);
+  status_measure();
+  g_st_form = 3;
+  !(g_st_w <= avail) && g_st_has_rate ? (
+    status_build(count, 2);
+    status_measure();
+    g_st_form = 2;
+  );
+  !(g_st_w <= avail) && g_st_has_rate ? (
+    status_build(count, 1);
+    status_measure();
+    g_st_form = 1;
+  );
+
+  // Then the version, in whatever space is left: it is the first thing to go.
+  g_st_w + g_st_ver_w + 8 <= avail ? (
+    g_st_ver = 1;
+  );
+
   gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
   gfx_x = 10;
   gfx_y = gfx_h - STATUS_TEXT_MARGIN + 5;
 
-  filtered_count == 0 ? (
-    slider1 != 0 ? (
-      slider6 != 0 ? (
-        gfx_printf("Waiting for CC%d data on channel %d...", slider1, slider6);
-      ) : (
-        gfx_printf("Waiting for CC%d data (any channel)...", slider1);
-      );
-    ) : (
-      slider6 != 0 ? (
-        gfx_printf("Waiting for any CC on channel %d...", slider6);
-      ) : (
-        gfx_drawstr("Send MIDI CC data to visualize.");
-      );
-    );
-  ) : (
-    gfx_printf("%d s window · 100 ms history · 1 s metrics", slider3);
+  slider2 != 0 ? (
+    gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2;   // the state that must not be mistaken for live
+  );
+  gfx_drawstr(#st_head);
+  slider2 != 0 ? (
+    gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6;
+  );
 
-    // Never hide bars silently, and say what to do about it: while rows are
-    // hidden a taller window always fits more of them, because the rows are
-    // what grows.
-    filtered_count > g_visible_bars ? (
-      gfx_printf(" · showing %d of %d pairs (taller window fits more)", g_visible_bars, filtered_count);
-    );
+  g_st_has_streams ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_streams); );
+  g_st_has_channels ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_channels); );
+  g_st_has_rate ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_rate); );
+  g_st_has_note ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_note); );
+  g_st_has_wv ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_wv); );
+  g_st_has_ws ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_ws); );
 
-    // The slider asked for the column and the window cannot hold it: say so,
-    // because otherwise the plugin looks like it ignores slider 7.
-    g_side_fallback ? (
-      gfx_printf(" · rows beside need a wider window");
-    );
-
-    g_prev_freeze ? (
-      gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2;
-      gfx_printf("   FROZEN");
-    );
+  g_st_ver ? (
+    gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45;
+    gfx_x = gfx_w - 10 - g_st_ver_w;
+    gfx_drawstr("v");
+    gfx_drawstr(#st_ver);
   );
 );

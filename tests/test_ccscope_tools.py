@@ -270,6 +270,18 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn(f'## {meta.group(1)} ', changelog,
                       'a released version needs its entry in CHANGELOG.md')
 
+    def test_the_version_the_plugin_shows_is_the_released_one(self):
+        # The status line prints CCSCOPE_VERSION at the right edge. REAPER cannot read
+        # the file's own @version, so this is a third copy of the number -- and the only
+        # thing keeping it honest is this assertion.
+        import re
+        text = (ROOT / 'ccscope/ccscope.jsfx').read_text()
+        tag = re.search(r'^//\s*@version\s+(\S+)', text, re.M)
+        shown = re.search(r'^CCSCOPE_VERSION\s*=\s*"([^"]+)"', text, re.M)
+        self.assertIsNotNone(shown, 'the status line needs a version string to print')
+        self.assertEqual(shown.group(1), tag.group(1),
+                         'the version on screen and the published version must be the same')
+
 
 class CrossSplitProbeTests(unittest.TestCase):
     def test_pre_split_package_builds_with_a_compatibility_shim(self):

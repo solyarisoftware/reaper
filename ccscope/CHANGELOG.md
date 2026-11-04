@@ -4,6 +4,18 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.9.0 — 2026-11-04
+
+- **The status line reports the flow instead of repeating the settings.** It says `Waiting`,
+  `Receiving`, `Idle` or `Frozen`, and for the current selection how many streams are active, on
+  how many channels and how many messages per second. Scoped to the CC and channel filters; the
+  warnings about hidden rows and the beside layout stay.
+- **The package version sits at the right edge**, dimmer than the fields, and is the first thing
+  dropped when the window is too narrow for it.
+- The summary is computed every 100 ms instead of per frame, so a wide selection does not cost a
+  scan of every buffer on every drawn frame. Issue
+  [#17](https://github.com/solyarisoftware/reaper/issues/17).
+
 ## 0.8.3 — 2026-11-04
 
 - **REAPER lists the plugin under its name again.** The `desc:` line had drifted to line 225, and

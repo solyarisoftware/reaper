@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.8.3
+// @version 0.9.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -42,6 +42,11 @@ desc:CCScope
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.9.0 The status line reports the flow it observes instead of repeating the
+//         settings: Waiting, Receiving, Idle or Frozen, with the streams,
+//         channels and messages per second of the current selection, scoped to
+//         the CC and channel filters. The package version sits at the right edge.
+//         The summary is computed every 100 ms, not per frame. GitHub issue #17.
 //   0.8.3 The plugin is listed under its name in REAPER's browser again: the
 //         desc: line had moved to line 225, and REAPER reads description lines
 //         only within the first 150 lines of the file (measured), so it fell
@@ -228,7 +233,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.8.3
+version: 0.9.0
 date: 2026-11-04
 
 // Import utility libraries
@@ -285,6 +290,10 @@ SIDE_VALUE_WIDTH = 30;    // the 3-digit value, right after the bar
 SIDE_METRICS_WIDTH = 190; // compact metrics: "125 msg/s   247 mot   ±20.7ms"
 MIN_PLOT_WIDTH = 240;     // below this the plot stops being a plot: fall back
 SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ... "now")
+
+// The version the status line shows. REAPER cannot read this file's own @version,
+// so it is a constant here -- and the test suite asserts it equals @version.
+CCSCOPE_VERSION = "0.9.0";
 
 STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
@@ -396,6 +405,20 @@ g_time_end = 0;
 // ========== METRICS VARIABLES ==========
 g_last_prune_time = 0;
 PRUNE_INTERVAL = 0.1; // Prune old metrics every 100ms
+
+// ========== THE SELECTION SUMMARY ==========
+// What the status line reports about the flow it observes: how many (CC, channel)
+// pairs are receiving, on how many distinct channels, and how many messages per
+// second in total -- always over the filtered selection, never over the visible
+// rows only. Per pair that is a scan of its event buffer, so it is computed on the
+// prune cadence (or as soon as the filtered list changes) and read from these
+// values on every frame. Computed per frame it would be up to a million reads.
+SUMMARY_INTERVAL = 0.1;
+g_sel_streams = 0;        // pairs with at least one message in the last second
+g_sel_channels = 0;       // distinct channels among those pairs
+g_sel_msg_s = 0;          // aggregate messages in the last second
+g_last_summary_time = 0;
+g_summary_count = -1;     // the filtered count the summary was built from
 
 // ========== THE CONTROL BAR, REGISTERED ==========
 // What the bar has to be told once: where its block is, which pixels this plugin
@@ -588,6 +611,35 @@ function ctl_draw_menu_items() local(r, i, y) (
   0;
 );
 
+// ========== THE SELECTION SUMMARY, COMPUTED ==========
+// Walks the filtered list (MEM_CC_SORTED, built by the utils module) and counts
+// what arrived in the rolling last second. g_metrics_now is the same "now" the
+// rows use, so the status line and the numbers under it cannot disagree.
+function update_selection_summary(count) local(i, key, n, mask) (
+  mask = 0;
+  g_sel_streams = 0;
+  g_sel_msg_s = 0;
+  i = 0;
+  loop(count,
+    key = mem[MEM_CC_SORTED + i];
+    n = get_events_per_second_cc_channel(key_to_cc(key), key_to_channel(key));
+    n > 0 ? (
+      g_sel_streams += 1;
+      mask = mask | (1 << key_to_channel(key));
+      g_sel_msg_s += n;
+    );
+    i += 1;
+  );
+  g_sel_channels = 0;
+  i = 0;
+  loop(16,
+    (mask & (1 << i)) != 0 ? ( g_sel_channels += 1; );
+    i += 1;
+  );
+  g_summary_count = count;
+  g_last_summary_time = g_metrics_now;
+);
+
 /**
  * Processes incoming MIDI messages in the audio block
  * 
@@ -716,6 +768,15 @@ calculate_time_window();
 // The metrics measure against the same "now" the window shows: the buffers are
 // pruned every 100 ms, so counting what is buffered would overstate the rate.
 g_metrics_now = g_time_end;
+
+// The selection summary, on the same cadence and never per frame. Frozen leaves
+// it alone: the numbers describe the instant acquisition stopped, and the status
+// line says so rather than presenting them as live.
+slider2 == 0 ? (
+  g_metrics_now - g_last_summary_time >= SUMMARY_INTERVAL || filtered_count != g_summary_count ? (
+    update_selection_summary(filtered_count);
+  );
+);
 
 // ========== DRAW UI ELEMENTS ==========
 // The bar's own text is drawn by the module; it leaves the bar font in force, and
