@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.9.0
+// @version 0.10.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -42,6 +42,11 @@ desc:CCScope
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.10.0 The status area takes a second line when the pairs do not all fit with
+//          one, and only then: the rule is monotone on the pair count, so the plot
+//          keeps its height when it can and the "showing N of M" warning cannot
+//          bounce it. With the second line reserved but no numbers to show --
+//          Waiting, Idle, Frozen -- the text stays on one line.
 //   0.9.0 The status line reports the flow it observes instead of repeating the
 //         settings: Waiting, Receiving, Idle or Frozen, with the streams,
 //         channels and messages per second of the current selection, scoped to
@@ -233,7 +238,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.9.0
+version: 0.10.0
 date: 2026-11-04
 
 // Import utility libraries
@@ -293,9 +298,16 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.9.0";
+CCSCOPE_VERSION = "0.10.0";
 
-STATUS_TEXT_MARGIN = 25; // Space reserved for the status text at the bottom
+STATUS_TEXT_MARGIN = 25; // Space reserved for ONE status line at the bottom
+
+// The status area takes one line or two. The decision belongs to calculate_layout()
+// (ccscope_layout.jsfx-inc) and follows a monotone rule; the drawing below reads
+// these, and never re-decides.
+g_status_lines = 1;      // 1 or 2, decided from the one-line row capacity
+g_status_margin = STATUS_TEXT_MARGIN; // the height actually reserved: lines * 25
+g_one_line_max_bars = 0; // the capacity the decision was made from (read by the probe)
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
 TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
 DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one

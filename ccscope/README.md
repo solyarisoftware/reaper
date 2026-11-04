@@ -25,8 +25,9 @@ per CC, the metrics updating live. The static screenshot used by ReaPack is
   **CLEAR** wipes history and metrics.
 - **A status line under everything** says what the plugin is observing — `Waiting`,
   `Receiving`, `Idle` or `Frozen` — with the streams, channels and messages per second of the
-  current selection, and the warnings when rows or the beside layout do not fit. The package
-  version sits at the right edge.
+  current selection, and the warnings when rows or the beside layout do not fit. It takes a
+  second line only when the pairs do not all fit with one. The package version sits at the right
+  edge of the bottom line.
 - **A control bar instead of REAPER's sliders** — `CC`, `CH`, `WIN`, `DOTS`, `ROWS`, `FREEZE`,
   `CLEAR` at the top of the canvas. Click a cell to open its list, the wheel steps the value, a
   right click restores the default. The parameters stay automatable, saved in presets and listed

@@ -157,8 +157,8 @@ class StatusProbeTests(unittest.TestCase):
 
     def test_the_two_warnings_are_asserted_by_the_probe(self):
         driver = (ROOT / 'tools/ccscope_status_probe.txt').read_text()
-        self.assertIn('probe_count > g_visible_bars && !g_st_has_wv', driver)
-        self.assertIn('g_side_fallback && !g_st_has_ws', driver)
+        self.assertIn('probe_count > g_visible_bars && !probe_got_wv', driver)
+        self.assertIn('g_side_fallback && !probe_got_ws', driver)
 
 
 class PackageLayoutTests(unittest.TestCase):

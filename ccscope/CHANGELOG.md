@@ -4,6 +4,15 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.10.0 — 2026-11-04
+
+- **The status area takes a second line when the pairs do not all fit with one**, and only
+  then. The count is decided from the row capacity of a one-line status, never from the policy in
+  force, so the plot keeps its height when it can and the "showing N of M" warning cannot bounce
+  it. With two lines reserved and nothing to put on the lower one — Waiting, Idle, Frozen — the
+  text stays on one line and keeps the bottom edge.
+- The version still ends on the bottom line's right margin.
+
 ## 0.9.0 — 2026-11-04
 
 - **The status line reports the flow instead of repeating the settings.** It says `Waiting`,

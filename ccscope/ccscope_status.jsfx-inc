@@ -3,21 +3,27 @@
 // ===================================================================
 // A library file (.jsfx-inc) imported by ccscope.jsfx.
 //
-// OWNS: one line of text at the bottom of the canvas. It says which flow the
-// plugin is observing -- Waiting, Receiving, Idle, Frozen -- reports the recent
-// activity of the selection (streams, channels, messages per second), keeps the
-// warnings that say what does not fit, and carries the package version at the
-// right edge. GitHub issue #17 defines the content; #22 will add the optional
-// source label, which lives at the start of the line, not here.
+// OWNS: the text at the bottom of the canvas, on one line or two. It says which
+// flow the plugin is observing -- Waiting, Receiving, Idle, Frozen -- reports the
+// recent activity of the selection (streams, channels, messages per second), keeps
+// the warnings that say what does not fit, and carries the package version at the
+// right edge of the bottom line. GitHub issue #17 defines the content; #22 will add
+// the optional source label, which lives at the start of the first line.
 //
 // READS: slider1, slider2, slider6, filtered_count, g_visible_bars,
 // g_side_fallback, the selection summary (g_sel_streams, g_sel_channels,
-// g_sel_msg_s), STATUS_TEXT_MARGIN, CCSCOPE_VERSION and gfx_w/gfx_h.
-// WRITES: nothing but pixels.
+// g_sel_msg_s), STATUS_TEXT_MARGIN, g_status_lines, g_status_margin,
+// CCSCOPE_VERSION and gfx_w/gfx_h.
+// WRITES: nothing but pixels (and its own measured widths).
 //
-// ORDER OF SACRIFICE on a narrow window: the version goes first, then the metric
-// detail (channels, then streams). The flow state and the two warnings of issue
-// #17 §4 are never dropped.
+// ONE LINE OR TWO. The count is decided in ccscope_layout.jsfx-inc by a monotone
+// rule and arrives here as g_status_lines; this file never re-decides it. With two
+// lines the state and the warnings take the upper one, the numbers and the version
+// the lower one, which is where the eye already looks for a measurement.
+//
+// ORDER OF SACRIFICE on a narrow window: the version goes first, then the note that
+// explains the state, then the metric detail (channels, then streams). The two
+// warnings of issue #17 §4 are never dropped.
 //
 // No other panel calls into this file and this file calls no other panel.
 // ===================================================================
@@ -26,12 +32,16 @@
 
 // Measured widths, computed on the first frame (the font is set by the conductor
 // before this file draws) and again only when the form or the text changes.
-g_st_w = 0;          // width of the content, separators included
+g_st_w = 0;          // single line: width of the content, separators included
+g_st_wA = 0;         // two lines, upper: state, note and warnings
+g_st_wB = 0;         // two lines, lower: the metric fields
 g_st_ver_w = 0;      // width of the version marker and its prefix
 g_st_sep_w = 0;      // width of " · "
 g_st_ready = 0;      // the three measurements above are valid
 g_st_form = 3;       // metric detail: 3 = streams + channels + rate, 2 = no channels, 1 = rate
 g_st_ver = 0;        // 1 when the version is drawn
+g_st_y1 = 0;         // baseline of the upper line (two-line layout only)
+g_st_y2 = 0;         // baseline of the bottom line, always the one the eye sees
 
 // Pieces. A piece is drawn only when its flag says it exists: the fields are
 // conditional, and an empty piece would otherwise leave a separator behind.
@@ -128,46 +138,116 @@ function status_build(count, form) (
   );
 );
 
-// Sums the widths of the pieces that exist. One measure per piece: no string is
-// concatenated, so there is nothing to keep in sync with what gets drawn.
-function status_measure() local(w, tw, th) (
-  gfx_measurestr(#st_head, tw, th);
-  w = tw;
-  g_st_has_streams ? (
-    w += g_st_sep_w;
-    gfx_measurestr(#st_streams, tw, th);
+// Sums the widths of the pieces a scope draws. Scope 0 is the single line, 1 the
+// upper line of two (state, note, warnings), 2 the lower one (the numbers). One
+// measure per piece: nothing is concatenated, so nothing can drift from what is
+// drawn.
+function status_measure(scope) local(w, tw, th, first) (
+  w = 0;
+  first = 1;
+
+  (scope == 0 || scope == 1) ? (
+    gfx_measurestr(#st_head, tw, th);
     w += tw;
+    first = 0;
   );
-  g_st_has_channels ? (
-    w += g_st_sep_w;
-    gfx_measurestr(#st_channels, tw, th);
-    w += tw;
-  );
-  g_st_has_rate ? (
-    w += g_st_sep_w;
-    gfx_measurestr(#st_rate, tw, th);
-    w += tw;
-  );
-  g_st_has_note ? (
-    w += g_st_sep_w;
+  (scope == 0 || scope == 1) && g_st_has_note ? (
+    w += first ? 0 : g_st_sep_w;
     gfx_measurestr(#st_note, tw, th);
     w += tw;
+    first = 0;
   );
-  g_st_has_wv ? (
-    w += g_st_sep_w;
+  (scope == 0 || scope == 2) && g_st_has_streams ? (
+    w += first ? 0 : g_st_sep_w;
+    gfx_measurestr(#st_streams, tw, th);
+    w += tw;
+    first = 0;
+  );
+  (scope == 0 || scope == 2) && g_st_has_channels ? (
+    w += first ? 0 : g_st_sep_w;
+    gfx_measurestr(#st_channels, tw, th);
+    w += tw;
+    first = 0;
+  );
+  (scope == 0 || scope == 2) && g_st_has_rate ? (
+    w += first ? 0 : g_st_sep_w;
+    gfx_measurestr(#st_rate, tw, th);
+    w += tw;
+    first = 0;
+  );
+  (scope == 0 || scope == 1) && g_st_has_wv ? (
+    w += first ? 0 : g_st_sep_w;
     gfx_measurestr(#st_wv, tw, th);
     w += tw;
+    first = 0;
   );
-  g_st_has_ws ? (
-    w += g_st_sep_w;
+  (scope == 0 || scope == 1) && g_st_has_ws ? (
+    w += first ? 0 : g_st_sep_w;
     gfx_measurestr(#st_ws, tw, th);
     w += tw;
+    first = 0;
   );
-  g_st_w = w;
+
+  w;
 );
 
-// Left to right: the state, the metric detail, the warnings, and the version
-// flush with the right edge so it reads as provenance rather than as a field.
+// Draws one scope on one baseline, separators included.
+function status_draw(scope, y) local(first) (
+  gfx_x = 10;
+  gfx_y = y;
+  first = 1;
+
+  (scope == 0 || scope == 1) ? (
+    slider2 != 0 ? ( gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2; ) : ( gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; );
+    gfx_a = 1;
+    gfx_drawstr(#st_head);
+    gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6;
+    first = 0;
+  );
+  (scope == 0 || scope == 1) && g_st_has_note ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_note);
+    first = 0;
+  );
+  (scope == 0 || scope == 2) && g_st_has_streams ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_streams);
+    first = 0;
+  );
+  (scope == 0 || scope == 2) && g_st_has_channels ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_channels);
+    first = 0;
+  );
+  (scope == 0 || scope == 2) && g_st_has_rate ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_rate);
+    first = 0;
+  );
+  (scope == 0 || scope == 1) && g_st_has_wv ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_wv);
+    first = 0;
+  );
+  (scope == 0 || scope == 1) && g_st_has_ws ? (
+    !first ? ( gfx_drawstr(#st_sep); );
+    gfx_drawstr(#st_ws);
+    first = 0;
+  );
+  0;
+);
+
+// The version, flush with the right edge of `y` so it reads as provenance rather
+// than as a field. Caller decides whether it fits.
+function status_draw_version(y) (
+  gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45; gfx_a = 1;
+  gfx_x = gfx_w - 10 - g_st_ver_w;
+  gfx_y = y;
+  gfx_drawstr("v");
+  gfx_drawstr(#st_ver);
+  0;
+);
+
 function draw_status_info(count) local(tw, th, avail) (
   !g_st_ready ? (
     gfx_measurestr(#st_sep, tw, th);
@@ -182,51 +262,64 @@ function draw_status_info(count) local(tw, th, avail) (
 
   avail = gfx_w - 20;   // 10 px left margin, 10 px right margin
   g_st_ver = 0;
+  g_st_y2 = gfx_h - STATUS_TEXT_MARGIN + 5;
+  g_st_y1 = gfx_h - g_status_margin + 5;
 
-  // The content must fit before anything else can be decided: it is the only
-  // part that carries a warning.
+  // Which pieces exist decides which of the two drawings runs, so build them once
+  // before the branch; both branches rebuild for the form they end up using.
   status_build(count, 3);
-  status_measure();
-  g_st_form = 3;
-  !(g_st_w <= avail) && g_st_has_rate ? (
-    status_build(count, 2);
-    status_measure();
-    g_st_form = 2;
-  );
-  !(g_st_w <= avail) && g_st_has_rate ? (
-    status_build(count, 1);
-    status_measure();
-    g_st_form = 1;
-  );
 
-  // Then the version, in whatever space is left: it is the first thing to go.
-  g_st_w + g_st_ver_w + 8 <= avail ? (
-    g_st_ver = 1;
-  );
+  // The geometry is decided by the rows (g_status_lines), the content by the flow:
+  // when there are no numbers to put on the lower line -- Waiting, Idle, Frozen --
+  // drawing one line on a two-line reservation is what issue #17 §6 calls "reserve
+  // two, draw what is needed": stable geometry, nothing lonely at the bottom.
+  g_status_lines == 2 && (g_st_has_rate || g_st_has_streams) ? (
+    // ========== TWO LINES: STATE AND WARNINGS ABOVE, NUMBERS BELOW ==========
+    g_st_form = 3;
+    // The metric detail is sacrificed first, because the upper line carries the
+    // warnings: it is the line whose content must survive intact.
+    !(status_measure(2) <= avail) && g_st_has_rate ? (
+      status_build(count, 2);
+      g_st_form = 2;
+    );
+    !(status_measure(2) <= avail) && g_st_has_rate ? (
+      status_build(count, 1);
+      g_st_form = 1;
+    );
+    // Then the note that explains the state, which is informative but not a
+    // warning; the warnings themselves are never dropped.
+    !(status_measure(1) <= avail) ? ( g_st_has_note = 0; );
 
-  gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; gfx_a = 1;
-  gfx_x = 10;
-  gfx_y = gfx_h - STATUS_TEXT_MARGIN + 5;
+    g_st_wA = status_measure(1);
+    g_st_wB = status_measure(2);
+    g_st_w = 0;
 
-  slider2 != 0 ? (
-    gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2;   // the state that must not be mistaken for live
-  );
-  gfx_drawstr(#st_head);
-  slider2 != 0 ? (
-    gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6;
-  );
+    g_st_wB + g_st_ver_w + 8 <= avail ? ( g_st_ver = 1; );
 
-  g_st_has_streams ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_streams); );
-  g_st_has_channels ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_channels); );
-  g_st_has_rate ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_rate); );
-  g_st_has_note ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_note); );
-  g_st_has_wv ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_wv); );
-  g_st_has_ws ? ( gfx_drawstr(#st_sep); gfx_drawstr(#st_ws); );
+    status_draw(1, g_st_y1);
+    status_draw(2, g_st_y2);
+    g_st_ver ? ( status_draw_version(g_st_y2); );
+  ) : (
+    // ========== ONE LINE: EVERYTHING, IN ORDER OF IMPORTANCE ==========
+    status_build(count, 3);
+    g_st_w = status_measure(0);
+    g_st_form = 3;
+    !(g_st_w <= avail) && g_st_has_rate ? (
+      status_build(count, 2);
+      g_st_w = status_measure(0);
+      g_st_form = 2;
+    );
+    !(g_st_w <= avail) && g_st_has_rate ? (
+      status_build(count, 1);
+      g_st_w = status_measure(0);
+      g_st_form = 1;
+    );
+    g_st_wA = 0;
+    g_st_wB = 0;
 
-  g_st_ver ? (
-    gfx_r = 0.45; gfx_g = 0.45; gfx_b = 0.45;
-    gfx_x = gfx_w - 10 - g_st_ver_w;
-    gfx_drawstr("v");
-    gfx_drawstr(#st_ver);
+    g_st_w + g_st_ver_w + 8 <= avail ? ( g_st_ver = 1; );
+
+    status_draw(0, g_st_y2);
+    g_st_ver ? ( status_draw_version(g_st_y2); );
   );
 );
