@@ -4,6 +4,13 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.11.1 — 2026-11-04
+
+- **The state word is lit by intensity**, so "is anything arriving?" is answered before the word
+  is read: dim when nothing has ever been received, grey when it arrived and went quiet, bright
+  while it speaks, amber when acquisition is frozen. Colour stays redundant with the word, never
+  the only carrier of a state; no text changes width, so nothing on the line moves.
+
 ## 0.11.0 — 2026-11-04
 
 - **The second status line is gone.** It was implemented in 0.10.0 for the cases where the pairs

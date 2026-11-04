@@ -34,6 +34,13 @@ g_st_ready = 0;      // the three measurements above are valid
 g_st_form = 3;       // metric detail: 3 = streams + channels + rate, 2 = no channels, 1 = rate
 g_st_ver = 0;        // 1 when the version is drawn
 g_st_y2 = 0;         // baseline of the line the eye sees
+// The colour of the state word. Intensity says "is anything arriving?" before the
+// word is read: dim when nothing ever arrived, grey when it did and went quiet,
+// bright while it speaks, amber when acquisition is frozen. Colour stays redundant
+// with the word, never the only carrier of a state.
+g_st_head_r = 0.6;
+g_st_head_g = 0.6;
+g_st_head_b = 0.6;
 
 // Pieces. A piece is drawn only when its flag says it exists: the fields are
 // conditional, and an empty piece would otherwise leave a separator behind.
@@ -62,6 +69,18 @@ g_st_has_ws = 0;
 // in the rolling last second" (the summary's stream count), and Idle is the
 // remainder -- data exists, nothing arrived in that second. Clear wipes the data,
 // so after Clear the state is Waiting, not Idle: nothing has been received since.
+function status_head_colour(count) (
+  slider2 != 0 ? (
+    g_st_head_r = 1.0; g_st_head_g = 0.6; g_st_head_b = 0.2;      // frozen: not a live reading
+  ) : count == 0 ? (
+    g_st_head_r = 0.45; g_st_head_g = 0.45; g_st_head_b = 0.45;   // waiting: never received
+  ) : g_sel_streams == 0 ? (
+    g_st_head_r = 0.6; g_st_head_g = 0.6; g_st_head_b = 0.6;      // idle: received, now silent
+  ) : (
+    g_st_head_r = 0.9; g_st_head_g = 0.9; g_st_head_b = 0.9;      // receiving: it speaks
+  );
+);
+
 function status_build(count, form) (
   g_st_has_streams = 0;
   g_st_has_channels = 0;
@@ -185,7 +204,7 @@ function status_draw(y) local(first) (
   gfx_y = y;
   first = 1;
 
-  slider2 != 0 ? ( gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.2; ) : ( gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6; );
+  gfx_r = g_st_head_r; gfx_g = g_st_head_g; gfx_b = g_st_head_b;
   gfx_a = 1;
   gfx_drawstr(#st_head);
   gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6;
@@ -229,6 +248,7 @@ function draw_status_info(count) local(tw, th, avail) (
 
   // The content must fit before anything else can be decided: it is the only part
   // that carries a warning.
+  status_head_colour(count);
   status_build(count, 3);
   g_st_w = status_measure();
   g_st_form = 3;

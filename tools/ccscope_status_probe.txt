@@ -18,7 +18,7 @@
 //
 // gmem namespace CCScopeStatusTest: 20 status (0 running, 1 passed, -1 failed),
 // 21 completed case, 22 failing case, 23 expected form, 24 actual form,
-// 27 failing check.
+// 27 failing check. Check 11 is the state-word intensity.
 
 probe_case = 0;
 probe_cases = 180;
@@ -124,6 +124,9 @@ probe_case < probe_cases && gmem[20] != -1 ? (
   probe_got_end_x = gfx_x;
   probe_got_end_y = gfx_y;
   probe_got_y2 = g_st_y2;
+  probe_got_r = g_st_head_r;
+  probe_got_g = g_st_head_g;
+  probe_got_b = g_st_head_b;
 
   // 1. the metric detail: only Receiving has one to sacrifice
   probe_expected_form = (probe_state == 1 || probe_state == 2) ? probe_form_that_fits(probe_avail) : 3;
@@ -148,6 +151,15 @@ probe_case < probe_cases && gmem[20] != -1 ? (
     abs(probe_got_end_x - (gfx_w - 10)) > 2 ? ( probe_fail(9); );
     probe_got_end_y != probe_got_y2 ? ( probe_fail(10); );
   );
+
+  // 5. the state word's intensity: redundant with the word, so it may never be the
+  //    only difference -- but it must be the one this state declares
+  probe_state == 4 ? ( probe_col_r = 1.0; probe_col_g = 0.6; probe_col_b = 0.2; )
+  : probe_state == 0 ? ( probe_col_r = 0.45; probe_col_g = 0.45; probe_col_b = 0.45; )
+  : probe_state == 3 ? ( probe_col_r = 0.6; probe_col_g = 0.6; probe_col_b = 0.6; )
+  : ( probe_col_r = 0.9; probe_col_g = 0.9; probe_col_b = 0.9; );
+  abs(probe_got_r - probe_col_r) > 0.001 || abs(probe_got_g - probe_col_g) > 0.001
+    || abs(probe_got_b - probe_col_b) > 0.001 ? ( probe_fail(11); );
 
   probe_case += 1;
   gmem[21] = probe_case;
