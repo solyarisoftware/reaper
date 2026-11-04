@@ -165,7 +165,7 @@ def main() -> None:
         wrapped = candidate.replace('gfx_line(', 'probe_line(').replace('gfx_circle(', 'probe_circle(')
         plot = plot.replace(candidate, CAPTURE + wrapped)
     main = main.split('\n@block\n', 1)[0]
-    main = main.replace('desc:CCScope (MIDI CC oscilloscope)', 'desc:CCScope rendering regression probe')
+    main = main.replace('desc:CCScope', 'desc:CCScope rendering regression probe')
     main = main.replace('options:no_meter', 'options:no_meter\noptions:gmem=CCScopeRenderingTest23')
     args.output.mkdir(parents=True, exist_ok=True)
     for path in provides(args.source):

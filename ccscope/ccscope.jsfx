@@ -1,6 +1,6 @@
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.8.1
+// @version 0.8.2
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -41,6 +41,9 @@
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.8.2 The plugin is called CCScope in REAPER's effect list: the name no
+//         longer carries the "(MIDI CC oscilloscope)" explanation, which reads
+//         as part of the name in a browser of names. Nothing else changed.
 //   0.8.1 Packaging fix: the description ReaPack shows is the package's own
 //         @about again, without the repository README appended to it. Nothing
 //         changed in the plugin.
@@ -219,10 +222,10 @@
 // - All metrics calculated over 1-second rolling window for real-time feedback
 // ===================================================================
 
-desc:CCScope (MIDI CC oscilloscope)
+desc:CCScope
 author: Giorgio Robino
-version: 0.8.1
-date: 2026-11-03
+version: 0.8.2
+date: 2026-11-04
 
 // Import utility libraries
 import ccscope_utils.jsfx-inc

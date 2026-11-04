@@ -161,7 +161,7 @@ def instrument(source: str, variant: str, *, seed_history: bool = True,
         marker = '  add_to_history_with_channel(accept_t, accept_cc, accept_ch, accept_v);'
         seed = seed.replace(marker, marker + '\n  add_temporal_history(accept_t, make_cc_channel_key(accept_cc, accept_ch), accept_v);')
     replacements = {
-        'desc:CCScope (MIDI CC oscilloscope)': f'desc:CCScope acceptance {variant}',
+        'desc:CCScope': f'desc:CCScope acceptance {variant}',
         'options:no_meter': 'options:no_meter\noptions:gmem=CCScopeAcceptance23',
         '\n@block\n': seed + '\n@block\naccept_block_start = time_precise();\n',
         '\n@sample\n': '''
