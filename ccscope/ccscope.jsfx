@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.10.0
+// @version 0.10.1
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -42,6 +42,9 @@ desc:CCScope
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
 // @changelog
+//   0.10.1 The two status lines sit one text line apart instead of one reserved
+//          margin apart: the margin includes the air around the text, and stacking
+//          two of them left a gap that read as a blank row between the lines.
 //   0.10.0 The status area takes a second line when the pairs do not all fit with
 //          one, and only then: the rule is monotone on the pair count, so the plot
 //          keeps its height when it can and the "showing N of M" warning cannot
@@ -238,7 +241,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.10.0
+version: 0.10.1
 date: 2026-11-04
 
 // Import utility libraries
@@ -298,9 +301,13 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.10.0";
+CCSCOPE_VERSION = "0.10.1";
 
 STATUS_TEXT_MARGIN = 25; // Space reserved for ONE status line at the bottom
+// Baseline-to-baseline distance between the two status lines. It is the text's own
+// line height, not STATUS_TEXT_MARGIN: the margin is what the layout reserves, and
+// using it here left a visible half-line of air between the two rows.
+STATUS_LINE_SPACING = FONT_SIZE + 3;
 
 // The status area takes one line or two. The decision belongs to calculate_layout()
 // (ccscope_layout.jsfx-inc) and follows a monotone rule; the drawing below reads

@@ -171,7 +171,7 @@ probe_case < probe_cases && gmem[20] != -1 ? (
   probe_got_lines == 2 ? (
     probe_got_wB > probe_avail ? ( probe_fail(8); );
     probe_got_wA > probe_avail && probe_got_note ? ( probe_fail(9); );
-    probe_got_y1 != gfx_h - g_status_margin + 5 ? ( probe_fail(10); );
+    probe_got_y1 != probe_got_y2 - STATUS_LINE_SPACING ? ( probe_fail(10); );
   ) : (
     probe_got_w <= probe_avail ? ( probe_got_end_x > gfx_w - 10 + 1 ? ( probe_fail(11); ); );
   );

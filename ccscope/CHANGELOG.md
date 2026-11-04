@@ -4,6 +4,12 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.10.1 — 2026-11-04
+
+- **The two status lines sit one text line apart**, not one reserved margin apart. The margin
+  includes the air around the text, so stacking two of them left a gap that read as a blank row
+  between the lines. The reserved height is unchanged; only the upper baseline moved.
+
 ## 0.10.0 — 2026-11-04
 
 - **The status area takes a second line when the pairs do not all fit with one**, and only
