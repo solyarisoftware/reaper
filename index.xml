@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="079889811f7c4bb329c6e4576fb7a4dd403873bf">
+<index version="1" name="solyarisoftware reaper" commit="7e21855242bee86901acae23243071c0f0421a1e">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -8,9 +8,9 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 Shows what a MIDI controller actually sends: the shape of the movement over time, one fader bar per active CC, and how fast and how regularly each CC transmits, on each MIDI channel separately.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Two display modes: a scrolling time graph with a labelled axis (1-30 s window) and one bar per active CC with its current value. The same CC on different channels is a separate row, with the same hue and a different shade, and the CC and channel filters combine. Three numbers per row are measured over exactly the last second: Messages (how often the controller sends), Motion (how far the value travels, in CC units/s) and Timing (how much the spacing between messages wobbles). Pointing at them says the same thing on screen.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Two display modes: a scrolling time graph with a labelled axis (1-30 s window) and one bar per active CC with its current value. The same CC on different channels is a separate row, with the same hue and a different shade, and the CC and channel filters combine. Three numbers per row are measured over exactly the last second: Messages (how often the controller sends, including repeats), Motion (absolute MIDI value travel, in CC units/s) and Jitter (standard deviation of accepted message intervals, in ms). Resting on a visible metric explains its reading and descriptive scale; the row label explains CC/channel/color and the colored bar/value its 0-127 range. Jitter needs at least four intervals after excluding gaps >4x the shortest. Metrics use one second independent of WIN; Freeze keeps the displayed instant.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The pair list sits below the plot or beside it, for windows that are wide and short. Freeze stops the acquisition while MIDI keeps passing through; Clear wipes history and metrics. The seven parameters are drawn as a control bar instead of REAPER sliders and stay automatable, in presets and under Param.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Written for testing MIDI hardware: the numbers tell you whether a controller really transmits at high resolution, whether its timing is stable, and how hard you are actually moving it. Written for REAPER 6.37 or newer.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 These describe MIDI output, not physical speed, value resolution or hardware quality. Jitter is not latency or a guaranteed bound; no data is not stability. Written for REAPER 6.37 or newer.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Bugs, defined changes and the roadmap live in the repository's issues and discussions, not in the package.\par}
 }
 ]]></description>
@@ -835,6 +835,20 @@
         <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_rows.jsfx-inc</source>
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/079889811f7c4bb329c6e4576fb7a4dd403873bf/ccscope/ccscope_controlbar.jsfx-inc</source>
+      </version>
+      <version name="0.12.3" author="Giorgio Robino" time="2026-11-05T17:51:18Z">
+        <changelog><![CDATA[Add readable hover help for row identity, values and metrics (#18).
+Rename Timing to Jitter without +/-; calculations unchanged.
+Left-align metric fields.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_controlbar.jsfx-inc</source>
+        <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7e21855242bee86901acae23243071c0f0421a1e/ccscope/ccscope_tooltip.jsfx-inc</source>
       </version>
     </reapack>
   </category>
