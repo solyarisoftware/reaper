@@ -18,7 +18,7 @@ per CC, the metrics updating live. The static screenshot used by ReaPack is
   own row — same hue per CC, a different shade per channel. The CC filter and the channel filter
   are independent and combine: one CC, one channel, or one CC on one channel.
 - **Three measurements per row**, over exactly the last second: **Messages**, **Motion**,
-  **Timing**. Pointing at them explains what they mean on screen.
+  **Jitter**. Resting on a visible metric explains its reading on screen.
 - **Rows below or beside the plot**, so a window that is wide and short can still show every
   pair. In a narrow window the labels go first and the status line says what does not fit.
 - **FREEZE** stops acquisition (MIDI keeps passing through) so a reading can be examined;
@@ -69,11 +69,84 @@ saturated values; and a selection larger than the rows on screen is exactly what
 |---|---|
 | **Messages** | received MIDI CC messages in the last second, including repeated identical values — not distinct values or physical movements |
 | **Motion** | sum of absolute CC value changes associated with messages in the last second, in CC units/s; rated slow, moderate, brisk, fast. This is MIDI value travel, not physical fader speed; intentional movement, noise and jumps can all contribute |
-| **Timing** | **Timing jitter:** standard deviation of accepted inter-message intervals, in ms; rated steady, even, uneven, loose, erratic. The hover panel shows the interval count. Intervals longer than four times the shortest interval in the window are excluded by a gap heuristic; `n/a` means fewer than four usable intervals |
+| **Jitter** | **Message timing jitter:** population standard deviation of accepted inter-message intervals, in ms; rated steady, even, uneven, loose, erratic. The hover panel shows the accepted interval count for valid readings. Intervals **greater than four times** the shortest interval in the window are excluded by a gap heuristic; `n/a` means fewer than four usable intervals (normally at least five messages are needed) |
 
-These are observations of MIDI output, not physical calibration. Timing describes message
-spacing; Motion cannot tell an intended gesture from a fault. No incoming messages do not
-establish that a stationary fader is noise-free: some devices send only when a value changes.
+All three use the rolling **last second**, independently of the plot's **WIN**. **FREEZE**
+keeps the same instant for the rows and their help, not a new wall-clock reading.
+
+- **Messages** has no quality scale. Ten identical messages count as ten, but add no Motion.
+  More messages do not establish finer value resolution or better hardware.
+- **Motion** measures travel in 7-bit CC units (values 0–127), not percent. For example,
+  60 → 65 → 70 → 75 contributes 15 units; 60 → 70 → 60 contributes 20, despite ending
+  where it started. The first-ever message contributes zero; later deltas can refer to a
+  previous message outside the one-second window. `0 u/s` means no measured value travel,
+  not necessarily a motionless physical fader.
+- **Jitter** is spread in message spacing, not the average spacing. Five equally spaced
+  messages provide four intervals and `0.0 ms`: no variation in those accepted intervals,
+  not proof of perfect timing. `n/a` is insufficient evidence, not zero jitter. The gap
+  heuristic can remove intentional pauses as well as gaps; it is not a device diagnosis.
+  For devices that send only when values change, spacing can also vary with the gesture.
+  CCScope observes the received stream, not the isolated timing contribution of the device,
+  transport or host. Its absolute millisecond scale is not normalized to the average interval.
+
+The descriptive scales (not grades) are:
+
+| Motion (displayed integer, CC units/s) | Meaning | Jitter (unrounded ms) | Meaning |
+|---|---|---|---|
+| **slow** ≤15 | little value travel | **steady** ≤5 | very little spacing variation |
+| **moderate** >15 to 40 | moderate value travel | **even** >5 to 15 | small spacing variation |
+| **brisk** >40 to 70 | brisk value travel | **uneven** >15 to 30 | noticeable spacing variation |
+| **fast** >70 | rapid value travel | **loose** >30 to 50 | large spacing variation |
+| | | **erratic** >50 | very large spacing variation |
+
+Jitter is displayed to one decimal but classified before rounding: a reading just above
+5 ms can display `5.0 ms (even)`. Standard deviation is **not a guaranteed ± bound**, a latency
+measurement or a hardware-quality grade. These are observations of MIDI output, not physical
+calibration. Motion cannot distinguish intentional gestures from noise or jumps. No incoming
+messages do not establish that a stationary fader is noise-free: some devices send only when
+a value changes.
+
+Labels, values with their units and descriptive words are all **left-aligned** at fixed
+positions, in both layouts and compact tiers. Changing the number of digits never moves
+another field; each pair still occupies one row.
+
+### Row identity and value
+
+Hover **CCnn/CHnn** for stream identity: `CC00/CH01` means controller number 0 on MIDI
+channel 1. CC numbers range from 0 to 127; channels from 1 to 16. Leading zeroes are only
+formatting. Label, bar and value share a CC base color with a channel shade; colors and
+shades can repeat, so the text identifies the pair. None of these identifies a physical device.
+
+Hover the **colored number or its bar** for the same stored-value explanation. It is a
+7-bit MIDI value, 0–127, not percent or physical fader position. Idle and Freeze retain the
+stored value; Clear resets it to zero without confirming that the device sent zero. Even
+at zero the bar keeps a small visible stub. These targets remain available when the metric
+fields report no activity or only show Messages.
+
+### Reading hover help
+
+Help uses **16 px text**, an **18 px title** and an **opaque black background**, wrapping
+within a panel up to 520 logical pixels wide. A compact live-reading section is followed by
+**Description:** and the general explanation; only the space needed by its possible states
+is reserved, rather than a fixed block of empty lines.
+
+Rest on a row identity, colored value/bar or metric cell for about **400 ms**. Moving to a
+different pair or subject restarts the wait; leaving the target dismisses help immediately.
+The number and its bar share one subject and a stable anchor; the gap between them is not a target. Each panel is anchored to its cell, not the
+moving pointer, and shows its current reading, definition/unit and descriptive scale. The
+count-only layout exposes **Messages** only. The consolidated **no activity** sentence is also
+a Messages target: it explains zero messages without inventing Motion or Jitter readings.
+`n/a` has its own insufficient-data explanation. Gaps and blank right-hand space are not targets;
+the small valid-reading interval annotation belongs to Jitter. **`int` means accepted
+inter-message intervals**: `(15 int)` means 15 intervals used by the calculation, not 15
+messages. The abbreviation is expanded in both full and compact help. Open control-bar lists
+suppress help.
+
+Help wraps and stays inside the canvas, choosing above or below the cell according to space.
+Its geometry stays fixed per metric at a fixed viewport as values and categories change.
+If the full explanation cannot fit, a compact definition/current meaning points back to this
+README instead of showing the complete legend. If even that cannot fit (including canvases
+narrower than 252 logical pixels), no panel is drawn.
 
 ## The hardware it was written for
 

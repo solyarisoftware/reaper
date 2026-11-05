@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.12.2
+// @version 0.12.3
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -12,9 +12,12 @@ desc:CCScope
 //   different channels is a separate row, with the same hue and a different
 //   shade, and the CC and channel filters combine. Three numbers per row are
 //   measured over exactly the last second: Messages (how often the controller
-//   sends), Motion (how far the value travels, in CC units/s) and Timing (how
-//   much the spacing between messages wobbles). Pointing at them says the same
-//   thing on screen.
+//   sends, including repeats), Motion (absolute MIDI value travel, in CC units/s)
+//   and Jitter (standard deviation of accepted message intervals, in ms).
+//   Resting on a visible metric explains its reading and descriptive scale;
+//   the row label explains CC/channel/color and the colored bar/value its 0-127 range.
+//   Jitter needs at least four intervals after excluding gaps >4x the shortest.
+//   Metrics use one second independent of WIN; Freeze keeps the displayed instant.
 //
 //   The pair list sits below the plot or beside it, for windows that are wide
 //   and short. Freeze stops the acquisition while MIDI keeps passing through;
@@ -22,9 +25,9 @@ desc:CCScope
 //   bar instead of REAPER sliders and stay automatable, in presets and under
 //   Param.
 //
-//   Written for testing MIDI hardware: the numbers tell you whether a controller
-//   really transmits at high resolution, whether its timing is stable, and how
-//   hard you are actually moving it. Written for REAPER 6.37 or newer.
+//   These describe MIDI output, not physical speed, value resolution or hardware
+//   quality. Jitter is not latency or a guaranteed bound; no data is not stability.
+//   Written for REAPER 6.37 or newer.
 //
 //   Bugs, defined changes and the roadmap live in the repository's issues and
 //   discussions, not in the package.
@@ -41,11 +44,11 @@ desc:CCScope
 //   ccscope_rows.jsfx-inc
 //   ccscope_status.jsfx-inc
 //   ccscope_controlbar.jsfx-inc
+//   ccscope_tooltip.jsfx-inc
 // @changelog
-//   0.12.2 The ReaPack changelog shows this release only. The block had kept the
-//          whole history since 0.5, and ReaPack displays what it finds there for
-//          every version: previous entries are preserved by reapack-index on its
-//          own, so the block holds the current version. No change in the plugin.
+//   Add readable hover help for row identity, values and metrics (#18).
+//   Rename Timing to Jitter without +/-; calculations unchanged.
+//   Left-align metric fields.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -57,10 +60,10 @@ desc:CCScope
 // FEATURES:
 // - Real-time scrolling XY graph showing CC value changes over time
 // - Horizontal bars displaying current CC values (0-127)
-// - Performance metrics for hardware testing and technique analysis:
-//   * Events per second: MIDI message frequency (hardware resolution)
-//   * Rate (u/s): Value change velocity (playing intensity)
-//   * Jitter: Timing consistency (hardware quality indicator)
+// - Per-pair observations of MIDI output, not hardware grades:
+//   * Messages: received messages per second, including repeated values
+//   * Motion: absolute value travel in CC units/s
+//   * Jitter: standard deviation of accepted message intervals in ms
 // - Dynamic layout: the pair list can sit under the plot (rows take height from
 //   the graph) or beside it (a column that uses the whole window height, so a
 //   short, wide window still shows every pair); the plot keeps a minimum share
@@ -82,26 +85,8 @@ desc:CCScope
 // - Metrics: Tracked independently per (CC#, Channel) pair
 // - History: Stores channel info with each data point
 //
-// PERFORMANCE METRICS EXPLAINED:
-//
-// Events per Second (Events: X/s):
-//   - How many MIDI CC messages arrive per second
-//   - High values (60+) = high-resolution controller
-//   - Low values (10-20) = coarse updates or slow movements
-//   - Useful for: Testing controller resolution and USB timing
-//
-// Rate (Rate: X u/s - units per second):
-//   - How fast CC values are changing (sum of value deltas per second)
-//   - Quality ratings: Gentle (0-15) | Moderate (16-40) | Active (41-70) | Aggressive (71+)
-//   - Useful for: Analyzing playing technique and gesture intensity
-//
-// Jitter (Jitter: ±Xms):
-//   - Timing consistency between MIDI events (standard deviation)
-//   - Quality ratings: Excellent (<5ms) | Very Good (6-15ms) | Good (16-30ms) | Fair (31-50ms) | Poor (>50ms)
-//   - Useful for: Hardware quality testing, detecting USB/timing issues
-//
-// DISPLAY FORMAT (per CC bar - v0.5.1+):
-// CC01 (CH:01)  [████████████░░░░░░]  67    Events: 45/s    Rate: 23 u/s (Gentle)    Jitter: ±4ms (Excellent)
+// Metric definitions, examples and complete descriptive scales: README.md.
+// These use a rolling second, not the plot window selected by WIN.
 //
 // CONTROLS:
 // - Slider 1: CC to Monitor (0 = All CCs, 1-127 = specific CC)
@@ -178,8 +163,8 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.12.2
-date: 2026-11-04
+version: 0.12.3
+date: 2026-11-05
 
 // Import utility libraries
 import ccscope_utils.jsfx-inc
@@ -192,6 +177,8 @@ import ccscope_plot.jsfx-inc
 import ccscope_rows.jsfx-inc
 import ccscope_status.jsfx-inc
 import ccscope_controlbar.jsfx-inc
+// Reusable renderer; content/hit adapter remains in rows, overlays in @gfx.
+import ccscope_tooltip.jsfx-inc
 
 options:no_meter
 // The leading "-" hides REAPER's slider strip while keeping the parameter alive:
@@ -232,13 +219,13 @@ SIDE_COLUMN_GAP = 16;     // px between the plot and the column
 SIDE_LABEL_WIDTH = 76;    // "CCnn/CHnn" plus air
 SIDE_BAR_WIDTH = 90;      // the bar itself: narrower than below the plot, on purpose
 SIDE_VALUE_WIDTH = 30;    // the 3-digit value, right after the bar
-SIDE_METRICS_WIDTH = 190; // compact metrics: "125 msg/s   247 mot   ±20.7ms"
+SIDE_METRICS_WIDTH = 220; // left-aligned compact fields, including maximum values
 MIN_PLOT_WIDTH = 240;     // below this the plot stops being a plot: fall back
 SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ... "now")
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.12.2";
+CCSCOPE_VERSION = "0.12.3";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair
@@ -307,22 +294,32 @@ g_value_x = 0;
 g_metrics_x = 0;
 
 // ========== THE THREE METRIC COLUMNS ==========
-// The numbers under Messages, Motion and Timing are written into fixed fields so
-// that rows read as a table: the same right edge for the same kind of number, and
-// a fixed width for every quality word. calculate_metric_columns() measures the
-// widest text each field can hold and decides which of the four forms fits.
-// The value and its unit are one string ("250 u/s") right-aligned at the column's
-// right edge: the suffix has a constant width, so the digits line up by
-// construction -- no per-digit padding, and no string that can push a column.
+// The numbers under Messages, Motion and Jitter are written into fixed fields so
+// that rows read as a table: labels, values/units and quality words each have a
+// fixed LEFT edge in every tier. calculate_metric_columns() measures reserved
+// widths and decides which form fits; changing a number never moves a field.
 g_metrics_tier = 3;      // 3 = labels + quality, 2 = labels, 1 = compact, 0 = count only
-g_col_msg_x = 0;         // left edge of the "Messages" label
-g_col_msg_r = 0;         // right edge of "N/s"
-g_col_mot_x = 0;         // left edge of the "Motion" label
-g_col_mot_r = 0;         // right edge of "N u/s"
-g_col_mot_q_r = 0;       // right edge of the motion quality word
-g_col_tmg_x = 0;         // left edge of the "Timing" label
-g_col_tmg_r = 0;         // right edge of "±N.Nms"
-g_col_tmg_q_r = 0;       // right edge of the timing quality word (and of the int count)
+g_col_msg_x = 0;         // label/field left edge
+g_col_msg_v_x = 0;       // value/unit fixed left edge
+g_col_msg_r = 0;         // reserved field right edge
+g_col_mot_x = 0;
+g_col_mot_v_x = 0;
+g_col_mot_r = 0;
+g_col_mot_q_x = 0;       // quality fixed left edge
+g_col_mot_q_r = 0;
+g_col_tmg_x = 0;
+g_col_tmg_v_x = 0;
+g_col_tmg_r = 0;
+g_col_tmg_q_x = 0;
+g_col_tmg_q_r = 0;
+
+// Only the hovered row is cached; no new mem[] allocation or buffer traversal.
+g_row_intervals = 0;
+g_help_hit = 0; g_help_previous = 0; g_help_since = 0;
+// Subjects: 1 Messages, 2 Motion, 3 Jitter, 4 stream identity, 5 stored value.
+g_help_metric = 0; g_help_pair = 0; g_help_value = 0;
+g_help_left = 0; g_help_right = 0; g_help_top = 0; g_help_bottom = 0;
+g_help_events = 0; g_help_motion = 0; g_help_jitter = -1; g_help_intervals = 0;
 
 // ========== CONTROL BAR STATE ==========
 // The bar's own state -- cell geometry, values, the open list, the pointer edges
@@ -746,13 +743,20 @@ cbm_draw();
 gfx_setfont(1, "Arial", FONT_SIZE);
 draw_cached_graph_background();
 draw_cc_data_lines(filtered_count);
+g_help_hit = 0;
 draw_cc_bars();
 
 // Get history count for status display
 draw_status_info(filtered_count);
 
-// On top of everything: the explanation of the numbers under the pointer
-draw_metric_tooltip();
+// Overlays are coordinated here, never from another panel. Menu-open frames
+// dismiss help and reset dwell; closing a menu starts a fresh dwell.
+tip_visible = 0;
+metric_help_dwell(g_help_hit, time_precise(), cbm_open() > 0) ? (
+  prepare_metric_help();
+  tip_draw(g_help_left, g_help_top, g_help_bottom,
+           #help_title, #help_full, #help_compact, #help_current, #help_samples);
+);
 
 // ...and the open list above even that, because it is what the pointer is using:
 // the module paints the frame, the highlighted row and the scroll thumb, then the

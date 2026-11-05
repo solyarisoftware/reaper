@@ -176,7 +176,10 @@ gmem[5] = accept_block_seq;
         if source.count(old) != 1:
             raise ValueError(f'Unexpected source boundary: {old!r}')
         source = source.replace(old, new)
-    return source + (LEGACY_SHIM if legacy else '') + TELEMETRY
+    telemetry = TELEMETRY
+    if 'import ccscope_tooltip.jsfx-inc' in source:
+        telemetry += '\ngmem[70] = tip_visible;\n'
+    return source + (LEGACY_SHIM if legacy else '') + telemetry
 
 
 def instrument_plot(source: str) -> str:
@@ -188,7 +191,9 @@ def instrument_plot(source: str) -> str:
 
 
 def instrument_rows(source: str) -> str:
-    """Observe entry to the actual tooltip paint branch; no fake pointer state."""
+    """Observe legacy painting; new packages expose the renderer's visible flag."""
+    if 'function capture_metric_help(' in source:
+        return source
     marker = '  hit && mouse_x > 0 && mouse_y > 0 ? ('
     if source.count(marker) != 1:
         raise ValueError('Unexpected tooltip paint branch')

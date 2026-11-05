@@ -220,6 +220,9 @@ class Eel2OrderTests(unittest.TestCase):
         order = [line.split()[1] for line in main.splitlines() if line.startswith('import ')]
         parts = [(source / name).read_text() for name in order]
         parts.append(main)
+        # Native tooltip fixtures call production functions too: catch stale
+        # signatures/forward references before a parent-authorized native run.
+        parts.append((ROOT / 'tools/ccscope_tooltip_probe.txt').read_text())
         text = '\n'.join(parts)
         text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
         return re.sub(r'//[^\n]*', '', text)

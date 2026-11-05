@@ -10,37 +10,22 @@
 // 1. EVENTS PER SECOND (evt/s)
 //    - Counts how many MIDI CC messages are received per second
 //    - Example: 45 evt/s means 45 MIDI messages in the last second
-//    - High values (60+): High-resolution controller sending frequent updates
-//    - Low values (10-20): Low-resolution or slow movements
-//    - Zero: No activity (static CC value)
-//    - Use case: Detect controller resolution and USB/MIDI timing
+//    - Includes repeated identical values; not a measure of value resolution
+//    - Zero: no received messages, not evidence of physical stability
 //
 // 2. RATE (u/s - units per second)
 //    - Measures how fast CC VALUES are changing (not timing)
 //    - Calculated as: sum of |current_value - previous_value| per second
 //    - Example: CC goes 60→65→70→75 in 1 sec = rate of 15 u/s
-//    - Quality ratings:
-//      * Gentle (0-15 u/s): Slow fades, subtle dynamics
-//      * Moderate (16-40 u/s): Normal playing, controlled changes
-//      * Active (41-70 u/s): Expressive playing, clear gestures
-//      * Aggressive (71+ u/s): Fast swells, dramatic movements
-//    - Use case: Analyze playing technique and gesture intensity
+//    - Descriptive terms: slow <=15, moderate <=40, brisk <=70, fast >70
+//    - MIDI value travel, not physical speed; noise and jumps also contribute
 //
-// 3. JITTER (milliseconds ±)
-//    - Measures consistency of event timing (not values)
-//    - Calculated as: standard deviation of time intervals between events
-//    - Example: Events at 0.0s, 0.1s, 0.2s, 0.3s = ±0ms (perfect)
-//    - Example: Events at 0.0s, 0.05s, 0.25s, 0.3s = ±50ms (jittery)
-//    - Quality ratings:
-//      * Excellent (0-5ms): Professional-grade controller
-//      * Very Good (6-15ms): High-quality consumer device
-//      * Good (16-30ms): Acceptable for most uses
-//      * Fair (31-50ms): Noticeable timing issues
-//      * Poor (51+ms): Significant latency problems
-//    - Use case: Hardware quality testing, USB timing diagnosis
-//
-// DISPLAY FORMAT:
-// CC1 (CH:01) [████████████████░░░░░░░░] 67  │ Events: 45/s │ Rate: 23 u/s (Gentle) │ Jitter: ±4ms (Excellent)
+// 3. JITTER (milliseconds)
+//    - Population standard deviation of accepted inter-message intervals
+//    - Excludes intervals >4 times the shortest; needs >=4 accepted intervals
+//    - Descriptive terms: steady <=5, even <=15, uneven <=30, loose <=50,
+//      erratic >50 ms (unrounded values select the term)
+//    - Not a guaranteed bound, latency estimate or hardware grade
 //
 // CHANGELOG (v0.5.2):
 // - Removed the deprecated single-channel shims (update_metrics_for_cc,
@@ -79,7 +64,7 @@
 // ========== CONFIGURATION ==========
 METRICS_WINDOW_SEC = 1.0;      // Rolling window duration
 MIN_JITTER_INTERVALS = 4;      // below this, jitter is reported as -1 (n/a)
-GAP_FACTOR = 4;               // an interval this many times the shortest is a gap, not jitter
+GAP_FACTOR = 4;               // intervals greater than this times the shortest are gaps
 MAX_EVENTS_PER_CC = 500;       // events held per (CC, channel); 500 evt/s at 1 s
 
 // ========== MEMORY ALLOCATION ==========
@@ -272,7 +257,7 @@ function get_rate_per_second_cc_channel(cc_num, channel)
 /**
  * Returns quality rating text for rate value
  * @param rate_value Rate in units per second
- * @return Quality string: "Gentle", "Moderate", "Active", or "Aggressive"
+ * @return Descriptive string: "slow", "moderate", "brisk", or "fast"
  */
 // Words for a musician, not for an engineer: this is how fast the gesture moves
 function get_rate_quality(rate_value) (
@@ -287,11 +272,10 @@ function get_rate_quality(rate_value) (
  * Returns standard deviation of time intervals between events
  * @param cc_num CC number (0-127)
  * @param channel MIDI channel (0-15)
- * @return Jitter in milliseconds (±)
+ * @return Jitter in milliseconds (standard deviation, not a bound)
  */
-// Number of intervals the last jitter computation used. The display shows it:
-// a standard deviation over four intervals and one over two hundred are not the
-// same claim, and the reader cannot tell from the value alone.
+// Accepted interval count for the last valid reading; zero on n/a is a sentinel,
+// not an actual accepted count. Capture immediately: the next pair overwrites it.
 g_jitter_intervals = 0;
 
 /**
@@ -299,11 +283,11 @@ g_jitter_intervals = 0;
  * Returns the standard deviation of the inter-arrival intervals in the window,
  * ignoring the gapped ones: an interval longer than GAP_FACTOR times the
  * shortest is a pause (or a loop jump, or a stale event), not jitter. Without
- * that filter a single gap turned a steady stream into "Poor".
+ * that filter a single gap would dominate the spacing variation.
  * @param cc_num CC number (0-127)
  * @param channel MIDI channel (0-15)
  * @return Jitter in milliseconds, or -1 when the window has fewer than
- *         MIN_JITTER_INTERVALS usable intervals (count in g_jitter_intervals)
+ *         MIN_JITTER_INTERVALS usable intervals (valid-reading count in g_jitter_intervals)
  */
 function get_jitter_ms_cc_channel(cc_num, channel)
   local(base, count, i, ptr, cutoff, prev_time, curr_time, interval, first_time,
@@ -397,7 +381,7 @@ function get_jitter_ms_cc_channel(cc_num, channel)
 /**
  * Returns quality rating text for jitter value
  * @param jitter_ms Jitter in milliseconds
- * @return Quality string: "Excellent", "Very Good", "Good", "Fair", or "Poor"
+ * @return Descriptive string: "steady", "even", "uneven", "loose", or "erratic"
  */
 // How much the spacing between messages wobbles
 function get_jitter_quality(jitter_ms) (

@@ -129,9 +129,9 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
  * the shortest: labels + quality words, labels only, values only (what the column
  * beside the plot uses), and the bare count.
  *
- * The reserve for a value is a realistic maximum, not a theoretical one: a wider
- * number would grow to the LEFT of its right edge, into the gap, without shifting
- * the columns after it. Alignment is what has to hold, not the gap.
+ * Every label, value/unit and quality word has its own fixed LEFT edge. Reserve
+ * the supported value widths before choosing a tier, so changing digits neither
+ * moves another field nor overprints it. Half-open field bounds feed hover help.
  */
 function calculate_metric_columns() local(
     tw, th, wmsg, wmot, wtmg, wv_msg, wv_mot, wv_tmg, wq_mot, wq_tmg,
@@ -141,23 +141,33 @@ function calculate_metric_columns() local(
 
   gfx_measurestr("Messages", wmsg, th);
   gfx_measurestr("Motion", wmot, th);
-  gfx_measurestr("Timing", wtmg, th);
+  gfx_measurestr("Jitter", wtmg, th);
   gfx_measurestr("500/s", wv_msg, th);
-  gfx_measurestr("9999 u/s", wv_mot, th);
-  gfx_measurestr("±99.9ms", wv_tmg, th);
+  // 500 retained events * 127 units/event; jitter cannot span a whole second.
+  gfx_measurestr("63500 u/s", wv_mot, th);
+  gfx_measurestr("999.9ms", wv_tmg, th);
   gfx_measurestr("moderate", wq_mot, th);
   gfx_measurestr("erratic", wq_tmg, th);
+  gfx_measurestr("steady", tw, th); wq_tmg = max(wq_tmg, tw);
+  gfx_measurestr("even", tw, th); wq_tmg = max(wq_tmg, tw);
+  gfx_measurestr("uneven", tw, th); wq_tmg = max(wq_tmg, tw);
+  gfx_measurestr("loose", tw, th); wq_tmg = max(wq_tmg, tw);
 
   // ========== THE WIDEST FORM: LABELS AND QUALITY WORDS ==========
   g_metrics_tier = 3;
   g_col_msg_x = g_metrics_x;
-  g_col_msg_r = g_col_msg_x + wmsg + 8 + wv_msg;
+  g_col_msg_v_x = g_col_msg_x + wmsg + 8;
+  g_col_msg_r = g_col_msg_v_x + wv_msg;
   g_col_mot_x = g_col_msg_r + gap;
-  g_col_mot_r = g_col_mot_x + max(wmot, wmsg) + 8 + wv_mot;
-  g_col_mot_q_r = g_col_mot_r + 8 + wq_mot;
+  g_col_mot_v_x = g_col_mot_x + wmot + 8;
+  g_col_mot_r = g_col_mot_v_x + wv_mot;
+  g_col_mot_q_x = g_col_mot_r + 8;
+  g_col_mot_q_r = g_col_mot_q_x + wq_mot;
   g_col_tmg_x = g_col_mot_q_r + gap;
-  g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
-  g_col_tmg_q_r = g_col_tmg_r + 8 + wq_tmg;
+  g_col_tmg_v_x = g_col_tmg_x + wtmg + 8;
+  g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
+  g_col_tmg_q_x = g_col_tmg_r + 8;
+  g_col_tmg_q_r = g_col_tmg_q_x + wq_tmg;
   total = g_col_tmg_q_r - g_metrics_x;
 
   // ========== WITHOUT THE QUALITY WORDS ==========
@@ -165,7 +175,8 @@ function calculate_metric_columns() local(
     g_metrics_tier = 2;
     g_col_mot_q_r = g_col_mot_r;
     g_col_tmg_x = g_col_mot_r + gap;
-    g_col_tmg_r = g_col_tmg_x + max(wtmg, wmot) + 8 + wv_tmg;
+    g_col_tmg_v_x = g_col_tmg_x + wtmg + 8;
+    g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
     g_col_tmg_q_r = g_col_tmg_r;
     total = g_col_tmg_r - g_metrics_x;
   );
@@ -173,10 +184,15 @@ function calculate_metric_columns() local(
   // ========== WITHOUT THE LABELS: THE COLUMN BESIDE THE PLOT ==========
   total > avail ? (
     g_metrics_tier = 1;
-    g_col_msg_r = g_metrics_x + wv_msg;
-    g_col_mot_r = g_col_msg_r + gap + wv_mot;
+    g_col_msg_v_x = g_col_msg_x;
+    g_col_msg_r = g_col_msg_v_x + wv_msg;
+    g_col_mot_x = g_col_msg_r + gap;
+    g_col_mot_v_x = g_col_mot_x;
+    g_col_mot_r = g_col_mot_v_x + wv_mot;
     g_col_mot_q_r = g_col_mot_r;
-    g_col_tmg_r = g_col_mot_r + gap + wv_tmg;
+    g_col_tmg_x = g_col_mot_r + gap;
+    g_col_tmg_v_x = g_col_tmg_x;
+    g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
     g_col_tmg_q_r = g_col_tmg_r;
     total = g_col_tmg_r - g_metrics_x;
   );

@@ -109,6 +109,36 @@ silently measures the wrong thing is worse than no probe.
 Red-capability check: change one width in the generated probe's `probe_width()` so a
 case can no longer fit its richest form, and the run must fail. Regenerate afterwards.
 
+## Native row and metric tooltip checks (#18)
+
+Build in a **new temporary Effects subdirectory**, never over an installed plugin:
+
+```text
+python3 tools/ccscope_tooltip_probe.py --source ccscope --output <sandbox-resource>/Effects/CCScopeTooltip18
+```
+
+This command only builds text files; it does not start REAPER. After explicit operator
+permission, load `tooltip_checks.jsfx` alone in a disposable REAPER project and open its UI.
+No MIDI input/generator: this fixture owns the metrics buffers. It calls the actual layout,
+row hover/content, dwell, metrics and generic tooltip functions, with native font measurements.
+It checks all four tiers, field gaps/right edges and half-open row boundaries, zero/n/a,
+pair/subject changes, identity and bar/value targets (including their gaps and stable anchors),
+399/401 ms dwell and menu suppression, 3/4/19/20 intervals, the gap
+filter, scratch-output caching, threshold endpoints/rounding, fixed geometry across content
+variants (including Frozen), narrow/full/compact/suppressed panels, and restored font/colour/blend.
+
+Results use `CCScopeTooltip18` gmem: `[0]` checks, `[1]` failures, `[2]` completed, `[3]` first
+failed check. Require completed=1 and failures=0, not merely successful loading. For a
+red-capability check, change the generated fixture's first expected Motion threshold word;
+it must fail. Regenerate the unmodified fixture afterward.
+
+The Linux tests exercise source arithmetic/boolean expressions and package/content invariants;
+they do **not** execute EEL2, validate fonts or establish pixel correctness. The fixture must
+still be run natively. Manual acceptance additionally checks real pointer dwell/exit in both
+layouts, Freeze preserving row/help readings, real resize/OS scaling, opaque compositing over
+moving traces, text containment and subsequent menu rendering. A native deterministic fixture
+is not a substitute for those observations.
+
 ## Native UI, MIDI and audio-thread acceptance (Windows)
 
 `ccscope_acceptance_probe.py` builds instrumented copies of an unmodified baseline

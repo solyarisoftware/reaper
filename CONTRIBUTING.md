@@ -59,8 +59,8 @@ must not be edited by hand.
 
 ### Where the CCScope code lives
 
-One conductor and five leaves. `ccscope.jsfx` declares every global and every slider and owns
-the `@gfx` pipeline, which calls the panels in the order they must run:
+One conductor, leaf panels and reusable utilities. `ccscope.jsfx` declares the host state and
+every slider and owns the `@gfx` pipeline, which calls the panels and overlays in order:
 
 | file | owns |
 |---|---|
@@ -69,14 +69,19 @@ the `@gfx` pipeline, which calls the panels in the order they must run:
 | `ccscope_metrics.jsfx-inc` | the one-second metrics |
 | `ccscope_layout.jsfx-inc` | frame geometry and the metric columns |
 | `ccscope_plot.jsfx-inc` | time window, grid, image cache, traces |
-| `ccscope_rows.jsfx-inc` | bars, metric fields, the explanation panel |
+| `ccscope_rows.jsfx-inc` | bars, metric fields, hovered reading cache and row/metric-help content |
 | `ccscope_status.jsfx-inc` | the line at the bottom |
 | `ccscope_controlbar.jsfx-inc` | the cells, their lists and the pointer |
+| `ccscope_tooltip.jsfx-inc` | reusable wrapping, fitting and opaque tooltip painting; no metric vocabulary |
 
 Two rules keep it that way, and both are checked by `tests/test_ccscope_tools.py`: **a panel
 calls no other panel** (the pipeline orders them, so a new panel or a third rows mode touches
 one file), and **the control bar knows no parameter** — it receives values and texts and returns
 a list of changes, so another effect can copy that file and use it with its own vocabulary.
+The conductor coordinates row/metric dwell and menu suppression, then calls the tooltip renderer.
+No panel calls the renderer or another panel. Rows cache only the hovered cell while drawing; help never recalculates metrics.
+The renderer reserves four live-reading lines, measures invariant full/compact bodies and restores
+the caller's font and drawing state. It allocates no `mem[]` ranges.
 Every include opens with what it owns, reads and writes. EEL2 has no forward declarations: a
 function may only call what was declared before it, so the order inside a file is the
 dependency order, and `@provides` in `ccscope.jsfx` is the single list of package files — the

@@ -1,0 +1,146 @@
+// ===================================================================
+// TOOLTIP RENDERER - reusable text wrapping, fitting and opaque painting
+// ===================================================================
+// OWNS: font slots 2/3 and tip_* scratch strings/geometry; no mem[] ranges.
+// READS: anchor, title, full/compact definitions, live reading and state samples.
+// WRITES: pixels and tip_visible/tip_compact/tip_x/y/w/h for diagnostics.
+// The host owns content, hit testing and dwell. It calls tip_draw as an overlay.
+// Newline-separated state samples define the smallest stable live-text reserve.
+// Static wrapping is cached by content, width and font metrics, not recomputed
+// for every live value. A reading beyond its reserve is suppressed, never clipped.
+// Font/colour/blend state is restored; full/compact bodies are subject-invariant.
+// ===================================================================
+
+@init
+
+// Wrap at spaces/newlines, splitting an overlong word only when necessary.
+// Measurement and painting take exactly the same path. No array allocation.
+function tip_wrap(text, width, x, y, paint, leading)
+  local(pos, size, count, last_space, ch, tw, th, scanning, lines) (
+  pos = 0; size = strlen(text); lines = 0;
+  while(pos < size) (
+    count = 0; last_space = -1; scanning = 1;
+    while(scanning && pos + count < size) (
+      ch = str_getchar(text, pos + count);
+      ch == 10 ? scanning = 0 : (
+        strcpy_substr(#tip_line, text, pos, count + 1);
+        gfx_measurestr(#tip_line, tw, th);
+        tw > width ? scanning = 0 : (
+          ch == 32 ? last_space = count;
+          count += 1;
+        );
+      );
+    );
+    // A single glyph wider than the available area cannot be rendered safely.
+    count == 0 && str_getchar(text, pos) != 10 ? (
+      pos = size; lines = 10000;
+    ) : (
+      pos + count < size && str_getchar(text, pos + count) != 10 && last_space > 0
+        ? count = last_space;
+      strcpy_substr(#tip_line, text, pos, count);
+      paint ? (
+        gfx_x = x; gfx_y = y + lines * leading;
+        gfx_drawstr(#tip_line);
+      );
+      lines += 1;
+      pos += count;
+      pos < size && str_getchar(text, pos) == 10 ? pos += 1;
+      while(pos < size && str_getchar(text, pos) == 32) ( pos += 1; );
+    );
+  );
+  lines;
+);
+
+// Samples are independent alternative readings, not paragraphs to concatenate.
+function tip_sample_lines(samples, width, leading) local(pos, size, start, lines) (
+  pos = 0; start = 0; size = strlen(samples); lines = 0;
+  loop(size + 1,
+    pos == size || str_getchar(samples, pos) == 10 ? (
+      strcpy_substr(#tip_sample, samples, start, pos - start);
+      lines = max(lines, tip_wrap(#tip_sample, width, 0, 0, 0, leading));
+      start = pos + 1;
+    );
+    pos += 1;
+  );
+  lines;
+);
+
+function tip_draw(ax, ay, ab, title, full_body, compact_body, current, samples)
+  local(old_font, old_x, old_y, old_r, old_g, old_b, old_a, old_mode,
+        width, title_lines, live_lines, live_reserve, full_lines, compact_lines,
+        top_room, bottom_room, room, full_h, compact_h, body_y,
+        title_leading, body_leading, tw, th) (
+  // JSFX returns the internal zero-based slot (-1 for bitmap), whereas
+  // gfx_setfont selects 1..16 (0 for bitmap). Verified natively on REAPER 7.84.
+  old_font = gfx_getfont() + 1; old_x = gfx_x; old_y = gfx_y;
+  old_r = gfx_r; old_g = gfx_g; old_b = gfx_b; old_a = gfx_a;
+  old_mode = gfx_mode;
+  tip_visible = 0; tip_compact = 0;
+  tip_w = min(520, gfx_w - 12);
+  // Below this minimum even compact prose would be an unreadable sliver.
+  tip_w >= 240 ? (
+    width = tip_w - 20;
+    gfx_setfont(3, "Arial", 18, 'b');
+    gfx_measurestr("Mg", tw, th);
+    title_leading = max(22, ceil(th));
+    gfx_setfont(2, "Arial", 16);
+    gfx_measurestr("Mg", tw, th);
+    body_leading = max(20, ceil(th));
+    !tip_cache_valid || tip_cache_width != width
+      || tip_cache_title_leading != title_leading || tip_cache_body_leading != body_leading
+      || strcmp(#tip_cache_title, title) || strcmp(#tip_cache_full, full_body)
+      || strcmp(#tip_cache_compact, compact_body) || strcmp(#tip_cache_samples, samples) ? (
+      gfx_setfont(3);
+      tip_cache_title_lines = tip_wrap(title, width, 0, 0, 0, title_leading);
+      gfx_setfont(2);
+      tip_cache_full_lines = tip_wrap(full_body, width, 0, 0, 0, body_leading);
+      tip_cache_compact_lines = tip_wrap(compact_body, width, 0, 0, 0, body_leading);
+      tip_cache_live_lines = tip_sample_lines(samples, width, body_leading);
+      tip_cache_width = width;
+      tip_cache_title_leading = title_leading; tip_cache_body_leading = body_leading;
+      strcpy(#tip_cache_title, title); strcpy(#tip_cache_full, full_body);
+      strcpy(#tip_cache_compact, compact_body); strcpy(#tip_cache_samples, samples);
+      tip_cache_valid = 1;
+    );
+    title_lines = tip_cache_title_lines; full_lines = tip_cache_full_lines;
+    compact_lines = tip_cache_compact_lines; live_reserve = tip_cache_live_lines;
+    live_lines = tip_wrap(current, width, 0, 0, 0, body_leading);
+    full_h = 36 + title_lines * title_leading + (live_reserve + 1 + full_lines) * body_leading;
+    compact_h = 36 + title_lines * title_leading + (live_reserve + 1 + compact_lines) * body_leading;
+    top_room = ay - 14;
+    bottom_room = gfx_h - ab - 14;
+    room = max(top_room, bottom_room);
+    tip_compact = full_h > room;
+    tip_h = tip_compact ? compact_h : full_h;
+    live_lines <= live_reserve && tip_h <= room ? (
+      tip_visible = 1;
+      tip_x = max(6, min(ax, gfx_w - tip_w - 6));
+      tip_y = top_room >= tip_h ? ay - 8 - tip_h : ab + 8;
+      // Explicit globals and normal blend mode: never inherit translucent state.
+      gfx_mode = 0;
+      gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+      gfx_rect(tip_x, tip_y, tip_w, tip_h, 1);
+      gfx_r = 0.35; gfx_g = 0.35; gfx_b = 0.39;
+      gfx_rect(tip_x, tip_y, tip_w, tip_h, 0);
+      gfx_r = 0.96; gfx_g = 0.96; gfx_b = 0.97;
+      gfx_setfont(3);
+      tip_wrap(title, width, tip_x + 10, tip_y + 10, 1, title_leading);
+      gfx_setfont(2);
+      gfx_r = 0.88; gfx_g = 0.88; gfx_b = 0.90;
+      body_y = tip_y + 10 + title_lines * title_leading + 4;
+      tip_wrap(current, width, tip_x + 10, body_y, 1, body_leading);
+      body_y += live_reserve * body_leading + 8;
+      gfx_r = 0.96; gfx_g = 0.96; gfx_b = 0.97;
+      gfx_x = tip_x + 10; gfx_y = body_y;
+      gfx_drawstr("Description:");
+      body_y += body_leading + 4;
+      gfx_r = 0.88; gfx_g = 0.88; gfx_b = 0.90;
+      tip_wrap(tip_compact ? compact_body : full_body, width, tip_x + 10, body_y, 1, body_leading);
+    );
+  );
+  gfx_setfont(old_font);
+  gfx_x = old_x; gfx_y = old_y;
+  gfx_r = old_r; gfx_g = old_g; gfx_b = old_b; gfx_a = old_a;
+  gfx_mode = old_mode;
+  tip_visible;
+);

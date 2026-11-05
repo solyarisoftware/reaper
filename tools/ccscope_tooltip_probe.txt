@@ -1,0 +1,224 @@
+// Native deterministic checks of actual production functions and font metrics.
+// No MIDI input/generator: the fixture owns the metric buffers. Results persist.
+function help_verify(ok) (
+  gmem[0] += 1;
+  !ok ? (
+    gmem[1] += 1;
+    gmem[3] == 0 ? gmem[3] = gmem[0];
+  );
+);
+
+function help_capture(x, y, events, jitter, intervals) (
+  mouse_x = x; mouse_y = y; g_help_hit = 0;
+  capture_metric_help(0, events, 23, "moderate", jitter, "steady", intervals, 200);
+  g_help_hit;
+);
+
+function help_row_capture(pair, value, x, y) (
+  mouse_x = x; mouse_y = y; g_help_hit = 0;
+  capture_row_help(pair, value, 200);
+  g_help_hit;
+);
+
+!help_done ? (
+  help_real_w = gfx_w; help_real_h = gfx_h;
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  gmem[0] = 0; gmem[1] = 0; gmem[2] = 0; gmem[3] = 0;
+
+  // Pair + metric identity, 400 ms dwell, immediate exit and menu suppression.
+  help_verify(!metric_help_dwell(1, 2, 0));
+  help_verify(!metric_help_dwell(1, 2.399, 0));
+  help_verify(metric_help_dwell(1, 2.401, 0));
+  help_verify(!metric_help_dwell(2, 2.402, 0));
+  help_verify(!metric_help_dwell(5, 2.8, 0));
+  help_verify(metric_help_dwell(5, 3.201, 0));
+  help_verify(!metric_help_dwell(0, 3.202, 0));
+  help_verify(!metric_help_dwell(5, 3.203, 0));
+  help_verify(!metric_help_dwell(5, 4, 1));
+  help_verify(!metric_help_dwell(5, 4.001, 0));
+
+  // All responsive tiers, using native measured columns, not guessed widths.
+  help_tiers = 0; help_width = 100;
+  loop(20,
+    gfx_w = help_width; gfx_h = 900;
+    g_metrics_x = 40; g_layout_side = 0;
+    calculate_metric_columns();
+    help_tiers = help_tiers | (1 << g_metrics_tier);
+    help_verify(help_capture(45, 200, 20, 0, 4) == 1);
+    g_metrics_tier > 0 ? (
+      help_verify(help_capture((g_col_mot_x + g_col_mot_q_r) / 2, 200, 20, 0, 4) == 2);
+      help_verify(help_capture((g_col_tmg_x + g_col_tmg_q_r) / 2, 200, 20, -1, 0) == 3);
+      help_verify(help_capture(g_col_msg_r + 7, 200, 20, 0, 4) == 0);
+      g_metrics_tier == 1 ? (
+        help_verify(g_col_mot_x == g_col_msg_r + 14);
+        help_verify(g_col_tmg_x == g_col_mot_r + 14);
+      );
+    );
+    // An annotation can occupy the last canvas pixels; only outside is empty.
+    help_verify(help_capture(gfx_w, 200, 20, 0, 4) == 0);
+    help_verify(help_capture(45, 195.9, 20, 0, 4) == 0);
+    help_verify(help_capture(45, 212, 20, 0, 4) == 0);
+    help_verify(help_capture(45, 200, 0, -1, 0) == 1);
+    help_width += 100;
+  );
+  help_verify(help_tiers == 15);
+
+  // Left-aligned readings include every rendered pixel even beyond reserve.
+  gfx_w = 2000; gfx_h = 900;
+  g_metrics_x = 40; g_layout_side = 0; calculate_metric_columns();
+  g_metrics_tier = 1;
+  g_col_msg_x = 40; g_col_msg_v_x = 40; g_col_msg_r = 100;
+  g_col_mot_x = 114; g_col_mot_v_x = 114; g_col_mot_r = 180; g_col_mot_q_r = 180;
+  g_col_tmg_x = 230; g_col_tmg_v_x = 230; g_col_tmg_r = 286; g_col_tmg_q_r = 286;
+  gfx_measurestr("63500 u/s", help_text_w, help_text_h);
+  mouse_x = g_col_mot_v_x + help_text_w - 1; mouse_y = 200; g_help_hit = 0;
+  capture_metric_help(0, 500, 63500, "fast", 162.4, "erratic", 4, 200);
+  help_verify(g_help_hit == 2);
+  gfx_measurestr("162.4ms", help_text_w, help_text_h);
+  mouse_x = g_col_tmg_v_x + help_text_w - 1; g_help_hit = 0;
+  capture_metric_help(0, 500, 63500, "fast", 162.4, "erratic", 4, 200);
+  help_verify(g_help_hit == 3);
+  // An interval annotation drawn within the final eight pixels is still visible.
+  g_metrics_tier = 3;
+  gfx_measurestr("(4 int)", help_text_w, help_text_h);
+  help_annotation_end = g_col_tmg_q_r + 6 + help_text_w;
+  gfx_w = help_annotation_end + 1;
+  mouse_x = help_annotation_end - 1; g_help_hit = 0;
+  capture_metric_help(0, 20, 23, "moderate", 0, "steady", 4, 200);
+  help_verify(g_help_hit == 3 && g_help_right == help_annotation_end);
+  help_verify(help_capture(gfx_w, 200, 20, 0, 4) == 0);
+
+  // Stream identity plus bar/value targets survive count-only/no-activity rows.
+  gfx_w = 1000; gfx_h = 900; g_metrics_tier = 0;
+  g_label_x = 20; g_bar_x = 140; g_bar_width = 90; g_value_x = 250;
+  help_verify(help_row_capture(0, 0, 21, 200) == 4);
+  help_verify(help_row_capture(2047, 0, 21, 200) == 10239);
+  gfx_measurestr("CC127/CH16", help_text_w, help_text_h);
+  help_verify(help_row_capture(2047, 0, g_label_x + help_text_w, 200) == 0);
+  help_verify(help_row_capture(0, 0, g_bar_x, 203) == 5);
+  help_verify(help_row_capture(0, 0, g_bar_x + g_bar_width - 1, 203) == 5);
+  help_verify(help_row_capture(0, 0, g_bar_x + g_bar_width, 203) == 0);
+  help_verify(help_row_capture(0, 0, g_bar_x + 1, 199) == 0);
+  help_verify(help_row_capture(0, 0, g_bar_x + 1, 208) == 0);
+  help_verify(help_row_capture(0, 0, g_value_x + 1, 200) == 5);
+  help_saved_left = g_help_left; help_saved_right = g_help_right;
+  help_verify(help_row_capture(0, 127, g_bar_x + 1, 203) == 5);
+  help_verify(g_help_left == help_saved_left && g_help_right == help_saved_right);
+  help_verify(help_row_capture(2047, 127, g_value_x + 1, 200) == 10240);
+  gfx_measurestr("127", help_text_w, help_text_h);
+  help_verify(help_row_capture(2047, 127, g_value_x + help_text_w, 200) == 0);
+  metric_help_dwell(0, 9.9, 0);
+  help_verify(!metric_help_dwell(5, 10, 0));
+  help_verify(metric_help_dwell(5, 10.401, 0));
+  help_verify(!metric_help_dwell(6, 10.402, 0));
+
+  // Native metric regression fixtures: 3/4/19/20 intervals and the gap filter.
+  // The interval cache must survive a later row's scratch output.
+  gfx_w = 2000; g_metrics_x = 40; calculate_metric_columns();
+  g_metrics_now = 10;
+  help_n = 3;
+  loop(4,
+    help_base = get_cc_channel_metrics_base(0, 0);
+    mem[help_base] = 0; mem[help_base + 1] = -1;
+    help_i = 0;
+    loop(help_n + 1,
+      update_metrics_for_cc_channel(0, 0, help_i, 9.1 + help_i * 0.01);
+      help_i += 1;
+    );
+    help_jitter = get_jitter_ms_cc_channel(0, 0);
+    help_verify(get_events_per_second_cc_channel(0, 0) == help_n + 1);
+    help_verify(get_rate_per_second_cc_channel(0, 0) == help_n);
+    help_n < 4 ? help_verify(help_jitter < 0) : (
+      help_verify(abs(help_jitter) < 0.000001 && g_jitter_intervals == help_n);
+      help_verify(help_capture(g_col_tmg_q_r, 200, help_n + 1, help_jitter, g_jitter_intervals) == (help_n < 20 ? 3 : 0));
+      help_capture(g_col_tmg_x + 1, 200, help_n + 1, help_jitter, g_jitter_intervals);
+      help_saved = g_help_intervals;
+      get_jitter_ms_cc_channel(1, 0);
+      help_verify(g_help_intervals == help_saved);
+    );
+    help_n = help_n == 3 ? 4 : help_n == 4 ? 19 : 20;
+  );
+  // Four equal intervals and one excluded long pause.
+  mem[help_base] = 0; mem[help_base + 1] = -1;
+  update_metrics_for_cc_channel(0, 0, 60, 9.1);
+  update_metrics_for_cc_channel(0, 0, 65, 9.2);
+  update_metrics_for_cc_channel(0, 0, 70, 9.3);
+  update_metrics_for_cc_channel(0, 0, 75, 9.4);
+  update_metrics_for_cc_channel(0, 0, 80, 9.5);
+  update_metrics_for_cc_channel(0, 0, 80, 10);
+  help_verify(abs(get_jitter_ms_cc_channel(0, 0)) < 0.000001 && g_jitter_intervals == 4);
+  help_verify(get_rate_per_second_cc_channel(0, 0) == 20);
+
+  // Threshold endpoints and just-above values (classification before rounding).
+  help_verify(strcmp(get_rate_quality(15), "slow") == 0);
+  help_verify(strcmp(get_rate_quality(16), "moderate") == 0);
+  help_verify(strcmp(get_rate_quality(40), "moderate") == 0);
+  help_verify(strcmp(get_rate_quality(41), "brisk") == 0);
+  help_verify(strcmp(get_rate_quality(70), "brisk") == 0);
+  help_verify(strcmp(get_rate_quality(71), "fast") == 0);
+  help_verify(strcmp(get_jitter_quality(5), "steady") == 0);
+  help_verify(strcmp(get_jitter_quality(5.001), "even") == 0);
+  help_verify(strcmp(get_jitter_quality(15), "even") == 0);
+  help_verify(strcmp(get_jitter_quality(15.001), "uneven") == 0);
+  help_verify(strcmp(get_jitter_quality(30), "uneven") == 0);
+  help_verify(strcmp(get_jitter_quality(30.001), "loose") == 0);
+  help_verify(strcmp(get_jitter_quality(50), "loose") == 0);
+  help_verify(strcmp(get_jitter_quality(50.001), "erratic") == 0);
+
+  // Content variants must fit their live reserve and retain identical geometry.
+  // Test real fonts at full and narrow widths, plus compact and suppressed space.
+  help_size = 0;
+  loop(4,
+    gfx_w = help_size == 0 ? 1000 : help_size == 1 ? 300 : help_size == 2 ? 252 : 251;
+    gfx_h = 1000;
+    help_metric = 1;
+    loop(5,
+      g_help_metric = help_metric; g_help_pair = 2047;
+      help_variant = 0;
+      loop(7,
+        slider2 = help_variant % 2;
+        g_help_events = help_variant == 0 ? 0 : 500;
+        g_help_motion = help_variant == 0 ? 0 : help_variant * 20;
+        strcpy(#help_motion_q, get_rate_quality(g_help_motion));
+        g_help_jitter = help_variant == 0 ? -1 : (help_variant - 1) * 15;
+        strcpy(#help_jitter_q, get_jitter_quality(g_help_jitter));
+        g_help_intervals = 499; g_help_value = help_variant == 0 ? 0 : 127;
+        prepare_metric_help();
+        gfx_r = 0.2; gfx_g = 0.3; gfx_b = 0.4; gfx_a = 0.5; gfx_mode = 1;
+        help_saved_font = gfx_getfont();
+        tip_draw(40, 800, 816, #help_title, #help_full, #help_compact, #help_current, #help_samples);
+        help_verify(gfx_getfont() == help_saved_font && gfx_mode == 1 && gfx_a == 0.5 && gfx_r == 0.2 && gfx_g == 0.3 && gfx_b == 0.4);
+        help_verify(tip_visible == (help_size < 3));
+        tip_visible ? (
+          help_verify(tip_x >= 6 && tip_y >= 6 && tip_x + tip_w <= gfx_w - 6 && tip_y + tip_h <= gfx_h - 6);
+          help_size == 0 ? help_verify(tip_cache_live_lines < 6);
+          help_variant == 0 ? ( help_saved_h = tip_h; help_saved_y = tip_y; ) : (
+            help_verify(tip_h == help_saved_h && tip_y == help_saved_y);
+          );
+        );
+        help_variant += 1;
+      );
+      help_metric += 1;
+    );
+    help_size += 1;
+  );
+  // A full legend cannot fit here, but compact help can (anchor near the top).
+  gfx_w = 1000; gfx_h = 1000;
+  g_help_metric = 3; prepare_metric_help();
+  tip_draw(40, 20, 36, #help_title, #help_full, #help_compact, #help_current, #help_samples);
+  help_verify(tip_visible && !tip_compact);
+  gfx_h = 36 + 14 + tip_h - 1;
+  tip_draw(40, 20, 36, #help_title, #help_full, #help_compact, #help_current, #help_samples);
+  help_verify(tip_visible && tip_compact && tip_y == 44);
+  gfx_h = 100;
+  tip_draw(40, 20, 36, #help_title, #help_full, #help_compact, #help_current, #help_samples);
+  help_verify(!tip_visible);
+  gfx_w = help_real_w; gfx_h = help_real_h;
+  help_done = 1; gmem[2] = 1;
+);
+gfx_clear = 0;
+gfx_mode = 0; gfx_a = 1;
+gfx_setfont(1, "Arial", 16);
+gfx_x = 12; gfx_y = 12;
+gfx_r = gmem[1] > 0 ? 1 : 0.3; gfx_g = 0.8; gfx_b = 0.3;
+gfx_printf("Tooltip checks: %d checks, %d failures (first: %d)", gmem[0], gmem[1], gmem[3]);

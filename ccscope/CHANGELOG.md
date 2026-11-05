@@ -4,6 +4,12 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.12.3 — 2026-11-05
+
+- Add readable hover help for row identity, values and metrics. [#18](https://github.com/solyarisoftware/reaper/issues/18).
+- Rename Timing to **Jitter** without ±; calculations unchanged.
+- Left-align metric fields.
+
 ## 0.12.2 — 2026-11-04
 
 - **The changelog ReaPack shows is this release's, not the whole history.** The `@changelog`
