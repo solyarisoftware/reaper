@@ -4,11 +4,12 @@ A JSFX for REAPER 6.37 or newer. It shows what a MIDI controller actually sends:
 the movement over time, one fader bar per active CC, and how fast and how regularly each CC
 transmits — on each MIDI channel separately.
 
-![CCScope in REAPER: a controller being moved, one bar per CC](ccscope.gif)
+![CCScope in REAPER: two CC streams moving, with live metrics and a hover explanation](ccscope.gif)
 
-Recorded in REAPER with real hardware: four faders (CC 1, 11, 17, 21) moved by hand, one colour
-per CC, the metrics updating live. The static screenshot used by ReaPack is
-[`ccscope.png`](ccscope.png), a frame from the same take.
+Recorded in REAPER with **CC 1 and CC 11 on channel 1**: one colour per CC, the graph and the
+fader bars updating live, the three metric columns changing with the movement, and the hover
+panels explaining a reading. The static screenshot used by ReaPack is
+[`ccscope.png`](ccscope.png).
 
 ## What it does
 
@@ -152,8 +153,8 @@ narrower than 252 logical pixels), no panel is drawn.
 
 ![A four-fader MIDI controller](controller.jpg)
 
-Four faders and four switches, each fader on its own CC (1, 11, 17, 21): the animation above is
-this device. Photo and review are mine —
+Four faders and four switches, each fader on its own CC (1, 11, 17, 21) — the device this plugin
+was written for. Photo and review are mine —
 [Amazon.it](https://www.amazon.it/dp/B0FT2DSFHN).
 
 It answers a question a MIDI logger does not: **how fast, and how regularly, does this
