@@ -105,6 +105,7 @@ PLOT_STATE_STRIDE = 5;
 MARK_BUDGET = 4000;
 g_marks_drawn = 0;
 g_events_drawn = 0;
+g_mark_stride = 1;   // marks drawn every this many events; > 1 means decimated
 
 /**
  * Appends one CC event to the shared ring. Two slots: the timestamp, and the

@@ -73,15 +73,14 @@ class HistoryProbeTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    @unittest.skip('event ring: the native temporal-history probe is rewritten in #27')
     def test_probe_uses_actual_renderer_and_copies_current_storage(self):
         module = self.load_tool('ccscope_history_probe')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'new'
             module.build(ROOT / 'ccscope', output)
             text = (output / 'history_checks.jsfx').read_text()
-            self.assertIn('function draw_temporal_point(', text)
-            self.assertIn('middle = (max(first_t, g_time_start)', text)
+            self.assertIn('function draw_cc_data_lines(', text)
+            self.assertIn('event_slot(', text)
             self.assertIn('history_verify(history_dots==1)', text)
             self.assertNotIn('1e20', text)  # Unsupported EEL2 literal caused a native false start.
             self.assertEqual((output / 'ccscope_utils.jsfx-inc').read_bytes(),
@@ -89,23 +88,25 @@ class HistoryProbeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.build(ROOT / 'ccscope', output)
 
-    @unittest.skip('event ring: the native temporal-history probe is rewritten in #27')
-    def test_probe_includes_diagonal_geometry_and_envelope_regressions(self):
+    def test_probe_covers_the_ring_and_the_drawing_budget(self):
         module = self.load_tool('ccscope_history_probe')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'new'
             module.build(ROOT / 'ccscope', output)
             text = (output / 'history_checks.jsfx').read_text()
-            self.assertIn(module.DIAGONAL_CASES, text)
+            self.assertIn(module.CASES, text)
             self.assertIn('history_x1=x1; history_y1=y1;', text)
-            self.assertIn('history_mode=0;\nloop(3,', text)
-            self.assertIn('history_lines==1 && history_horizontal==0 && history_vertical==0', text)
-            self.assertIn('history_lines==2 && history_horizontal==0 && history_vertical==0', text)
-            self.assertIn('history_low==0 && history_high==107', text)
-            self.assertIn('g_time_start=1.05;', text)
-            self.assertIn('g_time_end=1.05;', text)
+            # every event is a vertex: four events, three segments
+            self.assertIn('history_verify(history_dots==4 && history_lines==3)', text)
+            # the ring wraps in two-slot events
+            self.assertIn('history_verify(event_slot(EVENT_CAPACITY)==MEM_EVENT_RING)', text)
+            # above the budget the trace decimates and publishes the stride
+            self.assertIn('history_verify(g_mark_stride==2)', text)
+            self.assertIn('history_verify(history_dots==2001)', text)
+            # Auto spacing and None still behave
+            self.assertIn('slider5=0;', text)
+            self.assertIn('slider5=2;', text)
 
-    @unittest.skip('event ring: the rendering probe guard changes with #27')
     def test_old_exact_event_probe_rejects_temporal_renderer(self):
         module = self.load_tool('ccscope_rendering_probe')
         with self.assertRaisesRegex(ValueError, 'ccscope_history_probe'):

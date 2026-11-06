@@ -231,4 +231,19 @@ inter-callback intervals separately with identical inputs/settings. Keep baselin
 and candidate copies isolated; do not infer an FPS multiplier from a traversal
 count reduction. Native probes require REAPER and do not run in the Linux CI job.
 
+Measured once, 7.85, 1889x1087 window, WIN 30 s, one CC at 320 events/s from a
+MIDI item, one copy at a time with the other windows closed (`time_precise()`
+around the `@gfx` body, average over ~370 frames):
+
+| build | marks drawn per frame | avg `@gfx` | worst |
+|---|---:|---:|---:|
+| 0.13.1, bucket aggregate | ~200 | 3.05 ms | 5.46 ms |
+| 0.14.0, event ring (decimated 1 in 2) | ~2240 | 3.51 ms | 5.15 ms |
+
+Two numbers to keep: the feature costs **+0.46 ms a frame** for ~11x the marks,
+and the isolated probe below overstates a mark's cost — it scatters its points,
+so each touches new pixels, while a trace repaints near the previous mark.
+That probe reads ~1.4 us a point; on this trace the extra marks cost ~0.2 us
+each. Budget on the probe, not on the trace.
+
 Tracking: https://github.com/solyarisoftware/reaper/issues/23

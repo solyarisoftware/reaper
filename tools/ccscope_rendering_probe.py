@@ -33,8 +33,8 @@ def provides(source: Path) -> list[Path]:
 
 
 def graph_function(source: str) -> str:
-    if 'function draw_temporal_point(' in source:
-        raise ValueError('Temporal history intentionally changes graph commands; use ccscope_history_probe.py instead of exact-event differential tests')
+    if 'event_slot(' in source:
+        raise ValueError('The renderer reads the event ring, so this probe has no fixtures to drive it; use ccscope_history_probe.py instead of exact-event differential tests')
     start = source.index('function draw_cc_data_lines(')
     try:
         end = source.index('\n/**', start)

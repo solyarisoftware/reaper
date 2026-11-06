@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.14.0 — 2026-11-06
+
+- **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.
+
 ## 0.13.1 — 2026-11-06
 
 - **One marker per bucket, not two.** A bucket's two endpoints sat 1-2 px apart at a 10 s window,

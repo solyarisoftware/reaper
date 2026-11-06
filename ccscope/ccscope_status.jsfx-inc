@@ -51,6 +51,7 @@ g_st_head_b = 0.6;
 #st_note = "";
 #st_wv = "";
 #st_ws = "";
+#st_agg = "";
 #st_sep = " · ";
 #st_ver = "";
 
@@ -60,6 +61,7 @@ g_st_has_rate = 0;
 g_st_has_note = 0;
 g_st_has_wv = 0;
 g_st_has_ws = 0;
+  g_st_has_agg = 0;
 
 // Fills the pieces for one state and one richness of metric detail. The caller
 // measures them: this function draws nothing.
@@ -147,6 +149,14 @@ function status_build(count, form) (
     #st_ws = "rows beside need a wider window";
     g_st_has_ws = 1;
   );
+
+  // The trace decimates above the measured drawing budget, so the line says it:
+  // a scope that silently drops marks is lying about the stream.
+  g_st_has_agg = 0;
+  g_mark_stride > 1 ? (
+    sprintf(#st_agg, "1 mark per %d events (dense window)", g_mark_stride);
+    g_st_has_agg = 1;
+  );
 );
 
 // Sums the widths of the pieces that exist. One measure per piece: nothing is
@@ -194,6 +204,12 @@ function status_measure() local(w, tw, th, first) (
     w += tw;
     first = 0;
   );
+  g_st_has_agg ? (
+    w += first ? 0 : g_st_sep_w;
+    gfx_measurestr(#st_agg, tw, th);
+    w += tw;
+    first = 0;
+  );
 
   w;
 );
@@ -216,6 +232,7 @@ function status_draw(y) local(first) (
   g_st_has_rate ? ( !first ? ( gfx_drawstr(#st_sep); ); gfx_drawstr(#st_rate); first = 0; );
   g_st_has_wv ? ( !first ? ( gfx_drawstr(#st_sep); ); gfx_drawstr(#st_wv); first = 0; );
   g_st_has_ws ? ( !first ? ( gfx_drawstr(#st_sep); ); gfx_drawstr(#st_ws); first = 0; );
+  g_st_has_agg ? ( !first ? ( gfx_drawstr(#st_sep); ); gfx_drawstr(#st_agg); first = 0; );
   0;
 );
 

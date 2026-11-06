@@ -297,6 +297,7 @@ function draw_cc_data_lines(visible_count) local(
 
   // ---- pass 2: draw, decimating uniformly when the window is too dense
   stride = total <= MARK_BUDGET ? 1 : floor((total + MARK_BUDGET - 1) / MARK_BUDGET);
+  g_mark_stride = stride;
   j = 0;
   while (j < total && oldest >= 0) (
     e = oldest + j;
