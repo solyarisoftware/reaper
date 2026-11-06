@@ -21,7 +21,8 @@ desc:CCScope
 //
 //   The pair list sits below the plot or beside it, for windows that are wide
 //   and short. Freeze stops the acquisition while MIDI keeps passing through;
-//   Clear wipes history and metrics. The seven parameters are drawn as a control
+//   Clear wipes history and metrics. Six selectable palettes map each CC number
+//   to a stable color slot; channel shades remain. The eight parameters form a control
 //   bar instead of REAPER sliders and stay automatable, in presets and under
 //   Param.
 //
@@ -68,7 +69,7 @@ desc:CCScope
 //   the graph) or beside it (a column that uses the whole window height, so a
 //   short, wide window still shows every pair); the plot keeps a minimum share
 //   of the window in the first case and the full height in the second
-// - Unique persistent color per CC from 12-color palette (shared across channels)
+// - Deterministic color per CC from the selected 16-color palette (shared across channels)
 // - Configurable time window (1-30 seconds, offered as 1, 2, 5, 10, 20, 30)
 // - Monitor all CCs simultaneously or focus on a single CC
 // - Filter by MIDI channel (all channels, or one of the 16), combinable with the
@@ -96,6 +97,7 @@ desc:CCScope
 // - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
 // - Slider 6: Channel to Monitor (0 = All channels, 1-16 = one MIDI channel)
 // - Slider 7: Pair list layout, rows below the plot or a column beside it
+// - Slider 8: Color palette, six choices
 //
 // CHANGELOG (v0.6.0):
 // - One colour per (CC, channel): same hue per CC, different shade per channel
@@ -193,6 +195,7 @@ slider4:0<0,1,1>-Clear history and metrics
 slider5:0<0,2,1{Auto (12 px),Every retained point,None}>-Dots on traces
 slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Channel to Monitor (0=All)
 slider7:0<0,1,1{Rows below,Rows beside}>-Pair list layout
+slider8:0<0,5,1{Default - Daybreak,Default - Twilight,High contrast - Signal,High contrast - Neon,Color-blind aware - Spectrum,Color-blind aware - Muted}>-Color palette
 
 @init
 // ========== CONFIGURATION VARIABLES ==========
@@ -242,7 +245,7 @@ Y_LABEL_OFFSET = 26;     // px left of the plot: the left edge of the value labe
                          //  and of the bar rows, so all text hangs from one vertical
 
 // ========== THE CONTROL BAR (what REAPER's slider strip used to be) ==========
-// Seven cells at the top of the canvas: five selectors and two buttons. The
+// Eight cells at the top of the canvas: six selectors and two buttons. The
 // interaction needs no keyboard, because a JSFX cannot ask for one: click opens
 // the list, the wheel steps the value, a right click restores the default.
 PLOT_LEFT = 35;          // the plot's left edge: the bar starts on the same vertical
@@ -341,6 +344,7 @@ g_help_events = 0; g_help_motion = 0; g_help_jitter = -1; g_help_intervals = 0;
 // clock). Events, the visible window and the metrics all use this clock.
 g_clock_sec = 0;         // end of the last processed block, in seconds
 
+g_active_palette = -1;   // rebuild the RGB table when the parameter changes
 g_prev_freeze = 0;       // slider2 edge detection
 g_freeze_time = 0;       // clock value when Freeze was engaged
 
@@ -371,7 +375,7 @@ g_summary_count = -1;     // the filtered count the summary was built from
 // wants, and what each cell is. The order of cbm_cell() is the order on screen --
 // arranged by what you reach for first, not by the order of the slider declarations.
 // kinds: 0 numeric list, 1 enum list, 2 toggle, 3 action.
-cbm_init(MEM_CBM_BASE, 7);
+cbm_init(MEM_CBM_BASE, 8);
 cbm_style(CTRL_CELL_GAP, CTRL_CELL_PAD, CTRL_CORNER, CTRL_ITEM_HEIGHT, CTRL_MENU_ROWS,
           CTRL_MENU_MIN_WIDTH, CTRL_MENU_DROP);
 cbm_group_right(2);              // the two buttons hang on the plot's right edge
@@ -380,8 +384,9 @@ cbm_cell(2, 0, 0, 16, 0);       // channel (0 = all)
 cbm_cell(3, 0, 1, 30, 10);      // time window, seconds
 cbm_cell(4, 1, 0, 2, 0);        // dots on the traces
 cbm_cell(5, 1, 0, 1, 0);        // where the pair list lives
-cbm_cell(6, 2, 0, 1, 0);        // Freeze
-cbm_cell(7, 3, 0, 1, 0);        // Clear
+cbm_cell(6, 1, 0, 5, 0);        // color palette
+cbm_cell(7, 2, 0, 1, 0);        // Freeze
+cbm_cell(8, 3, 0, 1, 0);        // Clear
 
 // The WIN cell offers a ladder instead of every second in 1..30. The parameter
 // itself is unchanged -- a preset still says 10, automation can still write 12 --
@@ -417,12 +422,12 @@ cbm_list(3, MEM_WIN_LIST, MEM_WIN_LIST_SIZE);
 // The bar is ordered by what you reach for first, not by the order of the slider
 // declarations, so the mapping lives here once and nowhere else.
 function ctl_slider_number(i) (
-  i == 1 ? 1 : i == 2 ? 6 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 2 : 4;
+  i == 1 ? 1 : i == 2 ? 6 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 7 : i == 6 ? 8 : i == 7 ? 2 : 4;
 );
 
 function ctl_slider_value(i) local(s) (
   s = ctl_slider_number(i);
-  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 : s == 5 ? slider5 : s == 6 ? slider6 : slider7;
+  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 : s == 5 ? slider5 : s == 6 ? slider6 : s == 7 ? slider7 : slider8;
 );
 
 // The documented form is sliderchange(sliderN): it tells REAPER the value was set
@@ -436,7 +441,8 @@ function ctl_slider_write(s, v) (
   s == 4 ? ( slider4 = v; sliderchange(slider4); ) :
   s == 5 ? ( slider5 = v; sliderchange(slider5); ) :
   s == 6 ? ( slider6 = v; sliderchange(slider6); ) :
-           ( slider7 = v; sliderchange(slider7); );
+  s == 7 ? ( slider7 = v; sliderchange(slider7); ) :
+           ( slider8 = v; sliderchange(slider8); );
 );
 
 // What a cell says. Key text is the dim label, value text the bright one.
@@ -446,7 +452,8 @@ function ctl_key_text(i) (
   i == 3 ? ( #ctl_key = "WIN"; ) :
   i == 4 ? ( #ctl_key = "DOTS"; ) :
   i == 5 ? ( #ctl_key = "ROWS"; ) :
-  i == 6 ? ( cbm_value(6) ? ( #ctl_key = "FROZEN"; ) : ( #ctl_key = "FREEZE"; ); ) :
+  i == 6 ? ( #ctl_key = "COLOR"; ) :
+  i == 7 ? ( cbm_value(7) ? ( #ctl_key = "FROZEN"; ) : ( #ctl_key = "FREEZE"; ); ) :
            ( #ctl_key = "CLEAR"; );
 );
 
@@ -458,7 +465,8 @@ function ctl_key_widest(i) (
   i == 3 ? ( #ctl_key_w = "WIN"; ) :
   i == 4 ? ( #ctl_key_w = "DOTS"; ) :
   i == 5 ? ( #ctl_key_w = "ROWS"; ) :
-  i == 6 ? ( #ctl_key_w = "FROZEN"; ) :
+  i == 6 ? ( #ctl_key_w = "COLOR"; ) :
+  i == 7 ? ( #ctl_key_w = "FROZEN"; ) :
            ( #ctl_key_w = "CLEAR"; );
 );
 
@@ -468,6 +476,7 @@ function ctl_value_text(i, v) (
   i == 3 ? ( sprintf(#ctl_val, "%ds", v); ) :
   i == 4 ? ( v == 0 ? ( #ctl_val = "auto"; ) : v == 1 ? ( #ctl_val = "event"; ) : ( #ctl_val = "none"; ); ) :
   i == 5 ? ( v == 0 ? ( #ctl_val = "below"; ) : ( #ctl_val = "beside"; ); ) :
+  i == 6 ? ( sprintf(#ctl_val, "%d", v + 1); ) :
            ( #ctl_val = ""; );
 );
 
@@ -479,6 +488,7 @@ function ctl_value_widest(i) (
   i == 3 ? ( #ctl_val_w = "30s"; ) :
   i == 4 ? ( #ctl_val_w = "event"; ) :
   i == 5 ? ( #ctl_val_w = "beside"; ) :
+  i == 6 ? ( #ctl_val_w = "6"; ) :
            ( #ctl_val_w = ""; );
 );
 
@@ -487,7 +497,13 @@ function ctl_item_text(i, v) (
   i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
   i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
   i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every point"; ) : ( #ctl_item = "none"; ); ) :
-           ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); );
+  i == 5 ? ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); ) :
+  ( v == 0 ? ( #ctl_item = "Default - Daybreak"; ) :
+    v == 1 ? ( #ctl_item = "Default - Twilight"; ) :
+    v == 2 ? ( #ctl_item = "High contrast - Signal"; ) :
+    v == 3 ? ( #ctl_item = "High contrast - Neon"; ) :
+    v == 4 ? ( #ctl_item = "Color-blind aware - Spectrum"; ) :
+             ( #ctl_item = "Color-blind aware - Muted"; ); );
 );
 
 // ========== THE FRAME, IN THE ORDER THE MODULE ASKS FOR ==========
@@ -559,6 +575,10 @@ function ctl_draw_menu_items() local(r, i, y) (
       cbm_row_is_current(r) ? ( gfx_r = 1.0; gfx_g = 0.76; gfx_b = 0.36; )
                             : ( gfx_r = 0.78; gfx_g = 0.78; gfx_b = 0.80; );
       gfx_a = 1;
+      cbm_row_is_current(r) ? (
+        gfx_x = cbm_menu_x() + 3; gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
+        gfx_drawstr("*");
+      );
       gfx_x = cbm_menu_x() + 10;
       gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
       gfx_drawstr(#ctl_item);
@@ -632,11 +652,6 @@ function process_midi_messages() local(offset, msg1, msg2, msg3, status, cc_num,
       cc_val = msg3 & 0x7F;
       midi_channel = msg1 & 0x0F;  // Extract MIDI channel (0-15)
       
-      // Assign color IMMEDIATELY when CC is first received (based on CC number only)
-      is_cc_active(cc_num) == 0 ? (
-        assign_color_to_cc(cc_num);
-      );
-      
       // Freeze stops acquisition, not the MIDI stream: what is on screen stays
       // on screen, byte for byte, while the pass-through keeps working.
       slider2 == 0 ? (
@@ -688,8 +703,18 @@ ctl_push_values();
 ctl_push_texts();
 ctl_layout();
 cbm_mouse();
+cbm_open() == 6 ? (
+  gfx_setfont(1, "Arial", BAR_FONT);
+  gfx_measurestr("Color-blind aware - Spectrum", palette_menu_w, palette_menu_h);
+  cbm_menu_fit(palette_menu_w + 22);
+);
 ctl_apply_changes();
 ctl_push_texts();
+palette_choice = max(0, min(5, floor(slider8)));
+palette_choice != g_active_palette ? (
+  init_color_palette(palette_choice);
+  g_active_palette = palette_choice;
+);
 
 // ========== SLIDER EDGES ==========
 // Freeze: remember the instant, so the window and the numbers describe it

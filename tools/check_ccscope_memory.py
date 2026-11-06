@@ -40,11 +40,11 @@ def check(root: Path) -> list[str]:
     history = c['MAX_HISTORY_ITEMS']
     sizes = {
         'MEM_CC_VALUES': 2048, 'MEM_CC_ACTIVE': 128, 'MEM_CC_CHANNEL_ACTIVE': 128,
-        'MEM_CC_SORTED': pairs, 'MEM_CC_COLORS': 128,
+        'MEM_CC_SORTED': pairs,
         'MEM_COLOR_PALETTE': c['COLOR_PALETTE_SIZE'] * 3,
         'MEM_HISTORY_BASE': history * 4,
         'MEM_HISTORY_WRITE': 1, 'MEM_HISTORY_COUNT': 1,
-        'MEM_NEXT_COLOR': 1, 'MEM_PAIR_LIST_COUNT': 1,
+        'MEM_PAIR_LIST_COUNT': 1,
         'MEM_CBM_BASE': c['MEM_CBM_SIZE'],
         'MEM_WIN_LIST': c['MEM_WIN_LIST_SIZE'],
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],

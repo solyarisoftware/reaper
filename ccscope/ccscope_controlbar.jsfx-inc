@@ -103,19 +103,19 @@ CBM_ST_DROP = 25;     // between the bar and its open list
 CBM_CARET = 26;       // width of the triangle that promises a list
 CBM_CARET_AIR = 27;   // and the air between it and the value
 CBM_ST_MENU_ROWS = 28; // the ceiling of rows an open list may show
-CBM_X = 32;           // 32..39  left edge of each cell
-CBM_W = 40;           // 40..47  width of each cell
-CBM_KIND = 48;        // 48..55  what the cell is
-CBM_MIN = 56;         // 56..63  first value of its list
-CBM_MAX = 64;         // 64..71  last value of its list
-CBM_DEF = 72;         // 72..79  what a right click restores
-CBM_VAL = 80;         // 80..87  the value the host last pushed, or the one the
+CBM_X = 32;  // one-based cell slots 1..8
+CBM_W = 41;  // one-based cell slots 1..8
+CBM_KIND = 50;  // one-based cell slots 1..8
+CBM_MIN = 59;  // one-based cell slots 1..8
+CBM_MAX = 68;  // one-based cell slots 1..8
+CBM_DEF = 77;  // one-based cell slots 1..8
+CBM_VAL = 86;  // one-based cell slots 1..8
                       //         pointer chose and the host has yet to apply
-CBM_APL = 88;         // 88..95  the value in force in the host
-CBM_LBASE = 96;       // 96..103 mem address of a cell's list table, 0 = range
-CBM_LCOUNT = 104;     // 104..111 how many entries that table holds
+CBM_APL = 95;  // one-based cell slots 1..8
+CBM_LBASE = 104;  // one-based cell slots 1..8
+CBM_LCOUNT = 113;  // one-based cell slots 1..8
 CBM_MAX_CELLS = 8;
-CBM_ARRAYS_END = 112;
+CBM_ARRAYS_END = 122;
 
 g_cbm_base = 0;
 
@@ -510,6 +510,14 @@ function cbm_open_menu(i) local(cur, rows) (
                                                   mem[g_cbm_base + CBM_MENU_COUNT] - rows));
   );
   0;
+);
+
+// A host may widen an open list for its item labels, keeping it on the canvas.
+function cbm_menu_fit(width) (
+  cbm_open() > 0 ? (
+    mem[g_cbm_base + CBM_MENU_W] = min(gfx_w, max(mem[g_cbm_base + CBM_MENU_W], width));
+    mem[g_cbm_base + CBM_MENU_X] = max(0, min(mem[g_cbm_base + CBM_MENU_X], gfx_w - mem[g_cbm_base + CBM_MENU_W]));
+  );
 );
 
 /** Rows of the open list that hold a value and therefore are drawn */

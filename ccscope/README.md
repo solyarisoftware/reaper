@@ -29,10 +29,20 @@ panels explaining a reading. The static screenshot used by ReaPack is
   current selection, and the warnings when rows or the beside layout do not fit. The state word
   brightens while messages are arriving and dims when nothing has ever come. The package version
   sits at the right edge.
-- **A control bar instead of REAPER's sliders** — `CC`, `CH`, `WIN`, `DOTS`, `ROWS`, `FREEZE`,
+- **A control bar instead of REAPER's sliders** — `CC`, `CH`, `WIN`, `DOTS`, `ROWS`, `COLOR`, `FREEZE`,
   `CLEAR` at the top of the canvas. Click a cell to open its list, the wheel steps the value, a
   right click restores the default. The parameters stay automatable, saved in presets and listed
   under **Param**.
+
+### Color palette
+
+**COLOR** selects one of six palettes: Default - Daybreak (the default), Default - Twilight,
+High contrast - Signal, High contrast - Neon, Color-blind aware - Spectrum, and
+Color-blind aware - Muted. The compact cell shows their numbers 1–6 in that order; the list
+marks the active choice. The setting is a parameter, saved with presets and available to
+automation. The same CC always uses the same slot regardless of arrival order: CC 1 uses slot
+0, CC 17 uses slot 0, and CC 0 uses slot 15. Colors repeat every 16 CCs; channel shading
+remains in use. The color-blind-aware palettes are not a guarantee of accessibility.
 
 ### The status line
 

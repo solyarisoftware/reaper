@@ -49,7 +49,7 @@ class MemoryMapTests(unittest.TestCase):
 
     def test_control_bar_block_must_fit_its_reservation(self):
         # The module grew by the list-table slots; the reservation has to follow.
-        self.replace('MEM_CBM_SIZE = 112;', 'MEM_CBM_SIZE = 96;')
+        self.replace('MEM_CBM_SIZE = 122;', 'MEM_CBM_SIZE = 96;')
         self.assertTrue(any('Control-bar block needs' in error
                             for error in MEMORY.check(self.source)))
 
@@ -297,9 +297,11 @@ class Eel2OrderTests(unittest.TestCase):
         cells = constants['CBM_MAX_CELLS']
         arrays = [constants[name] for name in
                   ('CBM_X', 'CBM_W', 'CBM_KIND', 'CBM_MIN', 'CBM_MAX',
-                   'CBM_DEF', 'CBM_VAL', 'CBM_APL')]
+                   'CBM_DEF', 'CBM_VAL', 'CBM_APL', 'CBM_LBASE', 'CBM_LCOUNT')]
+        for left, right in zip(arrays, arrays[1:]):
+            self.assertGreater(right - left, cells, 'one-based cell arrays must not overlap')
         for start in arrays:
-            self.assertLessEqual(start + cells, constants['CBM_ARRAYS_END'],
+            self.assertLess(start + cells, constants['CBM_ARRAYS_END'],
                                  'a cell array runs past the module block')
         self.assertEqual(constants['CBM_ARRAYS_END'], constants['MEM_CBM_SIZE'],
                          'the module block and the size declared in ccscope_utils must agree')
