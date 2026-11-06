@@ -4,6 +4,12 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.13.1 — 2026-11-06
+
+- **One marker per bucket, not two.** A bucket's two endpoints sat 1-2 px apart at a 10 s window,
+  so the dots read as pairs instead of as a rhythm; the line still passes through both, and a
+  bucket holding one event keeps its marker.
+
 ## 0.13.0 — 2026-11-06
 
 - Add six selectable color palettes with stable CC colors across channels.
