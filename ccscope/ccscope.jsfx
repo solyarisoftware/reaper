@@ -190,7 +190,7 @@ slider1:0<0,127,1>-CC to Monitor (0=All)
 slider2:0<0,1,1>-Freeze (stop acquiring)
 slider3:10<1,30,1>-Time Window (seconds)
 slider4:0<0,1,1>-Clear history and metrics
-slider5:0<0,2,1{Auto (12 px),Every retained point,None}>-Dots on traces
+slider5:0<0,2,1{Auto (12 px),Every event,None}>-Dots on traces
 slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Channel to Monitor (0=All)
 slider7:0<0,1,1{Rows below,Rows beside}>-Pair list layout
 slider8:0<0,5,1{Default - Daybreak,Default - Twilight,High contrast - Signal,High contrast - Neon,Color-blind aware - Spectrum,Color-blind aware - Muted}>-Color palette
@@ -655,7 +655,7 @@ function process_midi_messages() local(offset, msg1, msg2, msg3, status, cc_num,
       slider2 == 0 ? (
         store_cc_channel_value(cc_num, midi_channel, cc_val);
         add_to_history_with_channel(event_time_sec, cc_num, midi_channel, cc_val);
-        add_temporal_history(event_time_sec, make_cc_channel_key(cc_num, midi_channel), cc_val);
+        add_event(event_time_sec, make_cc_channel_key(cc_num, midi_channel), cc_val);
         update_metrics_for_cc_channel(cc_num, midi_channel, cc_val, event_time_sec);
       );
     );

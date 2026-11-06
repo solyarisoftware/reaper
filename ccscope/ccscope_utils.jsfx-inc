@@ -76,44 +76,56 @@ MEM_WIN_LIST_SIZE = 6;
 // per-key ranges above stay readable as a block: 0..12739 is everything that is
 // indexed by CC, channel or cell, and 3120000 is the ring behind it.
 
-// Temporal history is independent of the raw-event diagnostic ring. Each pair
-// owns 301 slots: 30 seconds plus the partially intersected boundary bucket.
-// Seven doubles: tick tag, clear epoch, first/last time, packed first/last,
-// packed min/max, extrema order. Total memory stays below JSFX's 8M-slot default.
-MEM_TIME_HISTORY = 3120000;
-TIME_HISTORY_BUCKETS = 301;
-TIME_HISTORY_STRIDE = 7;
-TIME_HISTORY_HZ = 10;
-g_history_epoch = 1;
-// @init only: do not leave valid tags from a previous sample-rate/recompile reset.
-memset(MEM_TIME_HISTORY, 0, 2048 * TIME_HISTORY_BUCKETS * TIME_HISTORY_STRIDE);
+// The event ring keeps every CC event, not a per-pair bucket aggregate: one
+// event is two slots (its timestamp, and pair * 128 + value -- at most 262143,
+// exact in a double), and the ring is global, shared by all pairs, so its size
+// buys history instead of dividing 2048 ways. Capacity is what the old bucketed
+// ring cost, unchanged in bytes: 2600000 events * 2 = 5200000 slots, ending at
+// 8320000, below JSFX's 8M-slot default. Reading is a walk from the newest event
+// backwards until the window starts; nothing indexes a pair into the ring.
+MEM_EVENT_RING = 3120000;     // 3120000..8320000 events, 2 slots each
+EVENT_CAPACITY = 2600000;     // events held; older ones are overwritten
+MEM_EVENT_COUNT = 12740;      // events written; the slot is count % EVENT_CAPACITY
+MIN_EVENT_HISTORY_SECONDS = 30;  // the ring must cover the longest window...
+EVENT_FLOOD_HZ = 1000;        // ...even at this many messages per second
 
-function add_temporal_history(timestamp, pair, value) local(tick, base, packed, lo, hi, epoch) (
-  // A GUI Clear during this update must not relabel a pre-Clear event as new.
-  epoch = g_history_epoch;
-  tick = floor(timestamp * TIME_HISTORY_HZ);
-  base = MEM_TIME_HISTORY + (pair * TIME_HISTORY_BUCKETS + tick % TIME_HISTORY_BUCKETS) * TIME_HISTORY_STRIDE;
-  mem[base] != tick + 1 || mem[base + 1] != epoch ? (
-    // Publish the validity tag last; readers also verify it after copying.
-    mem[base] = 0;
-    mem[base + 1] = epoch;
-    mem[base + 2] = timestamp;
-    mem[base + 3] = timestamp;
-    mem[base + 4] = value + value * 128;
-    mem[base + 5] = value + value * 128;
-    mem[base + 6] = 0;
-    mem[base] = tick + 1;
-  ) : (
-    mem[base] = 0;
-    mem[base + 3] = timestamp;
-    mem[base + 4] = (mem[base + 4] % 128) + value * 128;
-    packed = mem[base + 5];
-    lo = packed % 128; hi = floor(packed / 128);
-    value < lo ? (lo = value; mem[base + 6] = 1;);
-    value > hi ? (hi = value; mem[base + 6] = 0;);
-    mem[base + 5] = lo + hi * 128;
-    mem[base] = tick + 1;
-  );
+// Per-pair drawing state for one frame, and the pair -> visible-slot map pass 1
+// builds. Sized for every possible pair, so no draw can index a missing slot.
+// Five slots per pair: a seen flag, the events met (for the stride), the last
+// dot x, and the previous vertex.
+// They sit in the gap between the small per-key ranges and the metrics block,
+// which starts at 30000: 12741 + 5*2048 + 2048 + 2048 - 1 = 27076 < 30000.
+MEM_PLOT_STATE = 12741;       // 12741..22980 prev x/y, dot x, seen, stride counter
+MEM_PLOT_COUNT = 22981;       // 22981..25028 events in the window, per visible slot
+MEM_PLOT_SLOT = 25029;        // 25029..27076 pair key -> visible slot, -1 = not visible
+PLOT_STATE_STRIDE = 5;
+
+// The measured drawing budget, not a setting (see ccscope_plot: ~1.4 us a point,
+// so this is about 5.5 ms of a frame and leaves the rest of the UI its time).
+MARK_BUDGET = 4000;
+g_marks_drawn = 0;
+g_events_drawn = 0;
+
+/**
+ * Appends one CC event to the shared ring. Two slots: the timestamp, and the
+ * pair key packed with the value so a reader needs no second lookup.
+ */
+function add_event(timestamp, pair, value) local(count, slot) (
+  count = mem[MEM_EVENT_COUNT];
+  slot = MEM_EVENT_RING + (count % EVENT_CAPACITY) * 2;
+  mem[slot] = timestamp;
+  mem[slot + 1] = value + pair * 128;
+  count < EVENT_CAPACITY ? mem[MEM_EVENT_COUNT] = count + 1;
+);
+
+/** Events currently readable: the ring holds the newest EVENT_CAPACITY. */
+function event_count() (
+  mem[MEM_EVENT_COUNT] < EVENT_CAPACITY ? mem[MEM_EVENT_COUNT] : EVENT_CAPACITY
+);
+
+/** Slot of event number `e`, where e counts from the oldest readable event. */
+function event_slot(e) (
+  MEM_EVENT_RING + (e % EVENT_CAPACITY) * 2
 );
 
 // ========== CONFIGURATION ==========
@@ -445,9 +457,10 @@ function get_history_count() (
 
 // Clears the history buffer
 function clear_history() (
-  // Invalidate temporal history in O(1), without clearing millions of slots
-  // from the GUI thread. New events start a fresh bucket even within one tick.
-  g_history_epoch += 1;
+  // Clearing is O(1): the ring keeps its bytes, the count says none of them are
+  // readable, and the next event overwrites the oldest slot. Nothing walks 5.2 M
+  // slots from the GUI thread.
+  mem[MEM_EVENT_COUNT] = 0;
   mem[MEM_HISTORY_WRITE] = 0;
   mem[MEM_HISTORY_COUNT] = 0;
 );

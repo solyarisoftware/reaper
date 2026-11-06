@@ -48,7 +48,11 @@ def check(root: Path) -> list[str]:
         'MEM_CBM_BASE': c['MEM_CBM_SIZE'],
         'MEM_WIN_LIST': c['MEM_WIN_LIST_SIZE'],
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],
-        'MEM_TIME_HISTORY': pairs * c['TIME_HISTORY_BUCKETS'] * c['TIME_HISTORY_STRIDE'],
+        'MEM_EVENT_COUNT': 1,
+        'MEM_PLOT_STATE': pairs * c['PLOT_STATE_STRIDE'],
+        'MEM_PLOT_COUNT': pairs,
+        'MEM_PLOT_SLOT': pairs,
+        'MEM_EVENT_RING': c['EVENT_CAPACITY'] * 2,
     }
     regions = sorted((c[name], c[name] + size, name) for name, size in sizes.items())
     errors = []
@@ -59,10 +63,10 @@ def check(root: Path) -> list[str]:
         errors.append('Pair count or dense-key capacity does not fit')
     if c['CC_BLOCK_SIZE'] < 2 + c['MAX_EVENTS_PER_CC'] * 3:
         errors.append('Metric block cannot hold its declared events')
-    if c['TIME_HISTORY_BUCKETS'] < 30 * c['TIME_HISTORY_HZ'] + 1:
-        errors.append('Temporal history cannot retain the full 30-second window')
-    if c['TIME_HISTORY_STRIDE'] != 7:
-        errors.append('Temporal history fields do not fit declared stride')
+    if c['EVENT_CAPACITY'] < c['MIN_EVENT_HISTORY_SECONDS'] * c['EVENT_FLOOD_HZ']:
+        errors.append('Event ring cannot retain the full 30-second window at the declared flood rate')
+    if c['PLOT_STATE_STRIDE'] != 5:
+        errors.append('Per-pair plot state does not fit its declared stride')
     # The module declares its own block end; the host declares how much room it
     # reserved. A block that grew past its reservation would overwrite the list
     # tables placed after it, silently. A fixture that carries no module has
