@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="3416ce287b96867bd8bef563e8eb8a62f94ea9b9">
+<index version="1" name="solyarisoftware reaper" commit="4caa778e4497ec9452d5f3ad6b5954e189c129df">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -874,6 +874,18 @@ Show all channel choices when space permits, with scrolling in shorter windows.]
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/3416ce287b96867bd8bef563e8eb8a62f94ea9b9/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/3416ce287b96867bd8bef563e8eb8a62f94ea9b9/ccscope/ccscope_controlbar.jsfx-inc</source>
         <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/3416ce287b96867bd8bef563e8eb8a62f94ea9b9/ccscope/ccscope_tooltip.jsfx-inc</source>
+      </version>
+      <version name="0.14.0" author="Giorgio Robino" time="2026-11-06T18:07:58Z">
+        <changelog><![CDATA[- **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_controlbar.jsfx-inc</source>
+        <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/4caa778e4497ec9452d5f3ad6b5954e189c129df/ccscope/ccscope_tooltip.jsfx-inc</source>
       </version>
     </reapack>
   </category>
