@@ -47,7 +47,7 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   - **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.
+//   **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
