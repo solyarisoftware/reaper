@@ -319,6 +319,63 @@ class Eel2OrderTests(unittest.TestCase):
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def read_published_changelog(self):
+        """The `// @changelog` block: what ReaPack shows under this version."""
+        import re
+        lines, inside = [], False
+        for line in (ROOT / 'ccscope/ccscope.jsfx').read_text().splitlines():
+            if re.match(r'^//\s*@changelog\s*$', line):
+                inside = True
+                continue
+            if inside:
+                body = re.match(r'^//\s{2,}(\S.*?)\s*$', line)
+                if not body:
+                    break
+                lines.append(body.group(1))
+        return lines
+
+    def read_changelog_entry(self, version):
+        """The bullets of one release in CHANGELOG.md, wrapped lines joined."""
+        entries, inside = [], False
+        for line in (ROOT / 'ccscope/CHANGELOG.md').read_text().splitlines():
+            if line.startswith('## '):
+                inside = line.startswith(f'## {version} ')
+                continue
+            if not inside:
+                continue
+            if line.startswith('- '):
+                entries.append(line[2:])
+            elif line.startswith('  ') and entries:
+                entries[-1] += ' ' + line.strip()
+            elif not line.strip() and entries:
+                break
+        return entries
+
+    @staticmethod
+    def words(entry):
+        """Word sequence only: markdown and punctuation may differ between the two copies."""
+        import re
+        entry = re.sub(r'\(https?://[^)]*\)', '', entry)  # a markdown link keeps its label
+        return re.findall(r'[a-z0-9]+', entry.lower())
+
+    def test_published_changelog_matches_the_changelog_file(self):
+        # ReaPack shows the @changelog block of ccscope.jsfx, GitHub shows CHANGELOG.md:
+        # the same sentences in two copies, kept in step by this assertion alone.
+        import re
+        version = re.search(r'^//\s*@version\s+(\S+)',
+                            (ROOT / 'ccscope/ccscope.jsfx').read_text(), re.M).group(1)
+        published = self.read_published_changelog()
+        self.assertTrue(published, '@changelog must describe this release')
+        self.assertEqual([self.words(entry) for entry in self.read_changelog_entry(version)],
+                         [self.words(entry) for entry in published],
+                         'CHANGELOG.md and the @changelog block must say the same thing')
+
+    def test_the_comparison_notices_a_changed_word(self):
+        published = self.read_published_changelog()
+        changed = published[:1] + ['Nothing visible changed'] + published[1:]
+        self.assertNotEqual([self.words(entry) for entry in published],
+                            [self.words(entry) for entry in changed])
+
     def test_reapack_tag_matches_the_jsfx_version(self):
         import re
         text = (ROOT / 'ccscope/ccscope.jsfx').read_text()
