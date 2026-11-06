@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.12.3
+// @version 0.13.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -47,9 +47,8 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   Add readable hover help for row identity, values and metrics (#18).
-//   Rename Timing to Jitter without +/-; calculations unchanged.
-//   Left-align metric fields.
+//   Add six selectable color palettes with stable CC colors across channels.
+//   Show all channel choices when space permits, with scrolling in shorter windows.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -165,8 +164,8 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.12.3
-date: 2026-11-05
+version: 0.13.0
+date: 2026-11-06
 
 // Import utility libraries
 import ccscope_utils.jsfx-inc
@@ -228,7 +227,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.12.3";
+CCSCOPE_VERSION = "0.13.0";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair
@@ -702,7 +701,11 @@ gfx_setfont(1, "Arial", FONT_SIZE);
 ctl_push_values();
 ctl_push_texts();
 ctl_layout();
+// CH alone may use all 17 rows; refit before input on resize and after opening.
+cbm_open() == 2 ? ( cbm_menu_fit_rows(17, 0); );
+previous_menu = cbm_open();
 cbm_mouse();
+cbm_open() == 2 ? ( cbm_menu_fit_rows(17, previous_menu != 2); );
 cbm_open() == 6 ? (
   gfx_setfont(1, "Arial", BAR_FONT);
   gfx_measurestr("Color-blind aware - Spectrum", palette_menu_w, palette_menu_h);

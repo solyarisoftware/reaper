@@ -512,6 +512,31 @@ function cbm_open_menu(i) local(cur, rows) (
   0;
 );
 
+// Fit a host-selected list below its cell, including the frame and shadow.
+// Close it if even one row cannot fit without covering the control bar.
+function cbm_menu_fit_rows(limit, opening) local(i, rows, cur, y, width) (
+  i = cbm_open();
+  i > 0 ? (
+    y = mem[g_cbm_base + CBM_TOP] + mem[g_cbm_base + CBM_HEIGHT] + mem[g_cbm_base + CBM_ST_DROP];
+    rows = min(limit, min(mem[g_cbm_base + CBM_MENU_COUNT],
+                          floor((gfx_h - y - 6) / mem[g_cbm_base + CBM_ST_ROW])));
+    (rows < 1 || gfx_w < 3) ? ( mem[g_cbm_base + CBM_MENU_OPEN] = 0; ) : (
+      width = min(gfx_w - 2, max(cbm_cell_w(i), mem[g_cbm_base + CBM_ST_MENU_W]));
+      mem[g_cbm_base + CBM_MENU_W] = width;
+      mem[g_cbm_base + CBM_MENU_X] = max(0, min(cbm_cell_x(i), gfx_w - width - 2));
+      mem[g_cbm_base + CBM_MENU_Y] = y;
+      mem[g_cbm_base + CBM_MENU_ROWS] = rows;
+      opening ? (
+        cur = cbm_list_position(i, cbm_value(i));
+        mem[g_cbm_base + CBM_MENU_SCROLL] = cur - floor(rows / 2);
+      );
+      mem[g_cbm_base + CBM_MENU_SCROLL] = max(0, min(mem[g_cbm_base + CBM_MENU_SCROLL],
+                                                    mem[g_cbm_base + CBM_MENU_COUNT] - rows));
+    );
+  );
+  0;
+);
+
 // A host may widen an open list for its item labels, keeping it on the canvas.
 function cbm_menu_fit(width) (
   cbm_open() > 0 ? (
