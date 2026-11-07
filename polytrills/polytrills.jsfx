@@ -1,0 +1,1115 @@
+desc: PolyTrills - Polyphonic MIDI Trill Generator
+// @description PolyTrills
+// @author Giorgio Robino
+// @version 0.1.0
+// @about
+//   Turns the notes you hold into trills. One key passes through, two alternate,
+//   three give a sustained drone plus a trill, four give two parallel trills --
+//   each voice on the MIDI channel it was played on.
+//
+//   Rate is in notes per second and does not follow the tempo: a trill is a
+//   gesture, not a metrical value. Humanize makes the alternation breathe,
+//   Balance gives one of the two notes a little more time, and Ramp Up / Ramp
+//   Down let the trill lean in and die away.
+//
+//   The defaults are not a taste: they come from measuring recorded piano
+//   performances -- about 12 notes a second, an alternation that is uneven by
+//   roughly 20%, and every note ending slightly *before* the next attack instead
+//   of on top of it. The corpus, the instrument that measures it, the method and
+//   the reference values are published in corpus/.
+// @changelog
+//   0.1.0 -- First release. Rate in notes per second, Humanize, Balance, Ramp
+//   Up / Ramp Down / Ramp Depth, drone and two parallel trills, transport-stop
+//   flush.
+//
+
+// ============================================================
+// PolyTrills  —  JSFX MIDI Plugin for REAPER
+// ============================================================
+
+// ── MUSICIAN'S GUIDE ────────────────────────────────────────
+//
+//  PolyTrills intercepts your MIDI notes in real-time and turns
+//  them into expressive trills — rapid alternations between
+//  two pitches — without you having to play them manually.
+//  Just hold the notes that define your trill and the plugin
+//  does the work, at the rate you set — a trill is a gesture,
+//  not a metrical value, so the tempo is not consulted.
+//
+//  WHAT HAPPENS DEPENDING ON HOW MANY KEYS YOU HOLD:
+//
+//   ┌──────────────────────────────────────────────────────┐
+//   │ 1 NOTE  — Pass-through. No trill. The note sounds    │
+//   │           exactly as played. PolyTrills is transparent.   │
+//   ├──────────────────────────────────────────────────────┤
+//   │ 2 NOTES — Classic trill. The lower note is the BASE, │
+//   │           the higher note is the UPPER. PolyTrills         │
+//   │           alternates between them at the set rate.   │
+//   │           Any interval works: semitone, tone, third, │
+//   │           fourth, fifth — you decide by what you      │
+//   │           play. Note assignment is always by pitch    │
+//   │           (lowest = base), never by press order.     │
+//   ├──────────────────────────────────────────────────────┤
+//   │ 3 NOTES — Drone + Trill. The LOWEST note becomes a   │
+//   │           sustained drone (pedal point). The MIDDLE  │
+//   │           and HIGHEST notes form the trill pair.     │
+//   │           Great for organ-like pedal-point effects.  │
+//   ├──────────────────────────────────────────────────────┤
+//   │ 4 NOTES — Two parallel trills, running simultaneously │
+//   │           at the same rate:                          │
+//   │             Trill A: note 1 (lowest) ↔ note 2        │
+//   │             Trill B: note 3 ↔ note 4 (highest)       │
+//   │           Think two orchestral parts each trilling.  │
+//   └──────────────────────────────────────────────────────┘
+//
+//  PolyTrills FEEL & EXPRESSION:
+//   - Rate is how many notes per second the trill emits: a
+//     trill is a gesture, so it does not follow the tempo. An
+//     ordinary piano trill is about 12 notes a second.
+//   - Humanize is what makes it human, and it does three
+//     things: each note has its own length (some hesitate),
+//     the rate wanders slowly, and the first notes start a
+//     little slower and softer. At 0 you get a metronome.
+//   - Ramp Up and Ramp Down make the trill lean in and die away:
+//     the alternation starts (or ends) sparse and settles, over a
+//     time you set in seconds. Ramp Depth says how sparse.
+//   - Each note also *ends* a little before the next attack,
+//     which is how a player articulates a trill: the notes
+//     stay separate instead of smearing into each other.
+//   - Balance gives one of the two notes a little more time
+//     than the other (±15%): a trill is not an arpeggio.
+//   - When you lift all fingers, the trill keeps running for
+//     the Linger window and then stops cleanly. Linger 0 stops
+//     it at the note-off, which is what an ending "on the beat"
+//     needs.
+//   - Every generated note keeps the MIDI channel of the note that
+//     created it: a trill played on channel 3 stays on channel 3.
+//
+// ── DEVELOPER / LLM NOTES ───────────────────────────────────
+//
+//  ARCHITECTURE OVERVIEW (r10):
+//   One trill schedule drives one or two voices. The schedule owns
+//   the timing (tr_on_in, tr_off_in, tr_period, tr_drift, tr_count);
+//   a voice owns only its pitches and channel (t1_*, t2_*). Both
+//   voices are emitted inside the same offset, so 4-note mode cannot
+//   drift apart and the stream cannot go backwards.
+//
+//   The held note list (held_notes[], held_vels[],
+//   held_channels[]) is always kept sorted ascending by pitch, so
+//   note-assignment logic is deterministic and order-independent.
+//   A held note is identified by its (pitch, channel) pair: the same
+//   pitch on two channels counts as two notes.
+//
+//   next_period() returns the samples between two attacks: the
+//   nominal Rate, the onset lean-in, a log-normal jitter and a slow
+//   drift. It is called once per note, so there is no "cycle" and no
+//   half period any more. The note itself sounds for GATE of that
+//   period and is released by a scheduled event, which is why a trill
+//   is slightly detached. Tempo is not read: the rate is the player's,
+//   not the metronome's.
+//
+//   In @block:
+//    1. Incoming MIDI Note-On/Off events update held_notes[]
+//       and, only when the held set really changed, trigger
+//       reconfigure(), which stops all engines and restarts them
+//       for the new note configuration.
+//    2. How far the engines may advance is decided: the whole
+//       block, or only up to the sample where the tail expires.
+//    3. advance_trill() walks the schedule through that range,
+//       merging the pending release with the next attack so that
+//       midisend() offsets only ever increase.
+//    4. A tail countdown silences the trill after all notes lift; if
+//       Ramp Down is set, the rate decelerates across the tail (r12).
+//
+//   EVENT OFFSET INVARIANT (r1): every midisend() in a block uses an
+//   offset inside 0 … samplesblock-1, and offsets never go backwards.
+//   The schedule therefore carries tr_anchor, the block offset of the
+//   attack that set its countdowns; advance_trill() begins the
+//   timeline there and resets it to 0. Every midisend() also records
+//   last_ofs, and the final note-offs of the tail are fenced at
+//   max(expiry, last_ofs) so they can never precede an event of the
+//   same block — the case that matters when Linger is 0.
+//
+//  MIDI PASSTHROUGH:
+//   All non-note MIDI (CC, pitch bend, aftertouch, program
+//   change, etc.) is passed through unmodified.
+//
+//  EXTENDING THIS PLUGIN:
+//   - 5+ notes: could add a 3rd trill engine or implement
+//     cycling through all pitches (roulade mode).
+//   - Mordent/Turn: detect rapid note-on/off sequences to
+//     trigger ornament shapes instead of sustained trills.
+//   - Per-trill balance: split the Balance slider into two,
+//     one for each trill engine in 4-note mode.
+//   - Humanization: add slight random jitter to note offsets.
+//
+// ============================================================
+
+
+// ── SLIDERS ─────────────────────────────────────────────────
+//
+// Six controls. Three describe the trill itself (Rate, Humanize, Balance),
+// three the shape of its ends (Ramp Up, Ramp Down, Ramp Depth). There is no
+// channel control: every note keeps the channel it was played on (r13).
+
+// Rate: notes per second, attack to attack. A trill is a physical
+// gesture: the pianist's rate does not follow the metronome, so this is
+// an absolute speed and the tempo is not read at all (r8).
+//   4  → slow, deliberate; the interval is heard as two separate notes
+//   8  → about a 16th at 120 BPM: the old ripple, for comparison
+//   12 → an ordinary trill: the median of the reference measurements
+//        (see corpus/README.md) [default]
+//   16 → fast. Many sampled pianos cannot retrigger this fast: the plugin
+//        asks, the library answers.
+//   20 → virtuoso; above this it stops sounding like an ornament.
+slider1:12<4,20,0.5>Rate (notes/s)
+
+// Humanize: how human the alternation sounds. One control for three
+// things a machine does not do (r10):
+//   - the length of each note is jittered with a log-normal factor, so
+//     most notes are near the nominal length and a few hesitate; the
+//     coefficient of variation is ~0.21 at 70, which is what the corpus
+//     measured on real performances (0.20), and ~0.30 at 100;
+//   - a slow drift wanders over ~10 notes, because no trill holds one
+//     rate for long;
+//   - the first ~4 notes start slightly slower and softer.
+//   0   → machine-even, the reference the offline tests use
+//   70  → the corpus median [default]
+//   100 → looser than most performers
+slider2:70<0,100,1>Humanize (%)
+
+// Balance: time split between the two notes of the pair.
+//   0   → the base note is 15% longer, the upper a quick grace note
+//   50  → even [default]
+//   100 → the upper is 15% longer
+// ±15% is the spread the corpus measured (upper/base 0.74 … 1.37), not a
+// dramatic gesture: a trill is not an arpeggio.
+slider3:50<0,100,1>Balance
+
+// Ramp Up: how long the trill takes to reach its final rate. At the first
+// attack it runs at 1/(1+Ramp Depth) of the Rate and converges linearly,
+// note by note, over this time (r12).
+//   0   → no ramp: the trill starts already at speed [default]
+//   2   → a trill that settles in two seconds
+// This is an expressive control, not a realism one: the corpus says a real
+// trill starts only 1.11x slower, so 0 is the measured behaviour.
+slider4:0<0,10,0.05>Ramp Up (s)
+
+// Ramp Down: how long the trill takes to die away after you lift ALL keys.
+// The end is not knowable in advance — the plugin learns it when the last
+// key is released — so this window *extends* the sound: the trill keeps
+// alternating and slows down from the final rate to 1/(1+Ramp Depth) of it,
+// then stops. It replaces the old Linger, which was the same tail at a
+// constant rate (0.1 s here reproduces Linger 100 ms).
+//   0    → stop at the last played event (an ending on the beat)
+//   0.1  → the short throw-away of a played trill [default]
+//   3    → the trill dissolves over three seconds
+slider5:0.1<0,10,0.05>Ramp Down (s)
+
+// Ramp Depth: how slow the trill is at the two ends of the ramp.
+//   0   → no ramp effect at all, even with Ramp Up/Down set
+//   60  → the trill starts and ends at 1/2.8 of the Rate [default]
+//   100 → it starts and ends at 1/4 of the Rate
+// The same depth at both ends: one number, two ramps.
+slider6:60<0,100,1>Ramp Depth (%)
+
+
+
+
+// ── INIT ─────────────────────────────────────────────────────
+@init
+
+// ── Memory layout ──
+// JSFX global memory is accessed as base_pointer[index].
+// We allocate three parallel arrays of 4 slots each:
+//   Slots  0– 3 : held note MIDI pitch values (0–127)
+//   Slots  4– 7 : held note MIDI velocities   (1–127)
+//   Slots  8–11 : held note MIDI channels     (0–15)
+// A slot is identified by (pitch, channel); the pitch array is kept
+// sorted ascending, ties broken by channel.
+held_notes    = 0;
+held_vels     = 4;
+held_channels = 8;
+// Next free slot: 12 (extend here if more state arrays are needed)
+
+// Number of notes currently held by the player (0–4).
+held_count = 0;
+
+// ── Trill schedule (r10) ──
+// One schedule drives up to two trill voices. The two parallel trills of
+// 4-note mode are one rhythm, so they share every period and are emitted
+// at the same offsets: ordering is then a property of the structure, not
+// something to sort afterwards (r6).
+//
+// A note is no longer "half of a cycle": it has its own attack-to-attack
+// period, its own sounding length (GATE of the period) and its own random
+// jitter. The release is therefore scheduled *after* the attack that
+// created it and may fall in a later block: tr_off_in is that pending
+// note-off, and a measured trill releases each note ~25 ms before the
+// next attack (gate 0.72) instead of holding it for the whole interval.
+//
+// The two countdowns are samples from the current walk position. At the
+// end of a block they are converted to "from the block start", which is
+// what carries them across the boundary without any absolute time.
+tr_active = 0;         // 1 = a trill is running
+tr_count  = 0;         // notes played since it started (onset shaping)
+tr_on_in  = 1000000;   // samples until the next attack
+tr_off_in = 1000000;   // samples until the pending release
+tr_period = 6000;      // samples of the last attack-to-attack interval
+tr_drift  = 0;         // slow wandering of the rate, -0.25 … 0.25
+tr_anchor = 0;         // block offset where the countdowns were set (r1)
+
+// ── Trill voice 1 ──
+// Active for 2-note (pair), 3-note (middle↔high) and 4-note (lowest pair).
+t1_active   = 0;
+t1_phase    = 0;    // which pitch the *next* attack plays (0 base, 1 upper)
+t1_sounding = -1;   // pitch currently ON, -1 = none
+t1_base     = -1;
+t1_upper    = -1;
+t1_ch       = 0;
+
+// ── Trill voice 2 ──
+// 4-note mode only (3rd↔4th held note).
+t2_active   = 0;
+t2_phase    = 0;
+t2_sounding = -1;
+t2_base     = -1;
+t2_upper    = -1;
+t2_ch       = 0;
+
+// ── Drone state (3-note mode only) ──
+// The lowest held note is passed through as a sustained note.
+drone_active = 0;
+drone_note   = -1;
+drone_ch     = 0;
+
+// ── Pass-through state (1-note mode) ──
+// The single held note is forwarded as-is.
+pass_note = -1;
+pass_ch   = 0;
+
+// ── Tail state (r12) ──
+// The tail is what used to be the linger window: after the last key is
+// released the trill keeps running for a while and then stops. r12 gives
+// that window a shape — the rate decelerates across it — so the tail is
+// also the ramp-down, and "Ramp Down 0" is the old "Linger 0".
+tail_active  = 0;
+tail_counter = 0;   // samples remaining in the tail
+tail_total   = 0;   // samples of the whole tail (to place the ramp)
+
+// ── Ramp state (r12) ──
+tr_elapsed  = 0;    // samples since the first attack of this trill
+ramp_up_s   = 0;    // samples of the ramp-up window (from slider4)
+ramp_down_s = 0;    // samples of the tail (from slider5)
+
+// ── Transport watch (r4) ──
+// play_state is 0=stopped, <0=error, 1=playing, 2=paused,
+// 5=recording, 6=record paused (JSFX reference, special variables).
+TRANS_UNSEEN     = -99;
+trans_prev_state = TRANS_UNSEEN;
+trans_adv_prev   = 0;
+trans_adv_now    = 0;
+trans_parked     = 0;
+
+// ── Per-block scratch ──
+advance_len    = 0;
+fence_ofs      = 0;
+tail_expired   = 0;
+last_ofs       = 0;
+
+// ── Constants of the gesture model ──
+// All measured on the corpus in corpus/README.md, not invented.
+GATE         = 0.72;   // a note sounds for 72% of its period: the measured
+                       // release is ~25 ms before the next attack
+ONSET_NOTES  = 4;      // the first notes are slower and softer
+ONSET_SLOW   = 0.11;   // measured: first interval 1.11x the body
+ONSET_SOFT   = 0.60;   // first note at 60% of the target velocity
+HUMAN_SIGMA  = 0.30;   // log-normal spread at Humanize 100 (CV ~0.30)
+DRIFT_STEP   = 0.03;   // random-walk step of the slow rate drift
+DRIFT_KEEP   = 0.92;   // how long the drift remembers (about 12 notes)
+BALANCE_SPAN = 0.15;   // Balance ±15% (corpus: upper/base 0.74 … 1.37)
+RAMP_MAX     = 3.0;    // Ramp Depth 100 → the ends run at 1/4 of the Rate
+MIN_NOTE     = 200;    // samples: floor of one note period (well above one
+                       // audio block, so a block never chokes on toggles)
+
+// master_vel: the velocity carried into each generated note. Set to the
+// average velocity of the relevant held notes by reconfigure().
+master_vel = 80;
+
+// ── FUNCTIONS ───────────────────────────────────────────────
+//
+// Each function is defined before the section code that calls it
+// (@init below, then @slider and @block), because JSFX compiles the
+// file in textual order. They sit here, in the @init region, rather
+// than above @init: that is the layout used by every stock and
+// third-party JSFX measured on this machine (199 of 199 files that
+// define functions at all), and without a compiler outside REAPER a
+// deviation from it cannot be tested.
+//
+// Function bodies do not run at definition time; the globals they
+// read are initialised in the @init block above.
+
+// ============================================================
+// FUNCTION: transport_advancing(state)
+//
+// True when the transport is moving forward: 1 = playing,
+// 5 = recording. 0 = stopped, 2 = paused, 6 = record paused, and
+// anything negative is the documented error state.
+//
+//  state   : a play_state value, or TRANS_UNSEEN
+//  returns : 1 or 0
+// ============================================================
+function transport_advancing(state) (
+  state > 0 && (state & 1);
+);
+
+
+// ============================================================
+// FUNCTION: human_factor()
+//
+// The multiplier applied to one note's period to make it human. It is
+// log-normal, not uniform: real trills have a tight core of notes near
+// the nominal length and a tail of hesitations, and a uniform jitter
+// reproduces the spread without the shape (r10).
+//
+//   sigma = Humanize/100 * HUMAN_SIGMA   →   CV = sqrt(exp(sigma^2) - 1)
+//     Humanize  70 → sigma 0.21 → CV 0.21   (corpus median: 0.20)
+//     Humanize 100 → sigma 0.30 → CV 0.30
+//     Humanize   0 → exactly 1.0, the metronome the offline tests use
+//
+// The normal deviate is the sum of four uniforms, standardised (mean 2,
+// variance 1/3): cheap, bounded, close enough to normal. The result is
+// clamped to 0.4 … 2.5 so a wild draw can never stall the trill.
+// ============================================================
+function human_factor()
+  local(sigma, z)
+(
+  slider2 <= 0 ? (
+    1.0;
+  ) : (
+    sigma = slider2 / 100.0 * HUMAN_SIGMA;
+    z = (rand() + rand() + rand() + rand() - 2.0) * sqrt(3.0);
+    // The -sigma^2/2 term divides out the log-normal's own mean, so the
+    // *average* note length is the nominal one and Rate stays honest
+    // instead of drifting ~2% slower as the jitter grows.
+    min(2.5, max(0.4, exp(sigma * z - 0.5 * sigma * sigma)));
+  );
+);
+
+
+// ============================================================
+// FUNCTION: onset_slow()
+//
+// The first interval of a real trill is 1.11x the body (measured), and
+// the effect decays over about four notes. Scaled by Humanize, because
+// it is a human trait: Humanize 0 gives a metronome from the first note.
+// ============================================================
+function onset_slow()
+(
+  tr_count >= ONSET_NOTES ? (
+    1.0;
+  ) : (
+    1.0 + ONSET_SLOW * (slider2 / 100.0) *
+          (ONSET_NOTES - tr_count) / ONSET_NOTES;
+  );
+);
+
+
+// ============================================================
+// FUNCTION: onset_velocity(vel)
+//
+// The first notes are also softer: the recorded take shows about 60% of
+// the target velocity on the first note, reaching it by the fourth. The
+// depth is fixed and tied to Humanize, for the same reason as the rate
+// onset.
+// ============================================================
+function onset_velocity(vel)
+(
+  tr_count >= ONSET_NOTES ? (
+    max(1, min(127, floor(vel)));
+  ) : (
+    max(1, min(127, floor(vel * (ONSET_SOFT +
+        (1.0 - ONSET_SOFT) * tr_count / ONSET_NOTES))));
+  );
+);
+
+
+// ============================================================
+// FUNCTION: ramp_up_factor()
+//
+// How much longer than nominal the period is, this early in the trill.
+// Ramp Up is a *time*, so the factor is driven by the elapsed samples:
+// at the first attack it is 1+RAMP_MAX*depth (a slow, sparse alternation)
+// and it converges linearly to 1 at the end of the window (r12).
+// ============================================================
+function ramp_up_factor()
+(
+  ramp_up_s <= 0 ? (
+    1.0;
+  ) : (
+    1.0 + RAMP_MAX * (slider6 / 100.0) *
+          max(0.0, 1.0 - tr_elapsed / ramp_up_s);
+  );
+);
+
+
+// ============================================================
+// FUNCTION: ramp_down_factor()
+//
+// The mirror image, for the tail. The end of a trill cannot be known in
+// advance, so the ramp-down runs inside the tail, whose total length is
+// known the moment it starts: the period grows linearly from nominal to
+// 1+RAMP_MAX*depth across it, and the trill dies away (r12).
+// ============================================================
+function ramp_down_factor()
+(
+  tail_active && tail_total > 0 ? (
+    1.0 + RAMP_MAX * (slider6 / 100.0) * (1.0 - tail_counter / tail_total);
+  ) : (
+    1.0;
+  );
+);
+
+
+// ============================================================
+// FUNCTION: next_period()
+//
+// Samples between two attacks: the nominal Rate, slowed by the onset for
+// the first notes, multiplied by the human jitter, moved by the drift.
+// Called once per generated note, so every note has its own length (r10)
+// — there is no "cycle" any more.
+//
+// The drift is a random walk with a short memory: it wanders over about
+// a dozen notes, which is what a trill that sags and recovers sounds
+// like, and it mean-reverts, so it cannot accumulate.
+// ============================================================
+function next_period()
+  local(pp)
+(
+  tr_drift = tr_drift * DRIFT_KEEP +
+             (rand() * 2.0 - 1.0) * DRIFT_STEP * (slider2 / 100.0);
+  tr_drift = max(-0.25, min(0.25, tr_drift));
+
+  pp  = srate / max(0.5, slider1);      // nominal: notes/s → samples
+  pp *= 1.0 + tr_drift;
+  pp *= onset_slow();
+  pp *= human_factor();
+  pp *= ramp_up_factor();               // slow start, if asked (r12)
+  pp *= ramp_down_factor();             // dying away, in the tail (r12)
+  max(MIN_NOTE, floor(pp));
+);
+
+
+// ============================================================
+// FUNCTION: note_on(ofs, ch, pitch, vel)
+// FUNCTION: note_off(ofs, ch, pitch)
+//
+// Thin wrappers around midisend() for readability.
+// ofs   : sample offset within the current @block (0 … samplesblock-1)
+// ch    : MIDI channel (0–15)
+// pitch : MIDI note number (0–127)
+// vel   : MIDI velocity (1–127); note_off sends 0
+//
+// Both also record last_ofs, the offset of the most recent event of the
+// block: the final note-offs may never be sent before it.
+// ============================================================
+function note_on(ofs, ch, pitch, vel) (
+  last_ofs = ofs;
+  midisend(ofs, 0x90 | ch, pitch, vel);
+);
+
+function note_off(ofs, ch, pitch) (
+  last_ofs = ofs;
+  midisend(ofs, 0x80 | ch, pitch, 0);
+);
+
+
+// ============================================================
+// FUNCTION: insert_held(pitch, vel, ch)
+//
+// Inserts a new note into the held_notes[] array, keeping the
+// array sorted in ascending pitch order (lowest first), ties on
+// the same pitch ordered by channel.
+//
+// The identity of a held note is (pitch, channel), not pitch alone:
+// two notes of the same pitch on different channels are legal in
+// MIDI and are tracked as two separate entries. A (pitch, channel)
+// pair already held, or a fifth note, is ignored.
+//
+//  pitch : MIDI note number to add
+//  vel   : MIDI velocity of the note-on
+//  ch    : MIDI channel of the note-on
+//
+//  Returns 1 if the held set changed, 0 if the note was ignored
+//  (duplicate, or four notes already held). Callers use this to
+//  avoid a needless reconfigure().
+// ============================================================
+function insert_held(pitch, vel, ch)
+  local(i, j, added)
+(
+  added = 0;
+
+  // Look for the same (pitch, channel) pair already in the list
+  i = 0;
+  while (i < held_count &&
+         (held_notes[i] != pitch || held_channels[i] != ch)) ( i += 1; );
+
+  // Only proceed if not already held and there is room
+  i == held_count && held_count < 4 ? (
+
+    // Find the sorted insertion index: after every entry with a lower
+    // pitch, or the same pitch on a lower channel
+    i = 0;
+    while (i < held_count &&
+           (held_notes[i] < pitch ||
+            (held_notes[i] == pitch && held_channels[i] < ch))) ( i += 1; );
+
+    // Shift existing entries one slot to the right to make room
+    j = held_count;
+    while (j > i) (
+      held_notes[j]    = held_notes[j - 1];
+      held_vels[j]     = held_vels[j - 1];
+      held_channels[j] = held_channels[j - 1];
+      j -= 1;
+    );
+
+    // Write new entry at the insertion point
+    held_notes[i]    = pitch;
+    held_vels[i]     = vel;
+    held_channels[i] = ch;
+    held_count += 1;
+    added = 1;
+  );
+
+  added;
+);
+
+
+// ============================================================
+// FUNCTION: remove_held(pitch, ch)
+//
+// Removes the (pitch, channel) entry from the held_notes[] array.
+// Shifts remaining entries left to close the gap, preserving the
+// sorted order. A note-off on a different channel than the one held
+// does not remove anything.
+//
+//  pitch : MIDI note number to remove
+//  ch    : MIDI channel of the note-off
+//
+//  Returns 1 if the held set changed, 0 if no matching entry was
+//  held (duplicate note-off, or note-off for a note PolyTrills dropped
+//  because four were already held).
+// ============================================================
+function remove_held(pitch, ch)
+  local(i, j, removed)
+(
+  removed = 0;
+
+  // Locate the (pitch, channel) pair
+  i = 0;
+  while (i < held_count &&
+         (held_notes[i] != pitch || held_channels[i] != ch)) ( i += 1; );
+
+  i < held_count ? ( // found: remove it
+    j = i;
+    while (j < held_count - 1) (
+      held_notes[j]    = held_notes[j + 1];
+      held_vels[j]     = held_vels[j + 1];
+      held_channels[j] = held_channels[j + 1];
+      j += 1;
+    );
+    held_count -= 1;
+    removed = 1;
+  );
+
+  removed;
+);
+
+
+// ============================================================
+// FUNCTION: stop_trill(ofs)
+//
+// Silences every trill voice and cancels the pending release. Safe when
+// nothing is running. One call handles both voices, because they share
+// one schedule (r10).
+// ============================================================
+function stop_trill(ofs) (
+  t1_sounding >= 0 ? note_off(ofs, t1_ch, t1_sounding);
+  t2_sounding >= 0 ? note_off(ofs, t2_ch, t2_sounding);
+  t1_sounding = -1;
+  t2_sounding = -1;
+  t1_active   = 0;
+  t2_active   = 0;
+  tr_active   = 0;
+  tr_on_in    = 1000000;
+  tr_off_in   = 1000000;
+);
+
+
+// ============================================================
+// FUNCTION: stop_drone(ofs)
+//
+// Sends note-off for the active drone note (3-note mode).
+// Safe to call when no drone is active.
+// ============================================================
+function stop_drone(ofs) (
+  drone_active && drone_note >= 0 ? (
+    note_off(ofs, drone_ch, drone_note);
+    drone_note   = -1;
+    drone_active = 0;
+  );
+);
+
+
+// ============================================================
+// FUNCTION: stop_pass(ofs)
+//
+// Sends note-off for the active pass-through note (1-note mode).
+// Safe to call when no pass-through note is active.
+// ============================================================
+function stop_pass(ofs) (
+  pass_note >= 0 ? (
+    note_off(ofs, pass_ch, pass_note);
+    pass_note = -1;
+  );
+);
+
+
+// ============================================================
+// FUNCTION: stop_all(ofs)
+//
+// Silences every voice: the trill (both voices and its pending release),
+// the drone and the pass-through. Called at the start of every
+// reconfigure() and when the tail expires.
+// ============================================================
+function stop_all(ofs) (
+  stop_trill(ofs);
+  stop_drone(ofs);
+  stop_pass(ofs);
+);
+
+
+// ============================================================
+// FUNCTION: start_trill(b1, u1, ch1, b2, u2, ch2, voices, vel, ofs)
+//
+// Starts the trill with one or two voices and fires the first attack.
+// Pitch state lives per voice; timing lives in the schedule, so the two
+// voices of 4-note mode cannot drift apart.
+//
+//  b1, u1, ch1 : base, upper and MIDI channel of voice 1
+//  b2, u2, ch2 : the same for voice 2, ignored when voices == 1
+//  voices      : 1 or 2
+//  vel         : target velocity (master_vel); the onset scales it
+//  ofs         : block offset of the first attack
+// ============================================================
+function start_trill(b1, u1, ch1, b2, u2, ch2, voices, vel, ofs) (
+  stop_trill(ofs);          // safety: silence anything residual
+
+  t1_active = 1;
+  t1_base   = b1;
+  t1_upper  = u1;
+  t1_ch     = ch1;
+  t1_phase  = 0;
+  t2_active = voices > 1;
+  t2_base   = b2;
+  t2_upper  = u2;
+  t2_ch     = ch2;
+  t2_phase  = 0;
+
+  tr_active  = 1;
+  tr_count   = 0;
+  tr_drift   = 0;
+  tr_elapsed = 0;
+
+  // ── first attack ──
+  // The phase is flipped *after* firing, so the next attack plays the other
+  // note: without this the second note would repeat the first.
+  t1_sounding = b1;
+  note_on(ofs, t1_ch, t1_sounding, onset_velocity(vel));
+  t1_phase = 1;
+  t2_active ? (
+    t2_sounding = b2;
+    note_on(ofs, t2_ch, t2_sounding, onset_velocity(vel));
+    t2_phase = 1;
+  );
+  tr_count += 1;
+
+  tr_period = next_period();
+  tr_off_in = max(64, floor(tr_period * GATE));
+  tr_on_in  = tr_period;
+  tr_anchor = ofs;
+);
+
+
+// ============================================================
+// FUNCTION: hold_note(pitch, vel, ch, ofs)
+//
+// Sustains one note without trilling it. Used when a trill pair
+// would have equal pitches (r7): one channel, one pitch, so
+// alternating would retrigger instead of trill.
+//
+// The voice is the first free sustained one: the pass-through voice,
+// else the drone (free in 2- and 4-note modes, taken by the lowest
+// note in 3-note mode). At most two such pairs exist, so a third call
+// cannot happen; if it ever did, the drone's sounding note is
+// note-off'd before being reused, so no voice is left on.
+//
+//  pitch : MIDI pitch to sustain
+//  vel   : velocity for the note-on
+//  ch    : MIDI channel for the note-on
+//  ofs   : sample offset for the note-on
+// ============================================================
+function hold_note(pitch, vel, ch, ofs) (
+  pass_note < 0 ? (
+    pass_note = pitch;
+    pass_ch   = ch;
+  ) : (
+    drone_active && drone_note >= 0 ? note_off(ofs, drone_ch, drone_note);
+    drone_note   = pitch;
+    drone_ch     = ch;
+    drone_active = 1;
+  );
+  note_on(ofs, ch, pitch, vel);
+);
+
+
+// ============================================================
+// FUNCTION: reconfigure(ofs)
+//
+// The central state machine. Called whenever the set of held
+// notes changes (note-on or note-off while notes remain held).
+//
+// Steps:
+//  1. Stop all currently active voices.
+//  2. Compute master_vel from held note velocities.
+//  3. Recompute rhythmic periods (calc_half_periods).
+//  4. Start the correct engines/drone/pass-through for the
+//     new held_count.
+//
+//  ofs : sample offset within the current @block for all
+//        note events generated by this call.
+//
+//  Note: never called when held_count drops to 0 — that case
+//        is handled by the tail in @block.
+// ============================================================
+function reconfigure(ofs) (
+  stop_all(ofs);
+  tail_active = 0;     // cancel any tail that was in progress
+
+  held_count == 1 ? (
+    // ── 1 note: pure pass-through ──────────────────────────
+    // Note is forwarded unchanged. It will sustain until
+    // the user lifts the key and the tail runs out.
+    pass_note  = held_notes[0];
+    pass_ch    = held_channels[0];
+    master_vel = held_vels[0];
+    note_on(ofs, pass_ch, pass_note, held_vels[0]);
+  );
+
+  held_count == 2 ? (
+    // ── 2 notes: classic trill ─────────────────────────────
+    // The average of the two velocities is the target: the corpus shows
+    // no systematic accent between the notes of a pair (r10).
+    master_vel = (held_vels[0] + held_vels[1]) * 0.5;
+    // Equal pitches cannot trill: the pair owns one channel, so the
+    // alternation would retrigger the same note (r7). Sustain it.
+    held_notes[0] == held_notes[1] ? (
+      hold_note(held_notes[0], held_vels[0], held_channels[0], ofs);
+    ) : (
+      start_trill(held_notes[0], held_notes[1], held_channels[0],
+                  0, 0, 0, 1, master_vel, ofs);
+    );
+  );
+
+  held_count == 3 ? (
+    // ── 3 notes: drone + trill ─────────────────────────────
+    // Lowest note → sustained drone (pass-through)
+    drone_note   = held_notes[0];
+    drone_ch     = held_channels[0];
+    drone_active = 1;
+    note_on(ofs, drone_ch, drone_note, held_vels[0]);
+
+    // Middle and high notes → trill pair
+    master_vel = (held_vels[1] + held_vels[2]) * 0.5;
+    // Equal pitches: sustain the upper note instead (r7).
+    held_notes[1] == held_notes[2] ? (
+      hold_note(held_notes[1], held_vels[1], held_channels[1], ofs);
+    ) : (
+      start_trill(held_notes[1], held_notes[2], held_channels[1],
+                  0, 0, 0, 1, master_vel, ofs);
+    );
+  );
+
+  held_count == 4 ? (
+    // ── 4 notes: two parallel trills ───────────────────────
+    // Use overall average velocity so both trills have the
+    // same rhythmic rate and stay in sync.
+    master_vel = (held_vels[0] + held_vels[1] +
+                  held_vels[2] + held_vels[3]) * 0.25;
+
+    // A pair whose two pitches are equal is sustained, not trilled (r7).
+    held_notes[0] == held_notes[1] ? (
+      hold_note(held_notes[0], held_vels[0], held_channels[0], ofs);
+    );
+    held_notes[2] == held_notes[3] ? (
+      hold_note(held_notes[2], held_vels[2], held_channels[2], ofs);
+    );
+
+    // Whatever is left is one trill: two voices when both pairs are
+    // valid, one voice when only one is (the schedule is shared, r10).
+    held_notes[0] != held_notes[1] && held_notes[2] != held_notes[3] ? (
+      start_trill(held_notes[0], held_notes[1], held_channels[0],
+                  held_notes[2], held_notes[3], held_channels[2],
+                  2, master_vel, ofs);
+    ) : (
+      held_notes[0] != held_notes[1] ? (
+        start_trill(held_notes[0], held_notes[1], held_channels[0],
+                    0, 0, 0, 1, master_vel, ofs);
+      ) : (
+        held_notes[2] != held_notes[3] ? (
+          start_trill(held_notes[2], held_notes[3], held_channels[2],
+                      0, 0, 0, 1, master_vel, ofs);
+        );
+      );
+    );
+  );
+);
+
+
+// ============================================================
+// FUNCTION: advance_trill(blk)
+//
+// Walks the schedule through this block, emitting every pending release
+// and every attack in ascending offset order. Both voices are always
+// emitted inside the same offset, so the stream cannot go backwards
+// (r6); the release always lands before the attack that follows it,
+// because GATE < 1.
+//
+// The walk merges two countdowns — the release and the next attack — and
+// is written so that it stays correct for any gate, including one that
+// would put the release after the attack.
+//
+//  blk : samples the trill may step through (samplesblock, or the
+//        tail-limited advance_len)
+// ============================================================
+function advance_trill(blk)
+  local(pos, e_off, e_on, e)
+(
+  tr_active ? (
+
+    // Begin where the countdowns were established: the block offset of
+    // the attack that set them (r1).
+    pos = tr_anchor;
+    tr_anchor = 0;
+
+    while (pos < blk) (
+
+      e_off = t1_sounding >= 0 ? tr_off_in : 1000000;
+      e_on  = tr_on_in;
+      e     = min(e_off, e_on);
+
+      // Strict '>=': an event landing exactly on blk belongs to the next
+      // block (offset 0), never to this one (r1).
+      pos + e >= blk ? (
+        // Nothing else happens in this block: carry both countdowns over
+        // as "samples from the block start".
+        tr_off_in -= blk - pos;
+        tr_on_in  -= blk - pos;
+        pos = blk;
+      ) : (
+        pos += e;
+
+        e_off <= e_on ? (
+          // ── release of the sounding note ──
+          // The measured articulation: a note ends ~25 ms before the next
+          // attack (gate 0.72), which is what makes an alternation read as
+          // a trill and not as a smeared legato (r10).
+          t1_sounding >= 0 ? note_off(pos, t1_ch, t1_sounding);
+          t2_sounding >= 0 ? note_off(pos, t2_ch, t2_sounding);
+          t1_sounding = -1;
+          t2_sounding = -1;
+          tr_off_in = 1000000;
+          tr_on_in  = e_on - e;
+        ) : (
+          // ── attack: both voices at one offset ──
+          t1_sounding = t1_phase == 0 ? t1_base : t1_upper;
+          note_on(pos, t1_ch, t1_sounding, onset_velocity(master_vel));
+          t1_phase = 1 - t1_phase;
+          t2_active ? (
+            t2_sounding = t2_phase == 0 ? t2_base : t2_upper;
+            note_on(pos, t2_ch, t2_sounding, onset_velocity(master_vel));
+            t2_phase = 1 - t2_phase;
+          );
+          tr_count += 1;
+          tr_elapsed += tr_period;   // the period that just went by (r12)
+          tr_period = next_period();
+          tr_off_in = max(64, floor(tr_period * GATE));
+          tr_on_in  = tr_period;
+        );
+      );
+    );
+
+  );
+);
+
+
+// ── Initialise timing and ramp defaults ──
+ramp_up_s   = floor(slider4 * srate);
+ramp_down_s = floor(slider5 * srate);
+tail_total  = ramp_down_s;
+tr_on_in     = 1000000;   // nothing scheduled until a trill starts
+tr_off_in    = 1000000;
+
+
+// ── SLIDER ────────────────────────────────────────────────────
+@slider
+
+// The two ramp windows are durations in samples and need recomputing;
+// Rate, Humanize, Balance and Depth are read when the next note is
+// generated, so the trill follows them live, mid-alternation (r10/r12).
+ramp_up_s   = floor(slider4 * srate);
+ramp_down_s = floor(slider5 * srate);
+tail_total  = ramp_down_s;
+
+
+// ── BLOCK ─────────────────────────────────────────────────────
+@block
+
+// ============================================================
+// @block runs once per audio processing block.
+// Responsibilities:
+//   0. Watch the transport; flush on stop (r4).
+//   1. Drain the incoming MIDI queue and update held_notes[].
+//   2. Decide how far the engines may advance in this block.
+//   3. Advance the trill engines through that range.
+//   4. Manage the tail countdown after all notes lift.
+// ============================================================
+
+// Recompute the ramp windows in case the sample rate changed (unlikely)
+ramp_up_s   = floor(slider4 * srate);
+ramp_down_s = floor(slider5 * srate);
+
+// Offset of the most recent event sent in this block. The final
+// note-offs may never be sent before it: with Linger at 0 they are
+// sent at this offset instead of at 0.
+last_ofs = 0;
+
+// ── Step 0: Transport watch (r4) ─────────────────────────────
+// Stopping the transport is the one event that can leave a voice
+// sounding into the silence: whichever note an engine has on at that
+// instant receives its note-off only in a later block, and a stopped
+// transport may not run blocks at all. So on the edge out of the
+// advancing state, silence everything at offset 0 — before any other
+// event of this block, which keeps the offsets ascending.
+//
+// The held set is kept: the fingers are still on the keys. The engines
+// stay parked until either MIDI changes the held set (step 1) or the
+// transport advances again; in the second case the voices are restaged
+// from the held set, so the trill comes back where it left off.
+//
+// Locate / loop wrap / project reload is deliberately not handled:
+// see the r4 note in the header.
+trans_adv_prev = transport_advancing(trans_prev_state);
+trans_adv_now  = transport_advancing(play_state);
+
+trans_adv_prev && !trans_adv_now ? (
+  // Left the advancing state: cancel any tail, flush, park.
+  tail_active  = 0;
+  tail_counter = 0;
+  stop_all(0);
+  trans_parked   = held_count > 0;   // nothing held = nothing to restage
+) : (
+  !trans_adv_prev && trans_adv_now ? (
+    // Advancing again after a stop: restage, unless MIDI already did
+    // it in the meantime (step 1 clears trans_parked).
+    trans_parked ? reconfigure(0);
+    trans_parked = 0;
+  );
+);
+
+trans_prev_state = play_state;
+
+// ── Step 1: Process incoming MIDI events ──────────────────────
+while (midirecv(mpos, msg1, msg2, msg3)) (
+
+  msg_type = msg1 & 0xF0;   // upper nibble: message category
+  msg_ch   = msg1 & 0x0F;   // lower nibble: MIDI channel (0–15)
+
+  msg_type == 0x90 && msg3 > 0 ? (
+    // ── Note On (velocity > 0) ───────────────────────────────
+    // Add to the held list and reconfigure only if the set really
+    // changed: a duplicate note-on on a (pitch, channel) pair already
+    // held must not restart the engines (audible glitch, ramp reset).
+    // The original note-on is NOT forwarded — trill engine(s) or
+    // pass-through path inside reconfigure() generate all output
+    // note events.
+    insert_held(msg2, msg3, msg_ch) ? (
+      trans_parked = 0;   // new MIDI restages: nothing is parked any more
+      reconfigure(mpos);
+    );
+
+  ) : msg_type == 0x80 || (msg_type == 0x90 && msg3 == 0) ? (
+    // ── Note Off (explicit 0x80, or note-on with vel=0) ──────
+    // Note-on with velocity 0 is a common MIDI shorthand for
+    // note-off (running status optimisation from older gear).
+    // A note-off that matches no held entry does nothing at all.
+    remove_held(msg2, msg_ch) ? (
+      trans_parked = 0;
+
+      held_count == 0 ? (
+        // Last finger lifted: the tail starts. The trill keeps running
+        // and, if Ramp Down is set, slows to a stop across it (r12);
+        // Ramp Down 0 stops it at this very note-off.
+        tail_active  = 1;
+        tail_counter = ramp_down_s;
+        tail_total   = ramp_down_s;
+      ) : (
+        // Notes remain: reconfigure for the new held set.
+        reconfigure(mpos);
+      );
+    );
+    // Original note-off is NOT forwarded — trill engine owns note lifecycle.
+
+  ) : (
+    // ── All other MIDI (CC, pitch bend, aftertouch, etc.) ────
+    // Pass through completely unmodified so the downstream
+    // synth still receives expression, mod wheel, sustain, etc.
+    last_ofs = mpos;
+    midisend(mpos, msg1, msg2, msg3);
+  );
+);
+
+// ── Step 2: Decide how far the engines may advance ───────────
+// Normally the whole block. If the tail expires inside this block, the
+// engines must stop exactly at the expiry sample: advancing further would
+// emit note-ons after the final note-off, and a note-off at a lower offset
+// cannot silence them — the result is a stuck note.
+advance_len  = samplesblock;
+fence_ofs    = samplesblock - 1;
+tail_expired = 0;
+tail_active && tail_counter <= samplesblock ? (
+  tail_expired = 1;
+  advance_len  = max(0, tail_counter);
+  fence_ofs    = min(advance_len, samplesblock - 1);
+);
+// The fence may not precede an event already sent in this block: with
+// Ramp Down at 0 the note-off must land on that event, not before it.
+fence_ofs = max(fence_ofs, last_ofs);
+
+// ── Step 3: Advance the trill up to advance_len ───────────
+// advance_trill() emits attacks and the pending release in ascending
+// offset order, both voices at the same offset (r10).
+advance_trill(advance_len);
+
+// ── Step 4: Handle the tail countdown ─────────────────────────
+tail_active ? (
+  tail_counter -= samplesblock;
+  tail_expired ? (
+    // The tail expired: send note-offs for everything sounding at the
+    // fence offset, which is never earlier than the last event sent in
+    // this block. The receiving instrument's release envelope provides
+    // the audible decay; we just stop scheduling new alternations.
+    stop_all(fence_ofs);
+    tail_active = 0;
+  );
+);

@@ -87,6 +87,24 @@ function may only call what was declared before it, so the order inside a file i
 dependency order, and `@provides` in `ccscope.jsfx` is the single list of package files — the
 probes read it, ReaPack reads it, and a forgotten entry is a plugin that will not load.
 
+### Where the PolyTrills code lives
+
+One file, no includes. `polytrills.jsfx` owns the whole gesture: the held-note set, one trill
+schedule shared by up to two voices, the per-note period (rate, onset, jitter, drift) and the
+tail that ends the trill.
+
+The numbers the defaults sit on are not in the code as magic constants: they are named at the top
+of the `@init` region (`GATE`, `ONSET_SLOW`, `HUMAN_SIGMA`, `DRIFT_STEP`, `BALANCE_SPAN`) with the
+measurement each one comes from, and the corpus and method that produced them are in
+[`polytrills/corpus/`](polytrills/corpus/). Changing one of those names is changing a behavioural
+claim, so it needs a measurement or an issue that says why.
+
+An offline model of the engine — a Python transcription of the same schedule, checking offsets,
+gate, rate, jitter, drift and the ramps — lives in the private development repository, together
+with the capture procedure used to record takes. It is not part of this package: a JSFX cannot be
+compiled outside REAPER, so the model is the closest thing to a test suite the engine has, and it
+is a development tool rather than a shipped file.
+
 ## Documentation conventions
 
 Each package keeps its user documentation next to its sources, and it is written for the person

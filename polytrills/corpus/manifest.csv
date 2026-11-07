@@ -1,0 +1,2 @@
+take_id,contributor,date,instrument,method,source,notes_file,licence,notes
+c001,c01,2026-11-07,MIDI keyboard (velocity and duration as received),raw MIDI recorded in REAPER with the plugin bypassed,solo trills played on purpose (semitone and tone),takes/c01-2026-11-07.csv,CC0-1.0,43 trill episodes detected; 1163 notes; 251 s

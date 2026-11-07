@@ -19,10 +19,12 @@ folder inside your REAPER resource directory (`Effects/<category>/` on Windows).
 | Package | ReaPack category | What it does |
 |---|---|---|
 | [CCScope](ccscope/) | `ccscope` | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
+| [PolyTrills](polytrills/) | `polytrills` | Turns held notes into trills — one note passes through, four give two parallel trills — with a rate in notes per second and a gesture calibrated on measured performances |
 
 Each package keeps its documentation next to its sources — README, changelog, screenshots:
 
 - [`ccscope/`](ccscope/) — [README](ccscope/README.md) · [changelog](ccscope/CHANGELOG.md)
+- [`polytrills/`](polytrills/) — [README](polytrills/README.md) · [changelog](polytrills/CHANGELOG.md) · [gesture corpus](polytrills/corpus/README.md)
 
 Issues and discussions are the roadmap for each package; no separate roadmap file is kept.
 
