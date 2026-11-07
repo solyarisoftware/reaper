@@ -116,7 +116,17 @@ history_verify(history_lines==2 && history_vertical==1);
 slider5=2; history_reset_capture(); draw_cc_data_lines(1);
 history_verify(history_lines==0 && history_dots==2);
 
-// an event outside the window draws nothing
+// the tail survives the window: the last event is older than the window, so the
+// value held since then is drawn across the whole width -- a blank plot after WIN
+// seconds of silence would say the value is gone, and it is not
+slider5=0; clear_history(); store_cc_channel_value(0,0,90); add_event(0.5,0,90);
+history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==0 && history_vertical==0 && history_diagonal==0);
+history_verify(history_horizontal==ceil(1000/(CODA_DASH_ON+CODA_DASH_OFF)));
+history_verify(abs(history_fx1)<0.001);
+history_verify(abs(history_y1-37)<0.001 && abs(history_y2-37)<0.001);
+
+// an event outside the window draws nothing when the tail is off
 slider5=1; clear_history(); add_event(0.5,0,64);
 history_reset_capture(); draw_cc_data_lines(1);
 history_verify(history_dots==0 && history_lines==0);
@@ -173,7 +183,8 @@ def build(source: Path, output: Path) -> None:
     # The renderer lives in the plot panel; the probe extracts it from there so
     # it tests the code that ships, not a copy.
     text = (source / 'ccscope_plot.jsfx-inc').read_text()
-    start = text.index('function draw_cc_data_lines(')
+    # from plot_y: the renderer calls it, and the probe owns no copy of the mapping
+    start = text.index('function plot_y(')
     functions = text[start:]
     functions = functions.replace('gfx_line(', 'history_line(').replace('gfx_circle(', 'history_circle(')
     output.mkdir(parents=True)

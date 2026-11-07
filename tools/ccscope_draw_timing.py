@@ -112,7 +112,8 @@ def build(source: Path, output: Path) -> None:
     # The renderer lives in the plot panel; the probe extracts it from there so it
     # times the code that ships, not a copy.
     text = (source / 'ccscope_plot.jsfx-inc').read_text()
-    start = text.index('function draw_cc_data_lines(')
+    # from plot_y: the renderer calls it, and the probe owns no copy of the mapping
+    start = text.index('function plot_y(')
     functions = text[start:]
     output.mkdir(parents=True)
     shutil.copy2(source / 'ccscope_utils.jsfx-inc', output / 'ccscope_utils.jsfx-inc')

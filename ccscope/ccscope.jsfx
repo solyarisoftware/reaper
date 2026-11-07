@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.15.0
+// @version 0.15.1
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -51,10 +51,7 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   **The trace is a step, not a ramp.** A CC message sets a value and the controller holds it; joining two events with a diagonal drew the values in between, which were never on the wire. The trace now holds the previous value horizontally and jumps vertically, as REAPER's own CC lanes do.
-//   **Every event is a mark.** Marks are no longer thinned: what adapts to a dense stream is the mark itself, a circle while the events are apart and a short tick when they would fuse into a band.
-//   **The held value continues, dashed.** After the last event the value is still held, so three modes replace the old ones: points, points with the step, points with the step and the dashed tail to now.
-//   **A filter now hides what it says.** With a CC or channel filter on, the graph drew events of the pairs it was hiding and stopped short of the newest visible ones: the pair-to-slot map was never initialised, and the drawing loop was bounded by the number of visible events instead of by the window.
+//   **The tail survives the window.** When the last event scrolls out of it the value is still held, so the dashed coda is drawn from the left edge at that value instead of the plot going blank.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -171,7 +168,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.15.0
+version: 0.15.1
 date: 2026-11-07
 
 // Import utility libraries
@@ -234,7 +231,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.15.0";
+CCSCOPE_VERSION = "0.15.1";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair

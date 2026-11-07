@@ -234,6 +234,18 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
   );
 );
 
+/**
+ * y in the plot for a CC value.
+ *
+ * One mapping shared by the trace and by the held coda, so a value drawn from an
+ * event and the same value drawn from the retained store cannot land on two
+ * different rows.
+ */
+function plot_y(value) (
+  g_graph_start_y + g_graph_actual_height
+    - (value - g_y_range_min) / g_y_range_total * g_graph_actual_height;
+);
+
 // Draws the visible pairs from the event ring.
 //
 // What a CC is: piecewise constant. A message sets a value and the controller
@@ -262,7 +274,7 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
 function draw_cc_data_lines(visible_count) local(
   i, pair, slot, state, e, n, idx, packed, t, v, x, y, cc, ch,
   oldest, seen_n, total, stride, cnt, px, py, seen, newest, done,
-  x_right, last_x, last_y, dash_x, dash_end, dashes, k, dist) (
+  x_right, last_x, last_y, dash_x, dash_end, dashes, k, dist, x_left) (
 
   g_marks_drawn = 0;
   g_events_in_window = 0;
@@ -341,8 +353,7 @@ function draw_cc_data_lines(visible_count) local(
       cc = key_to_cc(pair);
       ch = key_to_channel(pair);
       x = g_graph_margin_left + (t - g_time_start) / g_time_window * g_graph_width;
-      y = g_graph_start_y + g_graph_actual_height
-        - (v - g_y_range_min) / g_y_range_total * g_graph_actual_height;
+      y = plot_y(v);
       get_cc_channel_color(cc, ch);
 
       // the trace: the previous value held up to this event, then the change.
@@ -382,17 +393,31 @@ function draw_cc_data_lines(visible_count) local(
   // received events. It ends at g_time_end, which is the real instant or the
   // instant Freeze was engaged: the window already decides that, so this loop
   // never touches the clock.
+  //
+  // It also survives the window. When the last event scrolls out of it the value
+  // is still held -- the bar of that row shows it, `get_cc_channel_value()` keeps
+  // it -- so the whole width is the held value, drawn from the left edge. A blank
+  // plot after WIN seconds of silence would say the opposite of what is true, and
+  // the one moment you look at a scope is when nothing is arriving.
   slider5 == 0 ? (
     x_right = g_graph_margin_left + g_graph_width;
+    x_left = g_graph_margin_left;
     i = 0;
     loop(visible_count,
       pair = get_visible_cc_channel_pair(i);
       pair >= 0 ? (
         state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
-        mem[state] != 0 && mem[state + 3] < x_right ? (
-          get_cc_channel_color(key_to_cc(pair), key_to_channel(pair));
+        cc = key_to_cc(pair);
+        ch = key_to_channel(pair);
+        mem[state] != 0 ? (
           last_x = mem[state + 3];
           last_y = mem[state + 4];
+        ) : (
+          last_x = x_left;
+          last_y = plot_y(get_cc_channel_value(cc, ch));
+        );
+        last_x < x_right ? (
+          get_cc_channel_color(cc, ch);
           dashes = ceil((x_right - last_x) / (CODA_DASH_ON + CODA_DASH_OFF));
           k = 0;
           loop(dashes,

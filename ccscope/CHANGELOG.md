@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.15.1 — 2026-11-07
+
+- **The tail survives the window.** When the last event scrolls out of it the value is still held, so the dashed coda is drawn from the left edge at that value instead of the plot going blank.
+
 ## 0.15.0 — 2026-11-07
 
 - **The trace is a step, not a ramp.** A CC message sets a value and the controller holds it; joining two events with a diagonal drew the values in between, which were never on the wire. The trace now holds the previous value horizontally and jumps vertically, as REAPER's own CC lanes do.
