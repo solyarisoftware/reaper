@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="819532b91da04771db3b2e85be596ba6bc3e7f13">
+<index version="1" name="solyarisoftware reaper" commit="a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -9,7 +9,7 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 Shows what a MIDI controller actually sends: the shape of the movement over time, one fader bar per active CC, and how fast and how regularly each CC transmits, on each MIDI channel separately.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Two display modes: a scrolling time graph with a labelled axis (1-30 s window) and one bar per active CC with its current value. The graph is literal: a mark is a received event, and the line between two events is the value the controller HOLDS, drawn as a step -- never an interpolation through values that were never sent. After the last event the held value continues dashed, because there it is an inference rather than a measurement. The same CC on different channels is a separate row, with the same hue and a different shade, and the CC and channel filters combine. Three numbers per row are measured over exactly the last second: Messages (how often the controller sends, including repeats), Motion (absolute MIDI value travel, in CC units/s) and Jitter (standard deviation of accepted message intervals, in ms). Resting on a visible metric explains its reading and descriptive scale; the row label explains CC/channel/color and the colored bar/value its 0-127 range. Jitter needs at least four intervals after excluding gaps >4x the shortest. Metrics use one second independent of WIN; Freeze keeps the displayed instant.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 The pair list sits below the plot or beside it, for windows that are wide and short. Freeze stops the acquisition while MIDI keeps passing through; Clear wipes history and metrics. Six selectable palettes map each CC number to a stable color slot; channel shades remain. The eight parameters form a control bar instead of REAPER sliders and stay automatable, in presets and under Param.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The pair list sits below the plot or beside it, for windows that are wide and short. Freeze stops the acquisition while MIDI keeps passing through; Clear wipes history and metrics. Colour and name of every CC come from ccscope_cc_table.jsfx-inc -- the file you edit; there is no palette to pick, and the channels of one CC stay four shades of its colour. The parameters form a control bar instead of REAPER sliders and stay automatable, in presets and under Param.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 These describe MIDI output, not physical speed, value resolution or hardware quality. Jitter is not latency or a guaranteed bound; no data is not stability. Written for REAPER 6.37 or newer.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Bugs, defined changes and the roadmap live in the repository's issues and discussions, not in the package.\par}
 }
@@ -937,6 +937,21 @@ Show all channel choices when space permits, with scrolling in shorter windows.]
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/819532b91da04771db3b2e85be596ba6bc3e7f13/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/819532b91da04771db3b2e85be596ba6bc3e7f13/ccscope/ccscope_controlbar.jsfx-inc</source>
         <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/819532b91da04771db3b2e85be596ba6bc3e7f13/ccscope/ccscope_tooltip.jsfx-inc</source>
+      </version>
+      <version name="0.16.0" author="Giorgio Robino" time="2026-11-07T10:11:13Z">
+        <changelog><![CDATA[**Colours and names are yours, in a file you edit.** `ccscope_cc_table.jsfx-inc` lists every CC with a colour and a short name; the six palettes and the COLOR cell are gone, and the parameter that drove them stays declared so existing presets keep their numbering.
+**A shade can no longer disappear.** The channels of one CC are four shades of its colour, drawn by moving luminance instead of multiplying the red, green and blue channels, which used to bury a blue in the background.
+**The status line names the stream** instead of counting it when there is exactly one: `CC11 expr` rather than `1 stream`.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_cc_table.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_cc_table.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_controlbar.jsfx-inc</source>
+        <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_tooltip.jsfx-inc</source>
       </version>
     </reapack>
   </category>
