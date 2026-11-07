@@ -240,16 +240,15 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
       gfx_printf("CC%02d/CH%02d", cc_num, channel + 1);
 
-      // In the column the bar gets a track. Below the plot the bar area is wide
-      // enough that a short bar still reads as "a bar starting here"; in a 90 px
-      // column a value of 5 draws 4 pixels and the row looks like a dot. The
-      // track makes the rows a table. The colour has to be restored after it,
-      // because the fill is drawn in the (CC, channel) colour.
-      g_layout_side ? (
-        gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.15; gfx_a = 1;
-        gfx_rect(g_bar_x, y_pos, g_bar_width, BAR_HEIGHT, 1);
-        get_cc_channel_color(cc_num, channel);
-      );
+      // The bar gets a track in both layouts. In a 90 px column a value of 5
+      // draws 4 pixels and the row looks like a dot, so the track is what makes
+      // the rows a table; below the plot it is not needed to read a bar, but the
+      // two layouts showing the same row differently is a difference a reader has
+      // to explain to themselves every time they switch. The colour has to be
+      // restored after it, because the track is grey, not the (CC, channel) hue.
+      gfx_r = 0.13; gfx_g = 0.13; gfx_b = 0.15; gfx_a = 1;
+      gfx_rect(g_bar_x, y_pos, g_bar_width, BAR_HEIGHT, 1);
+      get_cc_channel_color(cc_num, channel);
 
       fill = (val / 127.0) * g_bar_width;
       fill = max(fill, 2);

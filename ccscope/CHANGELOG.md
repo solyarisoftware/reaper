@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.15.2 — 2026-11-07
+
+- **The bar track is drawn in both layouts.** Below the plot a short bar was a stub on nothing while the same row beside the plot sat on a grey track showing the 0-127 range: the two layouts now show the same row the same way.
+
 ## 0.15.1 — 2026-11-07
 
 - **The tail survives the window.** When the last event scrolls out of it the value is still held, so the dashed coda is drawn from the left edge at that value instead of the plot going blank.
