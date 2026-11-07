@@ -24,7 +24,7 @@ MIDI it can be fed:
 What only a REAPER session can answer — above all whether @block is called at
 all while the transport is stopped — stays in `PolyTrills-test-plan.md` (case 22).
 
-Run: python3 tests/transport_model.py    (stdlib only, no arguments)
+Run: python3 tests/polytrills/transport_model.py    (stdlib only, no arguments)
 """
 
 import random

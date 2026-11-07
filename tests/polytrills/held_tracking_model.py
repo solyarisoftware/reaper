@@ -13,7 +13,7 @@ the invariants the @block depends on:
 Like `timing_model.py`, this is a model of the algorithm, not a JSFX compiler and
 not a test inside REAPER.
 
-Run: python3 tests/held_tracking_model.py    (stdlib only, no arguments)
+Run: python3 tests/polytrills/held_tracking_model.py    (stdlib only, no arguments)
 """
 
 import random

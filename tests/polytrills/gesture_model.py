@@ -27,7 +27,7 @@ What it proves (and what it cannot):
 It cannot prove that the EEL2 compiles, nor that a sampled instrument
 retriggers at that speed. Those need the DAW (see PolyTrills-test-plan.md).
 
-Run: python3 tests/gesture_model.py    (stdlib only, no arguments)
+Run: python3 tests/polytrills/gesture_model.py    (stdlib only, no arguments)
 """
 
 import math

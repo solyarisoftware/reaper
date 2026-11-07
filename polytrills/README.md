@@ -84,9 +84,9 @@ to near-off, and `Ramp Down 0.1` with `Ramp Depth 0` reproduces a plain constant
 
 Written and tested against REAPER 7.85 with a sampled piano (Spitfire Audio Intimate Grand
 Piano). No JSFX compiler exists outside the DAW, so what stands behind the arithmetic is a set of
-offline models in [`tests/`](../tests/) — a Python transcription of the same engine, checking the
+offline models in [`tests/polytrills/`](../tests/polytrills/) — a Python transcription of the same engine, checking the
 event offsets, the articulation, the rate, the jitter, the drift and both ramps, and run by CI on
-every push. The sound is judged by ear; [`tests/polytrills-test-plan.md`](../tests/polytrills-test-plan.md)
+every push. The sound is judged by ear; [`tests/polytrills/test-plan.md`](../tests/polytrills/test-plan.md)
 is the list of cases a DAW session has to answer.
 
 - A sampled instrument may not retrigger as fast as the plugin asks. If a trill smears above a

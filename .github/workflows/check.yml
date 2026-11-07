@@ -28,4 +28,4 @@ jobs:
     - name: Test rendering tools
       run: python3 -m unittest discover -s tests -v
     - name: Check the PolyTrills engine models
-      run: for t in tests/*_model.py; do echo "=== $t"; python3 "$t"; done
+      run: for t in tests/polytrills/*_model.py; do echo "=== $t"; python3 "$t"; done

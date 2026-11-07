@@ -100,10 +100,10 @@ measurement each one comes from, and the corpus and method that produced them ar
 claim, so it needs a measurement or an issue that says why.
 
 An offline model of the engine — a Python transcription of the same schedule, checking offsets,
-gate, rate, jitter, drift and the ramps — lives in [`tests/`](tests/) next to the CCScope tools and
+gate, rate, jitter, drift and the ramps — lives in [`tests/polytrills/`](tests/polytrills/), its own folder and
 runs in CI on every push: a JSFX cannot be compiled outside REAPER, so the model is the closest
 thing to a test suite the engine has. The cases that only a DAW can answer are listed in
-[`tests/polytrills-test-plan.md`](tests/polytrills-test-plan.md).
+[`tests/polytrills/test-plan.md`](tests/polytrills/test-plan.md).
 
 ## Documentation conventions
 
