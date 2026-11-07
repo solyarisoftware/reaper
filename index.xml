@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="7ea1437e71b5facb7ee09b5e25277e4239b27a93">
+<index version="1" name="solyarisoftware reaper" commit="c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -901,6 +901,18 @@ Show all channel choices when space permits, with scrolling in shorter windows.]
         <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7ea1437e71b5facb7ee09b5e25277e4239b27a93/ccscope/ccscope_status.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7ea1437e71b5facb7ee09b5e25277e4239b27a93/ccscope/ccscope_controlbar.jsfx-inc</source>
         <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/7ea1437e71b5facb7ee09b5e25277e4239b27a93/ccscope/ccscope_tooltip.jsfx-inc</source>
+      </version>
+      <version name="0.15.1" author="Giorgio Robino" time="2026-11-07T09:01:50Z">
+        <changelog><![CDATA[**The tail survives the window.** When the last event scrolls out of it the value is still held, so the dashed coda is drawn from the left edge at that value instead of the plot going blank.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope.jsfx</source>
+        <source file="ccscope_utils.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_utils.jsfx-inc</source>
+        <source file="ccscope_metrics.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_metrics.jsfx-inc</source>
+        <source file="ccscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_layout.jsfx-inc</source>
+        <source file="ccscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_plot.jsfx-inc</source>
+        <source file="ccscope_rows.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_rows.jsfx-inc</source>
+        <source file="ccscope_status.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_status.jsfx-inc</source>
+        <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_controlbar.jsfx-inc</source>
+        <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/c5604a89b3934b26c28dfd5a2aacd3bf4b3327a1/ccscope/ccscope_tooltip.jsfx-inc</source>
       </version>
     </reapack>
   </category>
