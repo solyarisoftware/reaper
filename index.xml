@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49">
+<index version="1" name="solyarisoftware reaper" commit="864d7490caa5af89f807f0c5f6d67d1c416159bd">
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
@@ -17,7 +17,7 @@
         <link rel="website" href="https://github.com/solyarisoftware/reaper">GitHub</link>
         <link rel="website" href="https://github.com/solyarisoftware/reaper/issues">Issues</link>
         <link rel="website" href="https://github.com/solyarisoftware/reaper/discussions">Discussions</link>
-        <link rel="screenshot">https://raw.githubusercontent.com/solyarisoftware/reaper/a907dfdf263d6357fa855bcaae1f738a3feb1466/ccscope/ccscope.png</link>
+        <link rel="screenshot">https://raw.githubusercontent.com/solyarisoftware/reaper/bcac9c94e01af41378e1a2d861c9fb301c16b876/ccscope/ccscope_switch.png</link>
       </metadata>
       <version name="0.8.0" author="Giorgio Robino" time="2026-11-04T09:20:49Z">
         <changelog><![CDATA[0.8.0 The package moved from MIDI/ccscope to ccscope, so ReaPack installs it
@@ -952,6 +952,27 @@ Show all channel choices when space permits, with scrolling in shorter windows.]
         <source file="ccscope_cc_table.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_cc_table.jsfx-inc</source>
         <source file="ccscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_controlbar.jsfx-inc</source>
         <source file="ccscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/a366aa1b6db7e1cdf61eaa256137dff4a8e0fd49/ccscope/ccscope_tooltip.jsfx-inc</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="polytrills">
+    <reapack name="polytrills.jsfx" type="effect" desc="PolyTrills - Polyphonic MIDI Trill Generator">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Turns the notes you hold into trills. One key passes through, two alternate, three give a sustained drone plus a trill, four give two parallel trills -- each voice on the MIDI channel it was played on.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Rate is in notes per second and does not follow the tempo: a trill is a gesture, not a metrical value. Humanize makes the alternation breathe, Balance gives one of the two notes a little more time, and Ramp Up / Ramp Down let the trill lean in and die away.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The defaults are not a taste: they come from measuring recorded piano performances -- about 12 notes a second, an alternation that is uneven by roughly 20%, and every note ending slightly {\i before} the next attack instead of on top of it. The corpus, the instrument that measures it, the method and the reference values are published in corpus/.\par}
+}
+]]></description>
+      </metadata>
+      <version name="0.1.0" author="Giorgio Robino" time="2026-11-07T17:26:44Z">
+        <changelog><![CDATA[0.1.0 -- First release. Rate in notes per second, Humanize, Balance, Ramp
+Up / Ramp Down / Ramp Depth, drone and two parallel trills, transport-stop
+flush.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/864d7490caa5af89f807f0c5f6d67d1c416159bd/polytrills/polytrills.jsfx</source>
       </version>
     </reapack>
   </category>
