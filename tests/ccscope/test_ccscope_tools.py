@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = importlib.util.spec_from_file_location('ccscope_memory', ROOT / 'tools/check_ccscope_memory.py')
 MEMORY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MEMORY)

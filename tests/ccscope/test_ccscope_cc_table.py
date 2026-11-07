@@ -14,7 +14,7 @@ hand edit can break silently:
 import re
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parent.parent / 'ccscope'
+SOURCE = Path(__file__).resolve().parent.parent.parent / 'ccscope'
 TABLE = SOURCE / 'ccscope_cc_table.jsfx-inc'
 UTILS = SOURCE / 'ccscope_utils.jsfx-inc'
 MAIN = SOURCE / 'ccscope.jsfx'

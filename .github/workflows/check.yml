@@ -25,7 +25,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y lua5.4
     - name: Check CCScope memory ranges
       run: python3 tools/check_ccscope_memory.py
-    - name: Test rendering tools
-      run: python3 -m unittest discover -s tests -v
+    - name: Test CCScope rendering tools
+      run: python3 -m unittest discover -s tests/ccscope -v
     - name: Check the PolyTrills engine models
       run: for t in tests/polytrills/*_model.py; do echo "=== $t"; python3 "$t"; done

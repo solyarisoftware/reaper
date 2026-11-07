@@ -74,7 +74,7 @@ every slider and owns the `@gfx` pipeline, which calls the panels and overlays i
 | `ccscope_controlbar.jsfx-inc` | the cells, their lists and the pointer |
 | `ccscope_tooltip.jsfx-inc` | reusable wrapping, fitting and opaque tooltip painting; no metric vocabulary |
 
-Two rules keep it that way, and both are checked by `tests/test_ccscope_tools.py`: **a panel
+Two rules keep it that way, and both are checked by `tests/ccscope/test_ccscope_tools.py`: **a panel
 calls no other panel** (the pipeline orders them, so a new panel or a third rows mode touches
 one file), and **the control bar knows no parameter** — it receives values and texts and returns
 a list of changes, so another effect can copy that file and use it with its own vocabulary.
@@ -104,6 +104,12 @@ gate, rate, jitter, drift and the ramps — lives in [`tests/polytrills/`](tests
 runs in CI on every push: a JSFX cannot be compiled outside REAPER, so the model is the closest
 thing to a test suite the engine has. The cases that only a DAW can answer are listed in
 [`tests/polytrills/test-plan.md`](tests/polytrills/test-plan.md).
+
+## Where the tests live
+
+Per package, not per repository: `tests/ccscope/` and `tests/polytrills/`. The index ignores
+`tests/`, and each folder has its own step in the check workflow, so adding a package means adding
+a folder and one line — not editing a discovery that guesses.
 
 ## Documentation conventions
 
