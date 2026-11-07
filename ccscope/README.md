@@ -4,7 +4,7 @@ A JSFX for REAPER 6.37 or newer. It shows what a MIDI controller actually sends:
 the movement over time, one fader bar per active CC, and how fast and how regularly each CC
 transmits — on each MIDI channel separately.
 
-![CCScope in REAPER: two CC streams moving, with live metrics and a hover explanation](ccscope.gif)
+![CCScope tracing four faders and a switch: step traces, dashed holds for the value still held, bars and live metrics](ccscope.gif)
 
 Recorded in REAPER with **CC 1 and CC 11 on channel 1**: one colour per CC, the graph and the
 fader bars updating live, the three metric columns changing with the movement, and the hover
