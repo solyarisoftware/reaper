@@ -27,3 +27,5 @@ jobs:
       run: python3 tools/check_ccscope_memory.py
     - name: Test rendering tools
       run: python3 -m unittest discover -s tests -v
+    - name: Check the PolyTrills engine models
+      run: for t in tests/*_model.py; do echo "=== $t"; python3 "$t"; done
