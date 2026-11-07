@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.15.2
+// @version 0.15.3
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -51,7 +51,7 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   **The bar track is drawn in both layouts.** Below the plot a short bar was a stub on nothing while the same row beside the plot sat on a grey track showing the 0-127 range: the two layouts now show the same row the same way.
+//   **The silence before a burst is kept.** When a CC resumed after a gap, its first new event erased the dashed hold it was interrupting; the trace now starts from the value the event before the window was holding, so the gap stays visible.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -168,7 +168,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.15.2
+version: 0.15.3
 date: 2026-11-07
 
 // Import utility libraries
@@ -231,7 +231,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.15.2";
+CCSCOPE_VERSION = "0.15.3";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair

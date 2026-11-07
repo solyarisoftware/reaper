@@ -246,6 +246,24 @@ function plot_y(value) (
     - (value - g_y_range_min) / g_y_range_total * g_graph_actual_height;
 );
 
+/**
+ * A dashed horizontal: the style of a hold that is not bounded by two events.
+ *
+ * Silence, or the part of the window older than the events it holds. Dashed and
+ * never solid, so it can never be mistaken for a segment between two received
+ * events, which are the only measured ones.
+ */
+function plot_dashed_h(x1, x2, y) local(k, n, dx, de) (
+  n = ceil((x2 - x1) / (CODA_DASH_ON + CODA_DASH_OFF));
+  k = 0;
+  loop(n,
+    dx = x1 + k * (CODA_DASH_ON + CODA_DASH_OFF);
+    de = min(dx + CODA_DASH_ON, x2);
+    dx < x2 ? gfx_line(dx, y, de, y);
+    k += 1;
+  );
+);
+
 // Draws the visible pairs from the event ring.
 //
 // What a CC is: piecewise constant. A message sets a value and the controller
@@ -256,8 +274,10 @@ function plot_y(value) (
 //
 // Three passes. Pass 1 walks the ring backwards from the newest event and counts
 // what the window holds per visible pair, remembering each pair's newest event
-// index so its step is drawn even when the decimation skips it. Pass 2 walks
-// forward and draws steps, marks and the held coda. Pass 3 releases the map.
+// index so its step is drawn even when the decimation skips it; it then keeps
+// walking past the window to find, for each pair, the event that started its
+// silence. Pass 2 walks forward and draws steps, marks and the two dashed holds.
+// Pass 3 releases the map.
 //
 // The marks are never decimated: a mark IS a received event, and a monitor that
 // drops events silently is lying about the stream. What adapts to density is the
@@ -268,13 +288,13 @@ function plot_y(value) (
 // how much and the status line repeats it.
 //
 // slider5 decides what is drawn around the events:
-//   0  points + step + the dashed coda of the value still held (default)
-//   1  points + step, the trace stopping on the last event
+//   0  points + step + the dashed holds where no event bounds them (default)
+//   1  points + step, the trace stopping on the first and the last event in the window
 //   2  points only, no line at all
 function draw_cc_data_lines(visible_count) local(
   i, pair, slot, state, e, n, idx, packed, t, v, x, y, cc, ch,
   oldest, seen_n, total, stride, cnt, px, py, seen, newest, done,
-  x_right, last_x, last_y, dash_x, dash_end, dashes, k, dist, x_left) (
+  x_right, last_x, last_y, dist, x_left, missing, scanned, gap_y) (
 
   g_marks_drawn = 0;
   g_events_in_window = 0;
@@ -286,13 +306,13 @@ function draw_cc_data_lines(visible_count) local(
     pair >= 0 ? (
       state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
       mem[MEM_PLOT_SLOT + pair] = i;
-      mem[MEM_PLOT_COUNT + i] = 0;
       mem[state] = 0;      // seen
       mem[state + 1] = 0;  // events met
       mem[state + 2] = 0;  // previous event x
       mem[state + 3] = 0;  // previous step x
       mem[state + 4] = 0;  // previous step y
       mem[state + 5] = -1; // newest event index
+      mem[state + 6] = -1; // value held by the event before the window
     );
     i += 1;
   );
@@ -303,6 +323,7 @@ function draw_cc_data_lines(visible_count) local(
   oldest = -1;
   seen_n = 0;
   done = 0;
+  missing = 0;   // visible pairs whose silence has no start yet
   while (seen_n < n && done == 0) (
     e = n - 1 - seen_n;
     idx = event_slot(e);
@@ -315,10 +336,11 @@ function draw_cc_data_lines(visible_count) local(
         slot = mem[MEM_PLOT_SLOT + pair];
         slot >= 0 ? (
           // walking backwards, the first event met is the pair's newest
-          mem[MEM_PLOT_COUNT + slot] == 0 ? (
-            mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 5] = e;
+          state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
+          mem[state + 5] < 0 ? (
+            mem[state + 5] = e;
+            missing += 1;
           );
-          mem[MEM_PLOT_COUNT + slot] += 1;
           total += 1;
         );
         oldest = e;
@@ -327,6 +349,30 @@ function draw_cc_data_lines(visible_count) local(
     );
   );
   g_events_in_window = total;
+
+  // ---- pass 1b: one event further back for each pair that has events in the
+  // window. That event is the one that started the silence, so its value is what
+  // the trace was holding: without it a burst erases the silence it interrupted.
+  // The walk is bounded by PREV_SCAN and stops as soon as every pair is answered;
+  // a pair that was quiet for longer than the budget keeps a blank gap.
+  scanned = 0;
+  while (seen_n < n && missing > 0 && scanned < PREV_SCAN) (
+    e = n - 1 - seen_n;
+    idx = event_slot(e);
+    packed = mem[idx + 1];
+    pair = floor(packed / 128);
+    slot = mem[MEM_PLOT_SLOT + pair];
+    slot >= 0 ? (
+      state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
+      // only a pair that DOES have events in the window needs a predecessor
+      mem[state + 5] >= 0 && mem[state + 6] < 0 ? (
+        mem[state + 6] = packed - pair * 128;
+        missing -= 1;
+      );
+    );
+    seen_n += 1;
+    scanned += 1;
+  );
 
   // ---- pass 2: draw. The window is every event from oldest to newest, so the
   // events of filtered-out pairs are walked and skipped here as they are in pass
@@ -366,8 +412,16 @@ function draw_cc_data_lines(visible_count) local(
         mem[state + 3] = x;
         mem[state + 4] = y;
       );
-      // the first event of a pair anchors the coda even when no step is drawn
+      // the first event of a pair in the window also opens the gap that precedes
+      // it: the value held through the silence, dashed from the left edge because
+      // the event that started that hold is older than the window. The change at
+      // this event is solid -- it happened here, at this x.
       seen == 0 ? (
+        slider5 == 0 && mem[state + 6] >= 0 && x > g_graph_margin_left ? (
+          gap_y = plot_y(mem[state + 6]);
+          plot_dashed_h(g_graph_margin_left, x, gap_y);
+          y != gap_y ? gfx_line(x, gap_y, x, y);
+        );
         mem[state + 3] = x;
         mem[state + 4] = y;
       );
@@ -418,14 +472,7 @@ function draw_cc_data_lines(visible_count) local(
         );
         last_x < x_right ? (
           get_cc_channel_color(cc, ch);
-          dashes = ceil((x_right - last_x) / (CODA_DASH_ON + CODA_DASH_OFF));
-          k = 0;
-          loop(dashes,
-            dash_x = last_x + k * (CODA_DASH_ON + CODA_DASH_OFF);
-            dash_end = min(dash_x + CODA_DASH_ON, x_right);
-            dash_x < x_right ? gfx_line(dash_x, last_y, dash_end, last_y);
-            k += 1;
-          );
+          plot_dashed_h(last_x, x_right, last_y);
         );
       );
       i += 1;

@@ -126,6 +126,16 @@ history_verify(history_horizontal==ceil(1000/(CODA_DASH_ON+CODA_DASH_OFF)));
 history_verify(abs(history_fx1)<0.001);
 history_verify(abs(history_y1-37)<0.001 && abs(history_y2-37)<0.001);
 
+// the hold through a silence survives the burst that ends it: the event before
+// the window is the one that started the hold, so its value is what the gap is
+// drawn at, dashed, from the left edge -- and the change at the new event is solid
+slider5=0; clear_history(); add_event(0.4,0,30); add_event(1.6,0,90);
+history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==1 && history_vertical==1 && history_diagonal==0);
+history_verify(history_horizontal==ceil(600/(CODA_DASH_ON+CODA_DASH_OFF))+ceil(400/(CODA_DASH_ON+CODA_DASH_OFF)));
+history_verify(abs(history_fx1)<0.001 && abs(history_fy1-97)<0.001);
+history_verify(abs(history_x2-1000)<0.001 && abs(history_y2-37)<0.001);
+
 // an event outside the window draws nothing when the tail is off
 slider5=1; clear_history(); add_event(0.5,0,64);
 history_reset_capture(); draw_cc_data_lines(1);

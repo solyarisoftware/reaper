@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.15.3 — 2026-11-07
+
+- **The silence before a burst is kept.** When a CC resumed after a gap, its first new event erased the dashed hold it was interrupting; the trace now starts from the value the event before the window was holding, so the gap stays visible.
+
 ## 0.15.2 — 2026-11-07
 
 - **The bar track is drawn in both layouts.** Below the plot a short bar was a stub on nothing while the same row beside the plot sat on a grey track showing the 0-127 range: the two layouts now show the same row the same way.

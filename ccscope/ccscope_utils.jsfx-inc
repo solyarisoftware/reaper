@@ -91,7 +91,7 @@ EVENT_FLOOD_HZ = 1000;        // ...even at this many messages per second
 
 // Per-pair drawing state for one frame, and the pair -> visible-slot map pass 1
 // builds. Sized for every possible pair, so no draw can index a missing slot.
-// Six slots per pair, per frame:
+// Seven slots per pair, per frame:
 //   +0 seen (an event of this pair is in the window)
 //   +1 events met so far this frame (the step decimation counter)
 //   +2 x of the previous EVENT, for the mark spacing: marks are never
@@ -102,12 +102,14 @@ EVENT_FLOOD_HZ = 1000;        // ...even at this many messages per second
 //   +5 index of the pair's NEWEST event in the window, so its step is drawn even
 //      when the decimation skips it: the coda must start from the value that is
 //      actually held, not from the last event that happened to fit
+//   +6 value held by the event just BEFORE the window, -1 unknown: it is what the
+//      trace was holding while the pair was silent, so a burst can start from it
+//      instead of erasing the silence it interrupted
 // They sit in the gap between the small per-key ranges and the metrics block,
-// which starts at 30000: 12741 + 6*2048 + 2048 + 2048 - 1 = 29124 < 30000.
-MEM_PLOT_STATE = 12741;       // 12741..25028 prev event x, prev step x/y, seen, counter, newest
-MEM_PLOT_COUNT = 25029;       // 25029..27076 events in the window, per visible slot
+// which starts at 30000: 12741 + 7*2048 + 2048 - 1 = 29124 < 30000.
+MEM_PLOT_STATE = 12741;       // 12741..27076 prev event x, prev step x/y, seen, counter, newest, held
 MEM_PLOT_SLOT = 27077;        // 27077..29124 pair key -> visible slot, -1 = not visible
-PLOT_STATE_STRIDE = 6;
+PLOT_STATE_STRIDE = 7;
 
 // The renderer's measured budget, not a setting: one mark plus one line measured
 // ~1.4 us, so 4000 of them -- 8000 draw commands -- is about 5.5 ms of a frame
@@ -124,6 +126,12 @@ SEGMENT_BUDGET = 8000;
 // fuse into a band.
 MARK_CIRCLE_MIN = 6;    // px between successive marks of one pair
 MARK_TICK_HALF = 3;     // px above and below the value: the tick is 7 px tall
+
+// How far back the walk may go, past the window, to find the event that started
+// each pair's silence. Bounded on purpose: a pair that has been quiet for hours
+// while others flood must not turn one frame into a scan of the whole ring. Past
+// this many events the gap is simply not drawn.
+PREV_SCAN = 4000;
 
 // The coda is the only inferred drawing: the value still held after the last
 // event. It is dashed so it can never be read as a segment between two received

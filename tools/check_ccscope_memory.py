@@ -50,7 +50,6 @@ def check(root: Path) -> list[str]:
         'metrics_base': 128 * 16 * c['CC_BLOCK_SIZE'],
         'MEM_EVENT_COUNT': 1,
         'MEM_PLOT_STATE': pairs * c['PLOT_STATE_STRIDE'],
-        'MEM_PLOT_COUNT': pairs,
         'MEM_PLOT_SLOT': pairs,
         'MEM_EVENT_RING': c['EVENT_CAPACITY'] * 2,
     }
@@ -69,7 +68,7 @@ def check(root: Path) -> list[str]:
     # past it lands in the next array, and the failure would be a wrong pixel,
     # never an error. Derived from the stride, not from a literal, so growing the
     # per-pair state stays a one-line change in the plugin.
-    if c['MEM_PLOT_COUNT'] - c['MEM_PLOT_STATE'] != c['PLOT_STATE_STRIDE'] * pairs:
+    if c["MEM_PLOT_SLOT"] - c["MEM_PLOT_STATE"] != c["PLOT_STATE_STRIDE"] * pairs:
         errors.append('Per-pair plot state does not fit its declared stride')
     # The module declares its own block end; the host declares how much room it
     # reserved. A block that grew past its reservation would overwrite the list
