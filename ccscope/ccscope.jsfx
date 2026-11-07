@@ -1,15 +1,19 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.14.0
+// @version 0.15.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
 //   transmits, on each MIDI channel separately.
 //
 //   Two display modes: a scrolling time graph with a labelled axis (1-30 s
-//   window) and one bar per active CC with its current value. The same CC on
-//   different channels is a separate row, with the same hue and a different
+//   window) and one bar per active CC with its current value. The graph is
+//   literal: a mark is a received event, and the line between two events is the
+//   value the controller HOLDS, drawn as a step -- never an interpolation through
+//   values that were never sent. After the last event the held value continues
+//   dashed, because there it is an inference rather than a measurement. The same
+//   CC on different channels is a separate row, with the same hue and a different
 //   shade, and the CC and channel filters combine. Three numbers per row are
 //   measured over exactly the last second: Messages (how often the controller
 //   sends, including repeats), Motion (absolute MIDI value travel, in CC units/s)
@@ -47,7 +51,10 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.
+//   **The trace is a step, not a ramp.** A CC message sets a value and the controller holds it; joining two events with a diagonal drew the values in between, which were never on the wire. The trace now holds the previous value horizontally and jumps vertically, as REAPER's own CC lanes do.
+//   **Every event is a mark.** Marks are no longer thinned: what adapts to a dense stream is the mark itself, a circle while the events are apart and a short tick when they would fuse into a band.
+//   **The held value continues, dashed.** After the last event the value is still held, so three modes replace the old ones: points, points with the step, points with the step and the dashed tail to now.
+//   **A filter now hides what it says.** With a CC or channel filter on, the graph drew events of the pairs it was hiding and stopped short of the newest visible ones: the pair-to-slot map was never initialised, and the drawing loop was bounded by the number of visible events instead of by the window.
 
 // ===================================================================
 // CCSCOPE - OSCILLOSCOPE FOR MIDI CONTINUOUS CONTROLLERS
@@ -92,7 +99,8 @@ desc:CCScope
 // - Slider 2: Freeze, stops acquisition (the MIDI keeps flowing through)
 // - Slider 3: Time Window in seconds (1-30; the menu offers 1, 2, 5, 10, 20, 30)
 // - Slider 4: Clear history and metrics (resets itself to 0)
-// - Slider 5: dots on the traces - Auto (one every 12 px), Every event, None
+// - Slider 5: what is drawn around the events - points, points and the step of
+//   the held value, or points, step and the dashed tail of the value still held
 // - Slider 6: Channel to Monitor (0 = All channels, 1-16 = one MIDI channel)
 // - Slider 7: Pair list layout, rows below the plot or a column beside it
 // - Slider 8: Color palette, six choices
@@ -163,8 +171,8 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.14.0
-date: 2026-11-06
+version: 0.15.0
+date: 2026-11-07
 
 // Import utility libraries
 import ccscope_utils.jsfx-inc
@@ -190,7 +198,7 @@ slider1:0<0,127,1>-CC to Monitor (0=All)
 slider2:0<0,1,1>-Freeze (stop acquiring)
 slider3:10<1,30,1>-Time Window (seconds)
 slider4:0<0,1,1>-Clear history and metrics
-slider5:0<0,2,1{Auto (12 px),Every event,None}>-Dots on traces
+slider5:0<0,2,1{Points + step + tail,Points + step,Points only}>-Events and trace
 slider6:0<0,16,1{All,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Channel to Monitor (0=All)
 slider7:0<0,1,1{Rows below,Rows beside}>-Pair list layout
 slider8:0<0,5,1{Default - Daybreak,Default - Twilight,High contrast - Signal,High contrast - Neon,Color-blind aware - Spectrum,Color-blind aware - Muted}>-Color palette
@@ -226,7 +234,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.14.0";
+CCSCOPE_VERSION = "0.15.0";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair
@@ -235,7 +243,6 @@ CCSCOPE_VERSION = "0.14.0";
 STATUS_TEXT_MARGIN = 25;
 BAR_SECTION_TOP_GAP = 24; // band between the plot and the bars: holds the time labels
 TIME_LABEL_OFFSET = 5;   // px between the plot border and the time labels
-DOT_MIN_SPACING = 12;    // px: a dot is drawn only this far from the previous one
 GRID_CACHE_IMAGE = 0;    // GUI-only offscreen image, not a scrolling trace bitmap
 GRID_CACHE_MAX_DIM = 2048; // documented gfx_setimgdim limit; larger canvases draw directly
 g_grid_cache_valid = 0;
@@ -380,7 +387,7 @@ cbm_group_right(2);              // the two buttons hang on the plot's right edg
 cbm_cell(1, 0, 0, 127, 0);      // CC to monitor (0 = all)
 cbm_cell(2, 0, 0, 16, 0);       // channel (0 = all)
 cbm_cell(3, 0, 1, 30, 10);      // time window, seconds
-cbm_cell(4, 1, 0, 2, 0);        // dots on the traces
+cbm_cell(4, 1, 0, 2, 0);        // events and trace: points, step, held tail
 cbm_cell(5, 1, 0, 1, 0);        // where the pair list lives
 cbm_cell(6, 1, 0, 5, 0);        // color palette
 cbm_cell(7, 2, 0, 1, 0);        // Freeze
@@ -472,7 +479,7 @@ function ctl_value_text(i, v) (
   i == 1 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
   i == 2 ? ( v == 0 ? ( #ctl_val = "all"; ) : ( sprintf(#ctl_val, "%d", v); ); ) :
   i == 3 ? ( sprintf(#ctl_val, "%ds", v); ) :
-  i == 4 ? ( v == 0 ? ( #ctl_val = "auto"; ) : v == 1 ? ( #ctl_val = "event"; ) : ( #ctl_val = "none"; ); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_val = "step+tail"; ) : v == 1 ? ( #ctl_val = "step"; ) : ( #ctl_val = "points"; ); ) :
   i == 5 ? ( v == 0 ? ( #ctl_val = "below"; ) : ( #ctl_val = "beside"; ); ) :
   i == 6 ? ( sprintf(#ctl_val, "%d", v + 1); ) :
            ( #ctl_val = ""; );
@@ -484,7 +491,7 @@ function ctl_value_widest(i) (
   i == 1 ? ( #ctl_val_w = "127"; ) :
   i == 2 ? ( #ctl_val_w = "all"; ) :
   i == 3 ? ( #ctl_val_w = "30s"; ) :
-  i == 4 ? ( #ctl_val_w = "event"; ) :
+  i == 4 ? ( #ctl_val_w = "step+tail"; ) :
   i == 5 ? ( #ctl_val_w = "beside"; ) :
   i == 6 ? ( #ctl_val_w = "6"; ) :
            ( #ctl_val_w = ""; );
@@ -494,7 +501,7 @@ function ctl_item_text(i, v) (
   i == 1 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
   i == 2 ? ( v == 0 ? ( #ctl_item = "all"; ) : ( sprintf(#ctl_item, "%d", v); ); ) :
   i == 3 ? ( sprintf(#ctl_item, "%d s", v); ) :
-  i == 4 ? ( v == 0 ? ( #ctl_item = "auto (12 px)"; ) : v == 1 ? ( #ctl_item = "every point"; ) : ( #ctl_item = "none"; ); ) :
+  i == 4 ? ( v == 0 ? ( #ctl_item = "points + step + tail"; ) : v == 1 ? ( #ctl_item = "points + step"; ) : ( #ctl_item = "points only"; ); ) :
   i == 5 ? ( v == 0 ? ( #ctl_item = "rows below"; ) : ( #ctl_item = "rows beside"; ); ) :
   ( v == 0 ? ( #ctl_item = "Default - Daybreak"; ) :
     v == 1 ? ( #ctl_item = "Default - Twilight"; ) :
@@ -705,6 +712,13 @@ cbm_open() == 2 ? ( cbm_menu_fit_rows(17, 0); );
 previous_menu = cbm_open();
 cbm_mouse();
 cbm_open() == 2 ? ( cbm_menu_fit_rows(17, previous_menu != 2); );
+cbm_open() == 4 ? (
+  // The three names are longer than a cell is wide, and a list that clips them
+  // would name the modes in a way nobody can read: measure the widest one.
+  gfx_setfont(1, "Arial", BAR_FONT);
+  gfx_measurestr("Points + step + tail", trace_menu_w, trace_menu_h);
+  cbm_menu_fit(trace_menu_w + 22);
+);
 cbm_open() == 6 ? (
   gfx_setfont(1, "Arial", BAR_FONT);
   gfx_measurestr("Color-blind aware - Spectrum", palette_menu_w, palette_menu_h);

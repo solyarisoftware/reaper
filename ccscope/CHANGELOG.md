@@ -4,6 +4,13 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.15.0 — 2026-11-07
+
+- **The trace is a step, not a ramp.** A CC message sets a value and the controller holds it; joining two events with a diagonal drew the values in between, which were never on the wire. The trace now holds the previous value horizontally and jumps vertically, as REAPER's own CC lanes do.
+- **Every event is a mark.** Marks are no longer thinned: what adapts to a dense stream is the mark itself, a circle while the events are apart and a short tick when they would fuse into a band.
+- **The held value continues, dashed.** After the last event the value is still held, so three modes replace the old ones: points, points with the step, points with the step and the dashed tail to now.
+- **A filter now hides what it says.** With a CC or channel filter on, the graph drew events of the pairs it was hiding and stopped short of the newest visible ones: the pair-to-slot map was never initialised, and the drawing loop was bounded by the number of visible events instead of by the window.
+
 ## 0.14.0 — 2026-11-06
 
 - **Every event, not ten a second.** The trace was drawn from a 10 Hz bucket aggregate, so "every event" could place at most ten markers a second while the controller sent a hundred: the ring now holds every event and a mark is drawn per event, decimated and declared only past the measured drawing budget.

@@ -65,7 +65,11 @@ def check(root: Path) -> list[str]:
         errors.append('Metric block cannot hold its declared events')
     if c['EVENT_CAPACITY'] < c['MIN_EVENT_HISTORY_SECONDS'] * c['EVENT_FLOOD_HZ']:
         errors.append('Event ring cannot retain the full 30-second window at the declared flood rate')
-    if c['PLOT_STATE_STRIDE'] != 5:
+    # The state block must be exactly one stride per pair: a pair that indexes
+    # past it lands in the next array, and the failure would be a wrong pixel,
+    # never an error. Derived from the stride, not from a literal, so growing the
+    # per-pair state stays a one-line change in the plugin.
+    if c['MEM_PLOT_COUNT'] - c['MEM_PLOT_STATE'] != c['PLOT_STATE_STRIDE'] * pairs:
         errors.append('Per-pair plot state does not fit its declared stride')
     # The module declares its own block end; the host declares how much room it
     # reserved. A block that grew past its reservation would overwrite the list

@@ -236,35 +236,51 @@ function draw_cached_graph_background() local(w, h, iw, ih, rebuild, top) (
 
 // Draws the visible pairs from the event ring.
 //
-// Two passes, because the number of marks is a drawing budget and not a
-// property of the data: one filled circle (r=2) plus one line measured ~1.4 us,
-// so 4000 points is about 5.5 ms of a frame and ~24000 is the whole 30 fps
-// budget. Pass 1 counts the events the window holds for each visible pair; pass
-// 2 walks forward and draws every event, or every k-th when the window holds
-// more than MARK_BUDGET, so density degrades before the frame rate does.
+// What a CC is: piecewise constant. A message sets a value and the controller
+// HOLDS it until the next message -- nothing travels in between. The trace is
+// therefore a step, the previous value held horizontally up to the event and then
+// a vertical to the new one, and never a diagonal: a 26-unit jump drawn as a ramp
+// shows 25 values that were never on the wire. REAPER's own CC lanes are steps.
 //
-// The dots follow slider5 as before: every mark, one every DOT_MIN_SPACING px,
-// or none. g_marks_drawn / g_events_drawn let the status line say when the trace
-// is aggregated instead of pretending every event has a mark.
+// Three passes. Pass 1 walks the ring backwards from the newest event and counts
+// what the window holds per visible pair, remembering each pair's newest event
+// index so its step is drawn even when the decimation skips it. Pass 2 walks
+// forward and draws steps, marks and the held coda. Pass 3 releases the map.
+//
+// The marks are never decimated: a mark IS a received event, and a monitor that
+// drops events silently is lying about the stream. What adapts to density is the
+// primitive -- a filled circle (r=2) while successive marks of a pair stay
+// MARK_CIRCLE_MIN px apart, a short vertical tick beyond it, where a row of
+// circles would fuse into a band. The steps ARE decimated, above SEGMENT_BUDGET
+// draw commands, because they are the expensive part; g_segment_stride says by
+// how much and the status line repeats it.
+//
+// slider5 decides what is drawn around the events:
+//   0  points + step + the dashed coda of the value still held (default)
+//   1  points + step, the trace stopping on the last event
+//   2  points only, no line at all
 function draw_cc_data_lines(visible_count) local(
-  i, pair, slot, e, n, idx, packed, t, v, x, y, cc, ch,
-  oldest, seen_n, total, stride, j, cnt, px, py, done) (
+  i, pair, slot, state, e, n, idx, packed, t, v, x, y, cc, ch,
+  oldest, seen_n, total, stride, cnt, px, py, seen, newest, done,
+  x_right, last_x, last_y, dash_x, dash_end, dashes, k, dist) (
 
   g_marks_drawn = 0;
-  g_events_drawn = 0;
+  g_events_in_window = 0;
 
   // pair -> visible slot for this frame only; per-pair state zeroed
   i = 0;
   loop(visible_count,
     pair = get_visible_cc_channel_pair(i);
     pair >= 0 ? (
+      state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
       mem[MEM_PLOT_SLOT + pair] = i;
       mem[MEM_PLOT_COUNT + i] = 0;
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE] = 0;
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 1] = 0;
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 2] = -1000;
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 3] = 0;
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 4] = 0;
+      mem[state] = 0;      // seen
+      mem[state + 1] = 0;  // events met
+      mem[state + 2] = 0;  // previous event x
+      mem[state + 3] = 0;  // previous step x
+      mem[state + 4] = 0;  // previous step y
+      mem[state + 5] = -1; // newest event index
     );
     i += 1;
   );
@@ -286,6 +302,10 @@ function draw_cc_data_lines(visible_count) local(
         pair = floor(mem[idx + 1] / 128);
         slot = mem[MEM_PLOT_SLOT + pair];
         slot >= 0 ? (
+          // walking backwards, the first event met is the pair's newest
+          mem[MEM_PLOT_COUNT + slot] == 0 ? (
+            mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 5] = e;
+          );
           mem[MEM_PLOT_COUNT + slot] += 1;
           total += 1;
         );
@@ -294,50 +314,97 @@ function draw_cc_data_lines(visible_count) local(
       seen_n += 1;
     );
   );
+  g_events_in_window = total;
 
-  // ---- pass 2: draw, decimating uniformly when the window is too dense
-  stride = total <= MARK_BUDGET ? 1 : floor((total + MARK_BUDGET - 1) / MARK_BUDGET);
-  g_mark_stride = stride;
-  j = 0;
-  while (j < total && oldest >= 0) (
-    e = oldest + j;
+  // ---- pass 2: draw. The window is every event from oldest to newest, so the
+  // events of filtered-out pairs are walked and skipped here as they are in pass
+  // 1: bounding the loop by the count of VISIBLE events would stop short of the
+  // newest ones whenever the CC or channel filter hides events in between.
+  stride = total * 2 <= SEGMENT_BUDGET ? 1 : ceil(total * 2 / SEGMENT_BUDGET);
+  g_segment_stride = stride;
+  e = oldest;
+  while (e >= 0 && e < n) (
     idx = event_slot(e);
     packed = mem[idx + 1];
     pair = floor(packed / 128);
-    v = packed - pair * 128;
-    t = mem[idx];
     slot = mem[MEM_PLOT_SLOT + pair];
     slot >= 0 ? (
-      cnt = mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 1];
-      mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 1] = cnt + 1;
-      cnt % stride == 0 ? (
-        cc = key_to_cc(pair);
-        ch = key_to_channel(pair);
-        get_cc_channel_color(cc, ch);
-        x = g_graph_margin_left + (t - g_time_start) / g_time_window * g_graph_width;
-        y = g_graph_start_y + g_graph_actual_height
-          - (v - g_y_range_min) / g_y_range_total * g_graph_actual_height;
-        px = mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 3];
-        py = mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 4];
-        mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE] > 0 ? (
-          x != px || y != py ? gfx_line(px, py, x, y);
-        );
-        slider5 != 2 ? (
-          slider5 == 1 || x - mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 2] >= DOT_MIN_SPACING ? (
-            mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE] == 0 || x != px || y != py ? (
-              gfx_circle(x, y, 2, 1);
-              mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 2] = x;
-              g_marks_drawn += 1;
-            );
+      v = packed - pair * 128;
+      t = mem[idx];
+      state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
+      cnt = mem[state + 1];
+      mem[state + 1] = cnt + 1;
+      seen = mem[state];
+      newest = mem[state + 5];
+      px = mem[state + 3];
+      py = mem[state + 4];
+      cc = key_to_cc(pair);
+      ch = key_to_channel(pair);
+      x = g_graph_margin_left + (t - g_time_start) / g_time_window * g_graph_width;
+      y = g_graph_start_y + g_graph_actual_height
+        - (v - g_y_range_min) / g_y_range_total * g_graph_actual_height;
+      get_cc_channel_color(cc, ch);
+
+      // the trace: the previous value held up to this event, then the change.
+      // The vertex moves only when a step is drawn, so a decimated step starts
+      // where the previous DRAWN one ended and the trace stays unbroken.
+      slider5 != 2 && seen != 0 && (x != px || y != py)
+        && (cnt % stride == 0 || e == newest) ? (
+        gfx_line(px, py, x, py);
+        y != py ? gfx_line(x, py, x, y);
+        mem[state + 3] = x;
+        mem[state + 4] = y;
+      );
+      // the first event of a pair anchors the coda even when no step is drawn
+      seen == 0 ? (
+        mem[state + 3] = x;
+        mem[state + 4] = y;
+      );
+
+      // the mark: one per event, never decimated
+      dist = seen != 0 ? x - mem[state + 2] : MARK_CIRCLE_MIN;
+      dist >= MARK_CIRCLE_MIN ? (
+        gfx_circle(x, y, 2, 1);
+      ) : (
+        gfx_line(x, y - MARK_TICK_HALF, x, y + MARK_TICK_HALF);
+      );
+      g_marks_drawn += 1;
+
+      mem[state] = 1;
+      mem[state + 2] = x;
+    );
+    e += 1;
+  );
+
+  // ---- pass 3: the coda -- the value still held after the last event.
+  // Between two events the trace is a measurement; after the last one it is an
+  // inference, so it is dashed and can never be read as a segment between two
+  // received events. It ends at g_time_end, which is the real instant or the
+  // instant Freeze was engaged: the window already decides that, so this loop
+  // never touches the clock.
+  slider5 == 0 ? (
+    x_right = g_graph_margin_left + g_graph_width;
+    i = 0;
+    loop(visible_count,
+      pair = get_visible_cc_channel_pair(i);
+      pair >= 0 ? (
+        state = MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE;
+        mem[state] != 0 && mem[state + 3] < x_right ? (
+          get_cc_channel_color(key_to_cc(pair), key_to_channel(pair));
+          last_x = mem[state + 3];
+          last_y = mem[state + 4];
+          dashes = ceil((x_right - last_x) / (CODA_DASH_ON + CODA_DASH_OFF));
+          k = 0;
+          loop(dashes,
+            dash_x = last_x + k * (CODA_DASH_ON + CODA_DASH_OFF);
+            dash_end = min(dash_x + CODA_DASH_ON, x_right);
+            dash_x < x_right ? gfx_line(dash_x, last_y, dash_end, last_y);
+            k += 1;
           );
         );
-        mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE] = 1;
-        mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 3] = x;
-        mem[MEM_PLOT_STATE + pair * PLOT_STATE_STRIDE + 4] = y;
-        g_events_drawn += stride;
       );
+      i += 1;
     );
-    j += 1;
   );
 
   // release the map: a pair that leaves the selection must not keep a slot

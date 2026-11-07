@@ -204,32 +204,67 @@ python3 tools/ccscope_history_probe.py --output <new-temporary-effects-dir>
 
 Load `history_checks.jsfx` only in an authorized disposable REAPER project.
 The probe copies current storage code and extracts the actual production renderer,
-intercepting only `gfx_line`/`gfx_circle` to capture its output. It tests a 40,000
-message/s synthetic history across 20 pairs for 32 s, all 2048 dense keys, sparse
-pairs, spike endpoints/ordered extrema, same-tick Clear, duplicate markers,
-partially visible boundary envelopes and expired bucket tags. Geometry regressions
-also require two rising/falling events in one bucket to produce a single diagonal,
-not horizontal/vertical/horizontal steps, in every `DOTS` mode. They check the
-segment endpoints, constant-value segments, retained interior peaks/troughs, and
-both clipped boundaries. These are independent expected-geometry assertions: an
-A/B comparison alone would pass if both versions shared the same rendering bug.
-Results are in `CCScopeHistory5` gmem: `[0]` checks, `[1]` failures, `[2]` completed. A green result
+intercepting only `gfx_line`/`gfx_circle` to capture its output. It asserts the
+drawing the plugin claims to do, not a golden image of what it happens to do:
+
+- a step is a **hold plus a change** -- one horizontal at the previous value, one
+  vertical at the new event -- and a diagonal is never drawn, for any `DOTS` state;
+- the hold runs at the previous value (`history_fx1/fy1/fx2/fy2` capture the first
+  line), and an unchanged value draws the hold with no vertical at all;
+- a mark is a circle while successive marks stay `MARK_CIRCLE_MIN` px apart and a
+  **tick** below that, and the count never drops: at 4001 events in the window the
+  probe expects 4001 marks and `g_segment_stride == 2`;
+- only the steps decimate, and at exactly `SEGMENT_BUDGET` commands nothing is
+  skipped;
+- the coda is dashed, sits at the held value and stops at the right edge; it
+  appears only in the mode that asks for it;
+- a filter that hides a pair does **not** truncate the window and does not draw it:
+  the pair-to-slot map starts at `-1` (shared memory starts zeroed, so a zero
+  would read as slot 0), and the renderer walks every event in the window and
+  skips the invisible ones, instead of walking as many events as it counted as
+  visible.
+
+These are independent expected-geometry assertions: an A/B comparison alone would
+pass if both versions shared the same rendering bug.
+Results are in `CCScopeRing27` gmem: `[0]` checks, `[1]` failures, `[2]` completed. A green result
 requires completed=1 and failures=0; loading an FX alone is not a compile oracle.
 Native loops test deterministic storage logic, not real-time schedulability.
 
-The general acceptance builder seeds positive clock times and populates both raw
-and temporal history when present. `instrument(..., seed_history=False)` is available
+The general acceptance builder seeds positive clock times and populates the raw
+event ring, when present. `instrument(..., seed_history=False)` is available
 for real live-acquisition tests: it must not inject synthetic history into a
 30-second retention measurement. Exact MIDI input/output and audio-block timing
-remain independent checks. `DOTS` refers to retained representatives under temporal
-aggregation; extrema have bucket-level timing rather than original event offsets.
+remain independent checks. `DOTS` is the cell that decides what is drawn around
+the events -- points only, points and the step of the held value, points and the
+step with the dashed tail of the value still held.
+
+## Timing the renderer
+
+```text
+python3 tools/ccscope_draw_timing.py --output <new-temporary-effects-dir>
+```
+
+Load `draw_timing.jsfx` in a disposable project and open its window: the probe
+works in `@gfx`, because what it times is the drawing. It copies the storage code
+and extracts the production renderer, then measures four fixtures -- 4000 and 9600
+events over ten traces and over one -- each set up on one frame and timed over 32
+with `time_precise()`. The best is kept, because a single frame can be disturbed by
+the host. Results are in `CCScopeDrawTiming` gmem, three slots per case: best
+microseconds, mean microseconds, marks drawn. `[12]` counts the cases stored, and
+4 means the run is complete. Marks drawn must equal the fixture size: a probe that
+decimated would be timing a smaller trace than the one it claims.
+
+It measures the time spent inside `@gfx` emitting the commands, not the
+rasterisation REAPER does afterwards. That is the same quantity the plugin's own
+budget is built on, so the two are comparable; it is not the time to pixels.
 
 ## Performance is a separate check
 
-These probes test correctness, not speed. Measure `@gfx` execution duration and
-inter-callback intervals separately with identical inputs/settings. Keep baseline
-and candidate copies isolated; do not infer an FPS multiplier from a traversal
-count reduction. Native probes require REAPER and do not run in the Linux CI job.
+Correctness probes do not measure speed, and the timing probe above does not
+measure correctness: keep the two apart. Measure inter-callback intervals
+separately with identical inputs/settings. Keep baseline and candidate copies
+isolated; do not infer an FPS multiplier from a traversal count reduction. Native
+probes require REAPER and do not run in the Linux CI job.
 
 Measured once, 7.85, 1889x1087 window, WIN 30 s, one CC at 320 events/s from a
 MIDI item, one copy at a time with the other windows closed (`time_precise()`
@@ -245,5 +280,21 @@ and the isolated probe below overstates a mark's cost — it scatters its points
 so each touches new pixels, while a trace repaints near the previous mark.
 That probe reads ~1.4 us a point; on this trace the extra marks cost ~0.2 us
 each. Budget on the probe, not on the trace.
+
+Measured with `tools/ccscope_draw_timing.py` on 0.15.0 (renderer only, 1000x720,
+best of 32 frames, no event dropped):
+
+| fixture | best | mean |
+|---|---:|---:|
+| 4000 events, 10 traces | 1.18 ms | 1.64 ms |
+| 9600 events, 10 traces | 1.82 ms | 2.60 ms |
+| 9600 events, 1 trace | 1.80 ms | 2.43 ms |
+| 4000 events, 1 trace | 1.45 ms | 1.80 ms |
+
+The step trace draws two segments per event instead of one, and it is still not
+the expensive part: at density the mark became a one-line tick instead of a
+five-pixel circle, so what the trace gained in segments it gave back in marks.
+9600 events -- 320 events/s over a 30 s window -- cost about 2 ms of a 33 ms
+frame, and `SEGMENT_BUDGET` is never reached below 4000.
 
 Tracking: https://github.com/solyarisoftware/reaper/issues/23

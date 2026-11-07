@@ -150,11 +150,12 @@ function status_build(count, form) (
     g_st_has_ws = 1;
   );
 
-  // The trace decimates above the measured drawing budget, so the line says it:
-  // a scope that silently drops marks is lying about the stream.
+  // The step decimates above the measured drawing budget -- the marks never do --
+  // so the line says it: a scope that silently drops what it draws is lying
+  // about the stream exactly as a diagonal lies about the values in between.
   g_st_has_agg = 0;
-  g_mark_stride > 1 ? (
-    sprintf(#st_agg, "1 mark per %d events (dense window)", g_mark_stride);
+  g_segment_stride > 1 ? (
+    sprintf(#st_agg, "step every %d events (dense window)", g_segment_stride);
     g_st_has_agg = 1;
   );
 );

@@ -91,21 +91,49 @@ EVENT_FLOOD_HZ = 1000;        // ...even at this many messages per second
 
 // Per-pair drawing state for one frame, and the pair -> visible-slot map pass 1
 // builds. Sized for every possible pair, so no draw can index a missing slot.
-// Five slots per pair: a seen flag, the events met (for the stride), the last
-// dot x, and the previous vertex.
+// Six slots per pair, per frame:
+//   +0 seen (an event of this pair is in the window)
+//   +1 events met so far this frame (the step decimation counter)
+//   +2 x of the previous EVENT, for the mark spacing: marks are never
+//      decimated, so the previous event is the previous mark
+//   +3 +4 x/y of the previous DRAW step, where the next step starts; with the
+//      decimation on, the last drawn vertex is not the last event, and a step
+//      always begins where the previous one ended, so the trace has no gap
+//   +5 index of the pair's NEWEST event in the window, so its step is drawn even
+//      when the decimation skips it: the coda must start from the value that is
+//      actually held, not from the last event that happened to fit
 // They sit in the gap between the small per-key ranges and the metrics block,
-// which starts at 30000: 12741 + 5*2048 + 2048 + 2048 - 1 = 27076 < 30000.
-MEM_PLOT_STATE = 12741;       // 12741..22980 prev x/y, dot x, seen, stride counter
-MEM_PLOT_COUNT = 22981;       // 22981..25028 events in the window, per visible slot
-MEM_PLOT_SLOT = 25029;        // 25029..27076 pair key -> visible slot, -1 = not visible
-PLOT_STATE_STRIDE = 5;
+// which starts at 30000: 12741 + 6*2048 + 2048 + 2048 - 1 = 29124 < 30000.
+MEM_PLOT_STATE = 12741;       // 12741..25028 prev event x, prev step x/y, seen, counter, newest
+MEM_PLOT_COUNT = 25029;       // 25029..27076 events in the window, per visible slot
+MEM_PLOT_SLOT = 27077;        // 27077..29124 pair key -> visible slot, -1 = not visible
+PLOT_STATE_STRIDE = 6;
 
-// The measured drawing budget, not a setting (see ccscope_plot: ~1.4 us a point,
-// so this is about 5.5 ms of a frame and leaves the rest of the UI its time).
-MARK_BUDGET = 4000;
-g_marks_drawn = 0;
-g_events_drawn = 0;
-g_mark_stride = 1;   // marks drawn every this many events; > 1 means decimated
+// The renderer's measured budget, not a setting: one mark plus one line measured
+// ~1.4 us, so 4000 of them -- 8000 draw commands -- is about 5.5 ms of a frame
+// and leaves the rest of the UI its time. It counts DRAW COMMANDS, not events,
+// because that is what costs: an event of the trace is a hold plus a change, a
+// mark is a tick, a circle or nothing at all.
+SEGMENT_BUDGET = 8000;
+
+// Marks are never decimated -- a mark IS a received event, and a monitor that
+// drops events silently is lying about the stream -- so what adapts is the
+// primitive, not the count. Two circles of radius 2 start to touch when their
+// centres are 4 px apart, so MARK_CIRCLE_MIN leaves them air; below it the event
+// is a short vertical tick, which stays readable where a row of circles would
+// fuse into a band.
+MARK_CIRCLE_MIN = 6;    // px between successive marks of one pair
+MARK_TICK_HALF = 3;     // px above and below the value: the tick is 7 px tall
+
+// The coda is the only inferred drawing: the value still held after the last
+// event. It is dashed so it can never be read as a segment between two received
+// events, which are the only solid ones.
+CODA_DASH_ON = 6;       // px drawn
+CODA_DASH_OFF = 5;      // px of air
+
+g_marks_drawn = 0;      // marks drawn this frame: one per event in the window
+g_events_in_window = 0; // events the window holds, decimated or not
+g_segment_stride = 1;   // a step every this many events; > 1 means decimated
 
 /**
  * Appends one CC event to the shared ring. Two slots: the timestamp, and the
@@ -483,6 +511,16 @@ function init_cc_utils() local(i) (
     i += 1;
   );
   
+  // The pair -> visible slot map is read by the renderer before the visible list
+  // has been built: until the first frame every entry has to say "not visible".
+  // Shared memory starts zeroed, so an untouched entry would read as slot 0 and
+  // an event of a filtered-out pair would be drawn as if it were visible.
+  i = 0;
+  loop(MAX_CC_CHANNEL_PAIRS,
+    mem[MEM_PLOT_SLOT + i] = -1;
+    i += 1;
+  );
+
   // Initialize history pointers
   mem[MEM_HISTORY_WRITE] = 0;
   mem[MEM_HISTORY_COUNT] = 0;

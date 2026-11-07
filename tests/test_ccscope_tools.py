@@ -96,16 +96,18 @@ class HistoryProbeTests(unittest.TestCase):
             text = (output / 'history_checks.jsfx').read_text()
             self.assertIn(module.CASES, text)
             self.assertIn('history_x1=x1; history_y1=y1;', text)
-            # every event is a vertex: four events, three segments
-            self.assertIn('history_verify(history_dots==4 && history_lines==3)', text)
+            # every event is a vertex, and a step is a hold plus a change
+            self.assertIn('history_verify(history_dots==4);', text)
+            self.assertIn('history_verify(history_horizontal==3 && history_vertical==3);', text)
             # the ring wraps in two-slot events
             self.assertIn('history_verify(event_slot(EVENT_CAPACITY)==MEM_EVENT_RING)', text)
-            # above the budget the trace decimates and publishes the stride
-            self.assertIn('history_verify(g_mark_stride==2)', text)
-            self.assertIn('history_verify(history_dots==2001)', text)
-            # Auto spacing and None still behave
+            # above the budget the STEPS decimate and publish the stride; the marks do not
+            self.assertIn('history_verify(g_segment_stride==2);', text)
+            self.assertIn('history_verify(history_dots==1 && history_ticks==4000);', text)
+            # the three modes, and a filter that hides a pair
             self.assertIn('slider5=0;', text)
             self.assertIn('slider5=2;', text)
+            self.assertIn('add_event(1.2,1,30);', text)
 
     def test_old_exact_event_probe_rejects_temporal_renderer(self):
         module = self.load_tool('ccscope_rendering_probe')
@@ -121,6 +123,56 @@ class HistoryProbeTests(unittest.TestCase):
         unseeded = module.instrument(source, 'candidate', seed_history=False)
         self.assertNotIn('add_temporal_history(accept_t,', unseeded)
         self.assertNotIn('g_clock_sec = 200;', unseeded)
+
+
+class DrawTimingProbeTests(unittest.TestCase):
+    def load_tool(self, name):
+        spec = importlib.util.spec_from_file_location(name, ROOT / 'tools' / (name + '.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_probe_times_the_actual_renderer(self):
+        module = self.load_tool('ccscope_draw_timing')
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'new'
+            module.build(ROOT / 'ccscope', output)
+            text = (output / 'draw_timing.jsfx').read_text()
+            # the code that ships, not a copy of it
+            self.assertIn('function draw_cc_data_lines(', text)
+            self.assertIn('time_precise()', text)
+            self.assertIn('options:gmem=CCScopeDrawTiming', text)
+            self.assertEqual((output / 'ccscope_utils.jsfx-inc').read_bytes(),
+                             (ROOT / 'ccscope/ccscope_utils.jsfx-inc').read_bytes())
+            with self.assertRaises(ValueError):
+                module.build(ROOT / 'ccscope', output)
+
+    def test_case_table_and_result_layout_agree_with_the_documented_contract(self):
+        module = self.load_tool('ccscope_draw_timing')
+        cases = module.CASES
+        # four fixtures, declared as data, applied to setup and to reporting alike
+        for expected in ('function timing_events(c)', 'function timing_pairs(c)',
+                         'case < 4 ?', 'frames_per_case = 34;'):
+            self.assertIn(expected, cases)
+        # three result slots per case, and the completion counter the docstring names
+        self.assertIn('gmem[case * 3] = best;', cases)
+        self.assertIn('gmem[case * 3 + 1] = count > 0 ? sum / count : 0;', cases)
+        self.assertIn('gmem[case * 3 + 2] = g_marks_drawn;', cases)
+        self.assertIn('gmem[12] = case;', cases)
+        # the worst case is the default mode: marks, steps and the coda
+        self.assertIn('slider5 = 0;', cases)
+
+    def test_every_fixture_fits_the_ring_and_the_window(self):
+        # The largest fixture must be retained: a probe that measured a truncated
+        # ring would time a smaller trace than it claims.
+        import re
+        module = self.load_tool('ccscope_draw_timing')
+        utils = (ROOT / 'ccscope/ccscope_utils.jsfx-inc').read_text()
+        capacity = int(re.search(r'^EVENT_CAPACITY\s*=\s*(\d+);', utils, re.M).group(1))
+        self.assertIn('(c == 1 || c == 2) ? 9600 : 4000', module.CASES)
+        self.assertLess(9600, capacity)
+        # 0.1 + 28.0 s of events inside a 30 s window
+        self.assertIn('add_event(0.1 + i * (28.0 / n)', module.CASES)
 
 
 class StatusProbeTests(unittest.TestCase):
