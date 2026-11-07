@@ -43,7 +43,7 @@ class MetricAlgorithmRegressionTests(unittest.TestCase):
         main = (SOURCE / 'ccscope.jsfx').read_text()
         midi = main[main.index('function process_midi_messages('):main.index('\n@block')]
         self.assertEqual(digest(midi),
-                         '1d6b0f850d38a6c9741b7d4886ce6367cc249f6685d46fd1d75675d7d676052c')
+                         '5f733d8451f306214a73e8dfec21213a1813d65debeac828fbb7ac8ced24b3f4')
         self.assertIn('g_metrics_now = g_time_end;', main)
         self.assertIn('slider2 ? g_freeze_time = g_clock_sec;', main)
 

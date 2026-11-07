@@ -35,20 +35,41 @@ panels explaining a reading. The static screenshot used by ReaPack is
   current selection, and the warnings when rows or the beside layout do not fit. The state word
   brightens while messages are arriving and dims when nothing has ever come. The package version
   sits at the right edge.
-- **A control bar instead of REAPER's sliders** — `CC`, `CH`, `WIN`, `DOTS`, `ROWS`, `COLOR`, `FREEZE`,
+- **A control bar instead of REAPER's sliders** — `CC`, `CH`, `WIN`, `DOTS`, `ROWS`, `FREEZE`,
   `CLEAR` at the top of the canvas. Click a cell to open its list, the wheel steps the value, a
   right click restores the default. The parameters stay automatable, saved in presets and listed
   under **Param**.
 
-### Color palette
+### Colours and names: the CC table
 
-**COLOR** selects one of six palettes: Default - Daybreak (the default), Default - Twilight,
-High contrast - Signal, High contrast - Neon, Color-blind aware - Spectrum, and
-Color-blind aware - Muted. The compact cell shows their numbers 1–6 in that order; the list
-marks the active choice. The setting is a parameter, saved with presets and available to
-automation. The same CC always uses the same slot regardless of arrival order: CC 1 uses slot
-0, CC 17 uses slot 0, and CC 0 uses slot 15. Colors repeat every 16 CCs; channel shading
-remains in use. The color-blind-aware palettes are not a guarantee of accessibility.
+There is no palette to choose. `ccscope_cc_table.jsfx-inc` — installed next to this
+file — is the table, and it is meant to be edited: one line per CC, a colour and a
+short name.
+
+```
+cc_fallback( 0, 0xff4d4d);          // one slot of the ladder, slot 0..15
+cc_entry(  1, 0xff4d4d, "mod");     // CC 1, every channel, called "mod"
+cc_entry_ch(11, 4, 0xff0000);      // CC 11, channel 4 only, exactly that red
+```
+
+Every CC from 0 to 127 is listed, so you can find the line instead of remembering
+the number. `-1` leaves a CC on the ladder, the sixteen colours in the first block,
+by `(cc - 1) mod 16`: the ladder is the same set the table assigns from, so an
+unlisted CC cannot end up looking like a listed one. The sixteen were measured to be
+far apart on a black background and bright enough to read as a line one pixel wide.
+
+The channels of one CC are four shades of its colour — base, darker, lighter and
+muted. A shade moves luminance in linear light and never below a floor, because
+multiplying the red, green and blue channels directly buries a blue in the
+background. A channel named with `cc_entry_ch()` is drawn exactly as written, with no
+shade.
+
+Editing the file does nothing until the effect is reloaded (bypass and unbypass it):
+the table is read once, at start-up, and reloading restarts the event ring, so the
+last seconds of history are lost with it.
+
+The name is what the status line calls the stream when there is exactly one, and what
+the rows would call it; an empty name reads as `CCnn`.
 
 ### The status line
 

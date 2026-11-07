@@ -120,7 +120,14 @@ function status_build(count, form) (
 
     form >= 2 ? (
       g_sel_streams == 1 ? (
-        sprintf(#st_streams, "1 stream");
+        // One stream: name it instead of counting it. The name comes from
+        // ccscope_cc_table.jsfx-inc and falls back to "CCnn", so this line never
+        // says less than "1 stream" did.
+        g_sel_one_key >= 0 ? (
+          sprintf(#st_streams, "%s", cc_name_text(key_to_cc(g_sel_one_key)));
+        ) : (
+          #st_streams = "1 stream";
+        );
       ) : (
         sprintf(#st_streams, "%d streams", g_sel_streams);
       );

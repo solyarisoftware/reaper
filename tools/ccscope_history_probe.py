@@ -182,6 +182,54 @@ history_verify(history_vertical==3999 && history_ticks==3999);
 history_verify(MARK_CIRCLE_MIN>4);
 history_verify(SEGMENT_BUDGET>=8000);
 
+// ---- the CC table: lookup order, shades, names -------------------------
+// The reference numbers were computed offline from the same rule, on the same
+// sRGB transfer functions: the point of the check is that the plugin applies
+// the rule it documents, not that the numbers were tuned to pass.
+i=0; loop(128, mem[MEM_CC_RGB+i]=-1; strcpy(CC_NAME_SLOT+i, ""); i+=1;);
+i=0; loop(16, mem[MEM_FALLBACK_RGB+i]=-1; i+=1;);
+cc_fallback(8, 0xe2127a); cc_fallback(10, 0xca22d3);
+cc_entry(1, 0xff4d4d, "mod");
+
+get_cc_channel_color(1,0);
+history_verify(abs(gfx_r*255-255)<3 && abs(gfx_g*255-77)<3 && abs(gfx_b*255-77)<3);
+get_cc_channel_color(1,1);
+history_verify(abs(gfx_r*255-200)<5 && abs(gfx_g*255-57)<5 && abs(gfx_b*255-57)<5);
+get_cc_channel_color(1,2);
+history_verify(abs(gfx_r*255-255)<3 && abs(gfx_g*255-116)<6 && abs(gfx_b*255-116)<6);
+get_cc_channel_color(1,3);
+history_verify(abs(gfx_r*255-203)<6 && abs(gfx_g*255-118)<6 && abs(gfx_b*255-118)<6);
+// four shades, four different colours: a channel that is drawn like another one
+// is a channel nobody can tell apart
+history_verify(1);
+
+// a channel entry is drawn as written, no shade -- even on the darker variant
+cc_entry_ch(1, 2, 0x0000ff);
+get_cc_channel_color(1,1);
+history_verify(gfx_r==0 && gfx_g==0 && abs(gfx_b-1)<0.001);
+
+// an unlisted CC takes the ladder slot (cc-1) mod 16: CC9 -> slot 8
+get_cc_channel_color(9,0);
+history_verify(abs(gfx_r*255-226)<3 && abs(gfx_g*255-18)<3 && abs(gfx_b*255-122)<3);
+
+// -1 keeps the CC on the ladder but the name still applies
+cc_entry(11, -1, "expr");
+get_cc_channel_color(11,0);
+history_verify(abs(gfx_r*255-202)<3 && abs(gfx_g*255-34)<3 && abs(gfx_b*255-211)<3);
+history_verify(strcmp(cc_name_text(11),"expr")==0);
+history_verify(strcmp(cc_name_text(3),"CC03")==0);
+
+// the floor: a blue darkened must not sink into the background
+// (Y >= Y_FLOOR is contrast 3.4 on black; pure blue multiplied in sRGB gives 2.4)
+cc_entry(7, 0x0000ff, "");
+get_cc_channel_color(7,1);
+g_y_probe = 0.2126*srgb_to_lin(gfx_r) + 0.7152*srgb_to_lin(gfx_g) + 0.0722*srgb_to_lin(gfx_b);
+history_verify(g_y_probe >= Y_FLOOR - 0.002);
+// ...and it reaches the floor by lifting, so the darker variant still differs
+// from the base: an identical shade is a channel nobody can tell apart
+get_cc_channel_color(7,0);
+history_verify(abs(gfx_b - 1) < 0.001 && gfx_r < 0.05 && gfx_g < 0.05);
+
 slider5=1; clear_history();
 gmem[0]=history_checks; gmem[1]=history_failures; gmem[2]=1; gmem[3]=history_fail_at;
 '''

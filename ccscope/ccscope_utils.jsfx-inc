@@ -5,7 +5,7 @@
 // This is a library file (.jsfx-inc) to be imported by JSFX plugins
 //
 // PROVIDES:
-// - Color palette management (six 16-color palettes)
+// - The CC table: a colour and a short name per CC, owned by
 // - Color assignment and retrieval for CC numbers (channel-independent)
 // - History buffer management (circular buffer with channel support)
 // - (CC#, Channel) pair data management
@@ -20,7 +20,7 @@
 // CHANGELOG (v0.5.2):
 // - Fixed: the (CC, channel) key is now dense, (cc << 4) | channel, so the
 //   2048-slot value range is really enough (before, keys up to 32527 wrote
-//   into the active-flag, colour, palette, history and metrics ranges)
+//   into the active-flag, colour, table and metrics ranges)
 // - Fixed: get_active_cc_channel_pair_by_cc() returned -1 unconditionally
 //   (no early return in EEL2)
 // - Fixed: is_cc_channel_active() could never return false
@@ -52,11 +52,14 @@ MEM_CC_VALUES = 0;            // 0..2047    CC value per (CC#, channel), key = (
 MEM_CC_ACTIVE = 2048;         // 2048..2175 active flag per CC# (any channel)
 MEM_CC_CHANNEL_ACTIVE = 2176; // 2176..2303 bitmask of active channels per CC#
 MEM_CC_SORTED = 2304;         // 2304..4351 sorted (CC#, channel) pair list, one slot per pair
-MEM_COLOR_PALETTE = 4480;     // 4480..4527 RGB triplets, COLOR_PALETTE_SIZE * 3
-MEM_HISTORY_BASE = 4608;      // 4608..12607 history buffer, 4 slots per entry
-MEM_HISTORY_WRITE = 12608;    // write position pointer
-MEM_HISTORY_COUNT = 12609;    // item count
+MEM_FALLBACK_RGB = 4480;      // 4480..4495 fallback ladder, one rgb per slot
+MEM_CC_RGB = 4608;            // 4608..4735 rgb per CC, -1 = the table does not list it
+MEM_PAIR_RGB = 4736;          // 4736..6783 rgb per (CC, channel), -1 = no override
 MEM_PAIR_LIST_COUNT = 12611;  // count of active (CC#, channel) pairs
+
+// The 4608..12607 range was a 2000-entry history buffer, written on every event
+// and read by nobody since the event ring replaced it. The CC table lives there
+// now; the rest is free for the next range that needs it.
 
 // The control-bar module owns a block of its own: geometry, values and pointer
 // state of the cells and of the open list. Its internal layout is declared in
@@ -166,156 +169,9 @@ function event_slot(e) (
 );
 
 // ========== CONFIGURATION ==========
-MAX_HISTORY_ITEMS = 2000;    // Maximum history buffer size
-COLOR_PALETTE_SIZE = 16;     // Number of colors in palette
+CC_TABLE_COLORS = 16;        // slots in the fallback ladder
+CC_NAME_SLOT = 256;          // string slots 256..383 hold the CC names
 MAX_CC_CHANNEL_PAIRS = 2048; // Max (CC#, Channel) pairs (128 CCs × 16 channels = 2048)
-
-// ========== COLOR PALETTE INITIALIZATION ==========
-function set_palette_color(idx, rgb) local(base) (
-  base = MEM_COLOR_PALETTE + idx * 3;
-  mem[base] = floor(rgb / 65536) / 255;
-  mem[base + 1] = (floor(rgb / 256) % 256) / 255;
-  mem[base + 2] = (rgb % 256) / 255;
-);
-
-function init_color_palette(palette) (
-  palette == 0 ? (
-    set_palette_color(0, 0xff4545);
-    set_palette_color(1, 0xf159e7);
-    set_palette_color(2, 0x399dff);
-    set_palette_color(3, 0x5592ff);
-    set_palette_color(4, 0xffffff);
-    set_palette_color(5, 0x27dfe8);
-    set_palette_color(6, 0x35e65b);
-    set_palette_color(7, 0xff9636);
-    set_palette_color(8, 0xa6ed3b);
-    set_palette_color(9, 0xbb79ff);
-    set_palette_color(10, 0xffe23b);
-    set_palette_color(11, 0xff80b3);
-    set_palette_color(12, 0x39d6a0);
-    set_palette_color(13, 0xff7661);
-    set_palette_color(14, 0xd1ab47);
-    set_palette_color(15, 0xbed2eb);
-  ) :
-  palette == 1 ? (
-    set_palette_color(0, 0xe77878);
-    set_palette_color(1, 0xc88bc2);
-    set_palette_color(2, 0x83bce5);
-    set_palette_color(3, 0x83a8e6);
-    set_palette_color(4, 0xdedede);
-    set_palette_color(5, 0x72c5c9);
-    set_palette_color(6, 0x78c88b);
-    set_palette_color(7, 0xdfa171);
-    set_palette_color(8, 0xb4cb80);
-    set_palette_color(9, 0xae94d6);
-    set_palette_color(10, 0xdfc970);
-    set_palette_color(11, 0xdc9fba);
-    set_palette_color(12, 0x83c5ac);
-    set_palette_color(13, 0xd49788);
-    set_palette_color(14, 0xcbb088);
-    set_palette_color(15, 0xadbacb);
-  ) :
-  palette == 2 ? (
-    set_palette_color(0, 0xff5555);
-    set_palette_color(1, 0x55e67a);
-    set_palette_color(2, 0x638aff);
-    set_palette_color(3, 0xffe45c);
-    set_palette_color(4, 0x43e5ef);
-    set_palette_color(5, 0xf276ed);
-    set_palette_color(6, 0xff9b38);
-    set_palette_color(7, 0xa7ed42);
-    set_palette_color(8, 0xb384ff);
-    set_palette_color(9, 0xff8fb4);
-    set_palette_color(10, 0x46e6a8);
-    set_palette_color(11, 0xff785b);
-    set_palette_color(12, 0x75bbff);
-    set_palette_color(13, 0xd6b53f);
-    set_palette_color(14, 0x59c8c2);
-    set_palette_color(15, 0xe2a0ff);
-  ) :
-  palette == 3 ? (
-    set_palette_color(0, 0xff648a);
-    set_palette_color(1, 0x64ff9c);
-    set_palette_color(2, 0x7895ff);
-    set_palette_color(3, 0xf9ef66);
-    set_palette_color(4, 0x64e8ff);
-    set_palette_color(5, 0xfb79ff);
-    set_palette_color(6, 0xffac65);
-    set_palette_color(7, 0xc1fa72);
-    set_palette_color(8, 0xc699ff);
-    set_palette_color(9, 0xff9acc);
-    set_palette_color(10, 0x65f2c6);
-    set_palette_color(11, 0xff8580);
-    set_palette_color(12, 0x91c5ff);
-    set_palette_color(13, 0xf2cb68);
-    set_palette_color(14, 0x76ded8);
-    set_palette_color(15, 0xdfadff);
-  ) :
-  palette == 4 ? (
-    set_palette_color(0, 0xe69f00);
-    set_palette_color(1, 0x56b4e9);
-    set_palette_color(2, 0x009e73);
-    set_palette_color(3, 0xf0e442);
-    set_palette_color(4, 0x0072b2);
-    set_palette_color(5, 0xd55e00);
-    set_palette_color(6, 0xcc79a7);
-    set_palette_color(7, 0xb9b9b9);
-    set_palette_color(8, 0xffbd55);
-    set_palette_color(9, 0x8bd3ff);
-    set_palette_color(10, 0x5ac6a3);
-    set_palette_color(11, 0xfff18a);
-    set_palette_color(12, 0x6ea4d1);
-    set_palette_color(13, 0xf58f66);
-    set_palette_color(14, 0xe7a6cf);
-    set_palette_color(15, 0xdddddd);
-  ) :
-  (
-    set_palette_color(0, 0xd6a85b);
-    set_palette_color(1, 0x80b9d4);
-    set_palette_color(2, 0x75b69d);
-    set_palette_color(3, 0xd6cc84);
-    set_palette_color(4, 0x7f9fc1);
-    set_palette_color(5, 0xce8f72);
-    set_palette_color(6, 0xbe94ac);
-    set_palette_color(7, 0xa5aaa9);
-    set_palette_color(8, 0xe6c18b);
-    set_palette_color(9, 0xacd0e1);
-    set_palette_color(10, 0xa0d2bd);
-    set_palette_color(11, 0xe7dfac);
-    set_palette_color(12, 0xa9bdd1);
-    set_palette_color(13, 0xdfb19a);
-    set_palette_color(14, 0xd8b9c9);
-    set_palette_color(15, 0xc6ccca);
-  );
-);
-
-// Sets gfx color for a (CC#, Channel) pair. The hue belongs to the CC number
-// and the channel only changes the shade, so two channels of the same CC are
-// one colour family, not two unrelated colours:
-//   channel 0/4/8/12  base
-//   channel 1/5/9/13  darker
-//   channel 2/6/10/14 lighter (towards white)
-//   channel 3/7/11/15 muted  (towards grey)
-function get_cc_channel_color(cc_num, channel) local(idx, base, v, r, g, b) (
-  // Add 15 before modulo so CC 0 maps to slot 15 even in EEL2.
-  idx = (cc_num + 15) % COLOR_PALETTE_SIZE;
-
-  base = MEM_COLOR_PALETTE + (idx * 3);
-  r = mem[base];
-  g = mem[base + 1];
-  b = mem[base + 2];
-
-  v = channel % 4;
-  v == 1 ? (
-    r *= 0.55; g *= 0.55; b *= 0.55;
-  ) : v == 2 ? (
-    r = r * 0.45 + 0.55; g = g * 0.45 + 0.55; b = b * 0.45 + 0.55;
-  ) : v == 3 ? (
-    r = r * 0.60 + 0.28; g = g * 0.60 + 0.28; b = b * 0.60 + 0.28;
-  );
-
-  gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1;
-);
 
 // Clears the stored value of every (CC#, channel) pair, keeping the pairs
 // themselves: the bars stay where they are and drop to zero.
@@ -360,6 +216,126 @@ function key_to_cc(key) (
  */
 function key_to_channel(key) (
   key & 0x0F
+);
+
+// ========== THE CC TABLE: A COLOUR AND A NAME PER CC ==========
+// The values live in ccscope_cc_table.jsfx-inc -- the user's file. This is only
+// the storage and the lookup; the table owns nothing but its lines.
+//
+// There is no palette to choose from any more. A CC carries its own colour, and
+// a CC the table does not list falls back to the ladder by (cc - 1) mod 16, so
+// an unconfigured machine is still readable. The ladder is the SAME set the
+// table assigns from on purpose: two independent sets is exactly how a listed CC
+// and an unlisted one end up indistinguishable.
+
+// One slot of the ladder.
+function cc_fallback(slot, rgb) (
+  slot >= 0 && slot < CC_TABLE_COLORS ? mem[MEM_FALLBACK_RGB + slot] = rgb;
+);
+
+/**
+ * One line of the table: the colour of every channel of a CC, and its name.
+ *
+ * rgb = 0xRRGGBB, or -1 to leave the CC on the fallback ladder. The name is
+ * copied into the fixed string slot CC_NAME_SLOT + cc, because EEL2 has no
+ * arrays of strings -- the slots 0..1023 are the array. An empty name reads back
+ * as "CCnn", so a table that lists colours only still works.
+ *
+ * @param cc   CC number, 0..127
+ * @param rgb  0xRRGGBB, or -1
+ * @param name short name for the CC
+ */
+function cc_entry(cc, rgb, name) (
+  cc >= 0 && cc < 128 ? (
+    mem[MEM_CC_RGB + cc] = rgb;
+    strcpy(CC_NAME_SLOT + cc, name);
+  );
+);
+
+/**
+ * One channel only, and only that channel: ch is 1..16, the way the rows show
+ * it. It wins over the CC entry, and it is drawn as given -- no shade -- because
+ * the user asked for that exact colour on that exact channel.
+ */
+function cc_entry_ch(cc, ch, rgb) (
+  cc >= 0 && cc < 128 && ch >= 1 && ch <= 16 ? (
+    mem[MEM_PAIR_RGB + make_cc_channel_key(cc, ch - 1)] = rgb;
+  );
+);
+
+// sRGB transfer function and its inverse. A shade that has to stay visible on a
+// black background moves LUMINANCE, and luminance lives in linear light: this is
+// the only pair of functions that knows it.
+function srgb_to_lin(c) (
+  c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+);
+function lin_to_srgb(c) (
+  c = max(0, min(1, c));
+  c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055;
+);
+
+/**
+ * Sets gfx color for a (CC#, Channel) pair.
+ *
+ * Lookup: the channel entry if the table has one, else the CC entry, else the
+ * fallback ladder. The colour belongs to the CC; the channel only moves the
+ * SHADE, so the channels of one CC stay one family:
+ *   channel % 4 == 0  base          1  darker
+ *               2  lighter         3  muted
+ *
+ * The shade scales relative luminance Y in linear light, with a floor at
+ * Y_FLOOR: multiplying in sRGB -- what this did before -- buries a blue in the
+ * background, because pure blue carries 0.07 of white's luminance.
+ */
+Y_FLOOR = 0.12;    // contrast 3.4 on black: a trace never goes below this
+function get_cc_channel_color(cc_num, channel) local(rgb, r, g, b, y, v, t) (
+  rgb = mem[MEM_PAIR_RGB + make_cc_channel_key(cc_num, channel)];
+  rgb < 0 ? (
+    rgb = mem[MEM_CC_RGB + cc_num];
+    rgb < 0 ? (
+      rgb = mem[MEM_FALLBACK_RGB + (cc_num + CC_TABLE_COLORS - 1) % CC_TABLE_COLORS];
+    );
+    r = srgb_to_lin(((rgb >> 16) & 255) / 255);
+    g = srgb_to_lin(((rgb >> 8) & 255) / 255);
+    b = srgb_to_lin((rgb & 255) / 255);
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    v = channel % 4;
+    v == 1 ? (
+      t = max(Y_FLOOR, y * 0.55) / max(y, 0.000001);
+      // Scaling luminance keeps the hue exactly, but a colour carrying less light
+      // than the floor cannot be lifted by scaling: pure blue stops at Y=0.072
+      // because B is already full, and the "darker" variant would come out
+      // identical to the base. The floor wins over the direction -- lift toward
+      // white instead, which is the only move that can reach it.
+      t * max(r, max(g, b)) > 1 ? (
+        t = (Y_FLOOR - y) / max(1 - y, 0.000001);   // exact: Y is linear in the channels
+        r = r + (1 - r) * t; g = g + (1 - g) * t; b = b + (1 - b) * t;
+      ) : (
+        r *= t; g *= t; b *= t;
+      );
+    ) : v == 2 ? (
+      t = (y + (1 - y) * 0.50) / max(y, 0.000001);
+      r *= t; g *= t; b *= t;
+    ) : v == 3 ? (
+      r = r + (y - r) * 0.55; g = g + (y - g) * 0.55; b = b + (y - b) * 0.55;
+    );
+    r = lin_to_srgb(r); g = lin_to_srgb(g); b = lin_to_srgb(b);
+  ) : (
+    r = ((rgb >> 16) & 255) / 255;
+    g = ((rgb >> 8) & 255) / 255;
+    b = (rgb & 255) / 255;
+  );
+  gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1;
+);
+
+/**
+ * The name the table gives a CC, or "CCnn" when it has none.
+ * Strings are passed around as numbers in EEL2, so a slot and a named string are
+ * both valid returns.
+ */
+function cc_name_text(cc_num) local(slot) (
+  slot = CC_NAME_SLOT + cc_num;
+  strlen(slot) > 0 ? slot : sprintf(#cc_name_generic, "CC%02d", cc_num);
 );
 
 /**
@@ -462,44 +438,15 @@ function get_visible_cc_channel_pair(index) local(count) (
  * @param channel MIDI channel (0-15)
  * @param cc_value CC value (0-127)
  */
-function add_to_history_with_channel(timestamp, cc_num, channel, cc_value) local(pos, base) 
-(
-  pos = mem[MEM_HISTORY_WRITE];  // Current write position
-  base = MEM_HISTORY_BASE + (pos * 4);  // 4 items per entry now
-  
-  // Store the quadruplet
-  mem[base] = timestamp;
-  mem[base + 1] = cc_num;
-  mem[base + 2] = channel;
-  mem[base + 3] = cc_value;
-  
-  // Update write position (circular buffer)
-  mem[MEM_HISTORY_WRITE] = (pos + 1) % MAX_HISTORY_ITEMS;
-  
-  // Update count (max at MAX_HISTORY_ITEMS)
-  mem[MEM_HISTORY_COUNT] = min(mem[MEM_HISTORY_COUNT] + 1, MAX_HISTORY_ITEMS);
-);
+// ========== HISTORY ==========
+// One ring, one owner: the event ring (ccscope_plot.jsfx-inc) holds every CC
+// event, and clear_history() empties it. The 2000-entry quadruplet buffer that
+// used to be written here on every event was read by nothing and is gone; its
+// memory now holds the CC table.
 
-
-// ========== HISTORY BUFFER MANAGEMENT (WITH CHANNEL SUPPORT) ==========
-// Circular buffer that stores [timestamp, cc_num, channel, cc_value] quadruplets
-// Automatically overwrites oldest data when full
-
-
-
-// Returns the current number of items in history
-function get_history_count() (
-  mem[MEM_HISTORY_COUNT]
-);
-
-// Clears the history buffer
+/** Empties the ring. O(1): the bytes stay, the count says none are readable. */
 function clear_history() (
-  // Clearing is O(1): the ring keeps its bytes, the count says none of them are
-  // readable, and the next event overwrites the oldest slot. Nothing walks 5.2 M
-  // slots from the GUI thread.
   mem[MEM_EVENT_COUNT] = 0;
-  mem[MEM_HISTORY_WRITE] = 0;
-  mem[MEM_HISTORY_COUNT] = 0;
 );
 
 // ========== INITIALIZATION ==========
@@ -529,13 +476,26 @@ function init_cc_utils() local(i) (
     i += 1;
   );
 
-  // Initialize history pointers
-  mem[MEM_HISTORY_WRITE] = 0;
-  mem[MEM_HISTORY_COUNT] = 0;
   mem[MEM_PAIR_LIST_COUNT] = 0;
-  
-  // Initialize color palette
-  init_color_palette(0);
+
+  // Nothing is in the table until ccscope_cc_table.jsfx-inc says so, and shared
+  // memory starts zeroed -- which would read as black, not as "unset".
+  i = 0;
+  loop(128,
+    mem[MEM_CC_RGB + i] = -1;
+    strcpy(CC_NAME_SLOT + i, "");
+    i += 1;
+  );
+  i = 0;
+  loop(MAX_CC_CHANNEL_PAIRS,
+    mem[MEM_PAIR_RGB + i] = -1;
+    i += 1;
+  );
+  i = 0;
+  loop(CC_TABLE_COLORS,
+    mem[MEM_FALLBACK_RGB + i] = -1;
+    i += 1;
+  );
 );
 
 // ========== AUTO-INITIALIZATION ==========

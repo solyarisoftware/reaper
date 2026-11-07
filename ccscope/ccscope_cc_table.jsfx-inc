@@ -1,0 +1,198 @@
+// ============================================================================
+//  CCScope — the CC table: a colour and a short name, one line per CC
+// ============================================================================
+//
+//  THIS IS THE FILE YOU EDIT. Nothing else in the plugin holds a colour.
+//
+//  Three kinds of line:
+//
+//      cc_fallback(slot, rgb)         one slot of the ladder, slot 0..15
+//      cc_entry(cc, rgb, "name")      one CC: its colour and its name
+//      cc_entry_ch(cc, ch, rgb)       one channel of one CC, ch is 1..16
+//
+//  rgb is 0xRRGGBB. A CC written with rgb = -1 takes the ladder colour of its
+//  slot, (cc - 1) mod 16. The ladder is the first block below: change a colour
+//  there and every CC that does not state its own follows.
+//
+//  The name is what the monitor calls the CC -- the label you read when you no
+//  longer remember what CC74 is. Keep it short; an empty name reads as "CCnn".
+//
+//  Channels. A CC has sixteen of them, and they are drawn as four shades of the
+//  CC's own colour: same hue, different luminance, never dark enough to disappear
+//  against black. When that is not what you want, name one channel with
+//  cc_entry_ch(): its colour is drawn exactly as written, no shade.
+//
+//  Editing this file does nothing until the effect is reloaded (bypass and
+//  unbypass it, or reload the project): the table is read once, at start-up.
+//  Reloading restarts the event ring, so the last seconds of history go with it.
+//
+//  Every CC is listed, 0 to 127, so you can find the line instead of remembering
+//  the number. A line you delete, or leave at -1, keeps working: the CC takes the
+//  ladder colour of its slot and is called "CCnn".
+// ============================================================================
+
+@init
+
+// ---- the ladder ------------------------------------------------------------
+// Sixteen colours that are far apart from each other on a black background and
+// bright enough to read as a line one pixel wide. Measured: no two are closer
+// than dE00 15, which is what separates "two colours" from "two shades".
+cc_fallback( 0, 0xff4d4d);   // red
+cc_fallback( 1, 0xff9f1c);   // orange
+cc_fallback( 2, 0xffe03b);   // yellow
+cc_fallback( 3, 0x4ade80);   // green
+cc_fallback( 4, 0x2dd4bf);   // teal
+cc_fallback( 5, 0x1feef9);   // cyan
+cc_fallback( 6, 0x129ae2);   // blue
+cc_fallback( 7, 0x7760fb);   // violet
+cc_fallback( 8, 0xe2127a);   // crimson
+cc_fallback( 9, 0xb8f91f);   // lime
+cc_fallback(10, 0xca22d3);   // magenta
+cc_fallback(11, 0xfb8e60);   // salmon
+cc_fallback(12, 0x31aec4);   // azure
+cc_fallback(13, 0x31c4ae);   // aqua
+cc_fallback(14, 0xf3bb68);   // sand
+cc_fallback(15, 0xc45d31);   // terracotta
+
+// ---- CC 0..31 — continuous controllers — the ones a knob or a wheel sends
+cc_entry(  0, -1, "bank");
+cc_entry(  1, 0xff4d4d, "mod");
+cc_entry(  2, 0xfb8e60, "breath");
+cc_entry(  3, -1, "");
+cc_entry(  4, 0x31aec4, "foot");
+cc_entry(  5, 0xff6fd8, "porta");
+cc_entry(  6, -1, "data");
+cc_entry(  7, 0xffffff, "volume");
+cc_entry(  8, 0xf3bb68, "balance");
+cc_entry(  9, -1, "");
+cc_entry( 10, 0xca22d3, "pan");
+cc_entry( 11, 0x4ade80, "expr");
+cc_entry( 12, 0xc45d31, "fx1");
+cc_entry( 13, -1, "fx2");
+cc_entry( 14, -1, "");
+cc_entry( 15, -1, "");
+cc_entry( 16, -1, "gp1");
+cc_entry( 17, 0xffe03b, "knob1");
+cc_entry( 18, -1, "gp3");
+cc_entry( 19, -1, "gp4");
+cc_entry( 20, -1, "gp5");
+cc_entry( 21, 0x1feef9, "knob5");
+cc_entry( 22, -1, "gp7");
+cc_entry( 23, -1, "gp8");
+cc_entry( 24, -1, "");
+cc_entry( 25, -1, "");
+cc_entry( 26, -1, "");
+cc_entry( 27, -1, "");
+cc_entry( 28, -1, "");
+cc_entry( 29, -1, "");
+cc_entry( 30, -1, "");
+cc_entry( 31, -1, "");
+
+// ---- CC 32..63 — the LSB half of 0..31; only worth a colour if your device uses it
+cc_entry( 32, -1, "bank lsb");
+cc_entry( 33, -1, "mod lsb");
+cc_entry( 34, -1, "");
+cc_entry( 35, -1, "");
+cc_entry( 36, -1, "");
+cc_entry( 37, -1, "");
+cc_entry( 38, -1, "data lsb");
+cc_entry( 39, -1, "volume lsb");
+cc_entry( 40, -1, "");
+cc_entry( 41, -1, "");
+cc_entry( 42, -1, "pan lsb");
+cc_entry( 43, -1, "expr lsb");
+cc_entry( 44, -1, "");
+cc_entry( 45, -1, "");
+cc_entry( 46, -1, "");
+cc_entry( 47, -1, "");
+cc_entry( 48, -1, "");
+cc_entry( 49, -1, "");
+cc_entry( 50, -1, "");
+cc_entry( 51, -1, "");
+cc_entry( 52, -1, "");
+cc_entry( 53, -1, "");
+cc_entry( 54, -1, "");
+cc_entry( 55, -1, "");
+cc_entry( 56, -1, "");
+cc_entry( 57, -1, "");
+cc_entry( 58, -1, "");
+cc_entry( 59, -1, "");
+cc_entry( 60, -1, "");
+cc_entry( 61, -1, "");
+cc_entry( 62, -1, "");
+cc_entry( 63, -1, "");
+
+// ---- CC 64..95 — switches and sound controllers — sustain, pedals, resonance, cutoff
+cc_entry( 64, 0x31c4ae, "sustain");
+cc_entry( 65, -1, "porta on");
+cc_entry( 66, -1, "sostenuto");
+cc_entry( 67, -1, "soft");
+cc_entry( 68, -1, "legato");
+cc_entry( 69, -1, "hold 2");
+cc_entry( 70, -1, "variation");
+cc_entry( 71, 0x7760fb, "res");
+cc_entry( 72, 0xc48231, "rel");
+cc_entry( 73, 0xb8f91f, "att");
+cc_entry( 74, 0xe2127a, "cutoff");
+cc_entry( 75, -1, "decay");
+cc_entry( 76, -1, "vib rate");
+cc_entry( 77, -1, "vib depth");
+cc_entry( 78, -1, "vib delay");
+cc_entry( 79, -1, "snd 10");
+cc_entry( 80, -1, "gp5 sw");
+cc_entry( 81, -1, "gp6 sw");
+cc_entry( 82, -1, "gp7 sw");
+cc_entry( 83, -1, "gp8 sw");
+cc_entry( 84, -1, "porta ctrl");
+cc_entry( 85, -1, "");
+cc_entry( 86, -1, "");
+cc_entry( 87, -1, "");
+cc_entry( 88, -1, "");
+cc_entry( 89, -1, "");
+cc_entry( 90, -1, "");
+cc_entry( 91, 0x129ae2, "reverb");
+cc_entry( 92, -1, "tremolo");
+cc_entry( 93, -1, "chorus");
+cc_entry( 94, -1, "detune");
+cc_entry( 95, -1, "phaser");
+
+// ---- CC 96..127 — data entry, RPN/NRPN and channel mode
+cc_entry( 96, -1, "data inc");
+cc_entry( 97, -1, "data dec");
+cc_entry( 98, -1, "nrpn lsb");
+cc_entry( 99, -1, "nrpn msb");
+cc_entry(100, -1, "rpn lsb");
+cc_entry(101, -1, "rpn msb");
+cc_entry(102, -1, "");
+cc_entry(103, -1, "");
+cc_entry(104, -1, "");
+cc_entry(105, -1, "");
+cc_entry(106, -1, "");
+cc_entry(107, -1, "");
+cc_entry(108, -1, "");
+cc_entry(109, -1, "");
+cc_entry(110, -1, "");
+cc_entry(111, -1, "");
+cc_entry(112, -1, "");
+cc_entry(113, -1, "");
+cc_entry(114, -1, "");
+cc_entry(115, -1, "");
+cc_entry(116, -1, "");
+cc_entry(117, -1, "");
+cc_entry(118, -1, "");
+cc_entry(119, -1, "");
+cc_entry(120, -1, "all sound");
+cc_entry(121, -1, "reset ctrl");
+cc_entry(122, -1, "local ctrl");
+cc_entry(123, -1, "all notes");
+cc_entry(124, -1, "omni off");
+cc_entry(125, -1, "omni on");
+cc_entry(126, -1, "mono");
+cc_entry(127, -1, "poly");
+
+// ---- examples, commented out ----------------------------------------------
+// One channel of one CC, drawn exactly as written, no shade:
+//   cc_entry_ch(11, 4, 0xff0000);     // CC11, channel 4: red
+//
+// The fallback in action: CC 9 is not listed above with a colour, so it takes
+// ladder slot (9 - 1) mod 16 = 8, the crimson one.

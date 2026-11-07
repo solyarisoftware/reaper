@@ -31,5 +31,4 @@ def test_only_channel_menu_is_refitted_before_input_and_after_opening():
     before, after = pipeline.split('cbm_mouse();', 1)
     assert 'cbm_open() == 2 ? ( cbm_menu_fit_rows(17, 0); );' in before
     assert 'cbm_open() == 2 ? ( cbm_menu_fit_rows(17, previous_menu != 2); );' in after
-    assert 'cbm_open() == 6' in after
-    assert 'cbm_menu_fit(palette_menu_w + 22);' in after
+    assert 'palette_menu_w' not in after      # the palette cell is gone

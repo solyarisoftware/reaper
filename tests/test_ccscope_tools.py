@@ -53,8 +53,10 @@ class MemoryMapTests(unittest.TestCase):
         self.assertTrue(any('Control-bar block needs' in error
                             for error in MEMORY.check(self.source)))
 
-    def test_history_growth_requires_resizing_all_ranges(self):
-        self.replace('MAX_HISTORY_ITEMS = 2000;', 'MAX_HISTORY_ITEMS = 2001;')
+    def test_a_table_range_that_grows_into_its_neighbour_is_rejected(self):
+        # MEM_PAIR_RGB starts where MEM_CC_RGB ends: moving it one slot earlier
+        # is the kind of edit a hand-tuned memory map gets wrong, silently.
+        self.replace('MEM_PAIR_RGB = 4736;', 'MEM_PAIR_RGB = 4735;')
         self.assertTrue(any('overlaps' in error for error in MEMORY.check(self.source)))
 
     def test_narrower_pair_key_collisions_are_rejected(self):

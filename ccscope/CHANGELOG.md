@@ -4,6 +4,12 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.16.0 — 2026-11-07
+
+- **Colours and names are yours, in a file you edit.** `ccscope_cc_table.jsfx-inc` lists every CC with a colour and a short name; the six palettes and the COLOR cell are gone, and the parameter that drove them stays declared so existing presets keep their numbering.
+- **A shade can no longer disappear.** The channels of one CC are four shades of its colour, drawn by moving luminance instead of multiplying the red, green and blue channels, which used to bury a blue in the background.
+- **The status line names the stream** instead of counting it when there is exactly one: `CC11 expr` rather than `1 stream`.
+
 ## 0.15.3 — 2026-11-07
 
 - **The silence before a burst is kept.** When a CC resumed after a gap, its first new event erased the dashed hold it was interrupting; the trace now starts from the value the event before the window was holding, so the gap stays visible.
