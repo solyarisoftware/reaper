@@ -8,9 +8,9 @@ function help_verify(ok) (
   );
 );
 
-function help_capture(x, y, events, jitter, intervals) (
+function help_capture(x, y, events, p50, intervals) (
   mouse_x = x; mouse_y = y; g_help_hit = 0;
-  capture_metric_help(0, events, 23, "moderate", jitter, "steady", intervals, 200);
+  capture_metric_help(0, events, 23, "moderate", p50, p50, intervals, 200);
   g_help_hit;
 );
 
@@ -47,7 +47,7 @@ function help_row_capture(pair, value, x, y) (
     help_verify(help_capture(45, 200, 20, 0, 4) == 1);
     g_metrics_tier > 0 ? (
       help_verify(help_capture((g_col_mot_x + g_col_mot_q_r) / 2, 200, 20, 0, 4) == 2);
-      help_verify(help_capture((g_col_tmg_x + g_col_tmg_q_r) / 2, 200, 20, -1, 0) == 3);
+      help_verify(help_capture((g_col_tmg_x + g_col_tmg_r) / 2, 200, 20, -1, 0) == 3);
       help_verify(help_capture(g_col_msg_r + 7, 200, 20, 0, 4) == 0);
       g_metrics_tier == 1 ? (
         help_verify(g_col_mot_x == g_col_msg_r + 14);
@@ -63,29 +63,47 @@ function help_row_capture(pair, value, x, y) (
   );
   help_verify(help_tiers == 15);
 
+  // The wider Timing field includes 1000 ms and n=499 in side and below modes.
+  slider7 = 1; gfx_w = 1000; gfx_h = 600;
+  calculate_layout(16); calculate_metric_columns();
+  help_verify(g_layout_side && g_metrics_tier > 0);
+  help_verify(g_col_tmg_r <= gfx_w - 8);
+  draw_row_metrics(500, 63500, "fast", 1000, 1000, 499, 200);
+  help_verify(gfx_x <= g_col_tmg_r);
+  help_needed = PLOT_LEFT + MIN_PLOT_WIDTH + PLOT_RIGHT + SIDE_COLUMN_GAP
+                + SIDE_PAD * 3 + SIDE_LABEL_WIDTH + SIDE_BAR_WIDTH
+                + SIDE_VALUE_WIDTH + SIDE_METRICS_WIDTH;
+  gfx_w = help_needed - 1; calculate_layout(16);
+  help_verify(!g_layout_side && g_side_fallback);
+  gfx_w = help_needed; calculate_layout(16); calculate_metric_columns();
+  help_verify(g_layout_side && g_metrics_tier > 0);
+  slider7 = 0; gfx_w = 2000; calculate_layout(16); calculate_metric_columns();
+  help_verify(!g_layout_side && g_metrics_tier == 3);
+  draw_row_metrics(500, 63500, "fast", 1000, 1000, 499, 200);
+  help_verify(gfx_x <= g_col_tmg_r);
+
   // Left-aligned readings include every rendered pixel even beyond reserve.
   gfx_w = 2000; gfx_h = 900;
   g_metrics_x = 40; g_layout_side = 0; calculate_metric_columns();
   g_metrics_tier = 1;
   g_col_msg_x = 40; g_col_msg_v_x = 40; g_col_msg_r = 100;
   g_col_mot_x = 114; g_col_mot_v_x = 114; g_col_mot_r = 180; g_col_mot_q_r = 180;
-  g_col_tmg_x = 230; g_col_tmg_v_x = 230; g_col_tmg_r = 286; g_col_tmg_q_r = 286;
+  g_col_tmg_x = 230; g_col_tmg_v_x = 230; g_col_tmg_r = 286; g_col_tmg_r = 286;
   gfx_measurestr("63500 u/s", help_text_w, help_text_h);
   mouse_x = g_col_mot_v_x + help_text_w - 1; mouse_y = 200; g_help_hit = 0;
-  capture_metric_help(0, 500, 63500, "fast", 162.4, "erratic", 4, 200);
+  capture_metric_help(0, 500, 63500, "fast", 162.4, 1000, 499, 200);
   help_verify(g_help_hit == 2);
-  gfx_measurestr("162.4ms", help_text_w, help_text_h);
+  gfx_measurestr("162.4/1000.0ms n=499", help_text_w, help_text_h);
   mouse_x = g_col_tmg_v_x + help_text_w - 1; g_help_hit = 0;
-  capture_metric_help(0, 500, 63500, "fast", 162.4, "erratic", 4, 200);
+  capture_metric_help(0, 500, 63500, "fast", 162.4, 1000, 499, 200);
   help_verify(g_help_hit == 3);
-  // An interval annotation drawn within the final eight pixels is still visible.
-  g_metrics_tier = 3;
-  gfx_measurestr("(4 int)", help_text_w, help_text_h);
-  help_annotation_end = g_col_tmg_q_r + 6 + help_text_w;
+  // Sample count is reserved and targetable in every Timing tier, not appended.
+  gfx_measurestr("0.0/1000.0ms n=4", help_text_w, help_text_h);
+  help_annotation_end = g_col_tmg_v_x + help_text_w;
   gfx_w = help_annotation_end + 1;
   mouse_x = help_annotation_end - 1; g_help_hit = 0;
-  capture_metric_help(0, 20, 23, "moderate", 0, "steady", 4, 200);
-  help_verify(g_help_hit == 3 && g_help_right == help_annotation_end);
+  capture_metric_help(0, 20, 23, "moderate", 0, 1000, 4, 200);
+  help_verify(g_help_hit == 3 && g_help_right <= gfx_w);
   help_verify(help_capture(gfx_w, 200, 20, 0, 4) == 0);
 
   // Stream identity plus bar/value targets survive count-only/no-activity rows.
@@ -112,58 +130,38 @@ function help_row_capture(pair, value, x, y) (
   help_verify(metric_help_dwell(5, 10.401, 0));
   help_verify(!metric_help_dwell(6, 10.402, 0));
 
-  // Native metric regression fixtures: 3/4/19/20 intervals and the gap filter.
-  // The interval cache must survive a later row's scratch output.
+  // The full Timing snapshot survives later rows overwriting outputs/scratch.
   gfx_w = 2000; g_metrics_x = 40; calculate_metric_columns();
-  g_metrics_now = 10;
-  help_n = 3;
-  loop(4,
-    help_base = get_cc_channel_metrics_base(0, 0);
-    mem[help_base] = 0; mem[help_base + 1] = -1;
-    help_i = 0;
-    loop(help_n + 1,
-      update_metrics_for_cc_channel(0, 0, help_i, 9.1 + help_i * 0.01);
-      help_i += 1;
-    );
-    help_jitter = get_jitter_ms_cc_channel(0, 0);
-    help_verify(get_events_per_second_cc_channel(0, 0) == help_n + 1);
-    help_verify(get_rate_per_second_cc_channel(0, 0) == help_n);
-    help_n < 4 ? help_verify(help_jitter < 0) : (
-      help_verify(abs(help_jitter) < 0.000001 && g_jitter_intervals == help_n);
-      help_verify(help_capture(g_col_tmg_q_r, 200, help_n + 1, help_jitter, g_jitter_intervals) == (help_n < 20 ? 3 : 0));
-      help_capture(g_col_tmg_x + 1, 200, help_n + 1, help_jitter, g_jitter_intervals);
-      help_saved = g_help_intervals;
-      get_jitter_ms_cc_channel(1, 0);
-      help_verify(g_help_intervals == help_saved);
-    );
-    help_n = help_n == 3 ? 4 : help_n == 4 ? 19 : 20;
-  );
-  // Four equal intervals and one excluded long pause.
+  g_metrics_now = 1;
+  help_base = get_cc_channel_metrics_base(0, 0);
   mem[help_base] = 0; mem[help_base + 1] = -1;
-  update_metrics_for_cc_channel(0, 0, 60, 9.1);
-  update_metrics_for_cc_channel(0, 0, 65, 9.2);
-  update_metrics_for_cc_channel(0, 0, 70, 9.3);
-  update_metrics_for_cc_channel(0, 0, 75, 9.4);
-  update_metrics_for_cc_channel(0, 0, 80, 9.5);
-  update_metrics_for_cc_channel(0, 0, 80, 10);
-  help_verify(abs(get_jitter_ms_cc_channel(0, 0)) < 0.000001 && g_jitter_intervals == 4);
-  help_verify(get_rate_per_second_cc_channel(0, 0) == 20);
+  help_i = 0;
+  loop(100,
+    update_metrics_for_cc_channel(0, 0, 64, floor(help_i / 10) / 10);
+    help_i += 1;
+  );
+  get_timing_cc_channel(0, 0);
+  mouse_x = g_col_tmg_v_x + 1; mouse_y = 200; g_help_hit = 0;
+  capture_metric_help(0, 100, 0, "slow", g_timing_p50, g_timing_p95, g_timing_intervals, 200);
+  help_verify(g_help_hit == 3 && g_help_intervals == 99);
+  help_verify(g_help_p50 == 0 && abs(g_help_p95 - 100) < 0.00001);
+  help_verify(g_help_min == 0 && abs(g_help_max - 100) < 0.00001);
+  help_verify(abs(g_help_coincident - 100 * 90 / 99) < 0.00001);
+  help_verify(g_help_jitter == 0 && g_help_jitter_intervals == 90);
+  prepare_metric_help(); strcpy(#help_saved_reading, #help_current);
+  get_timing_cc_channel(1, 0);
+  help_verify(g_timing_p50 == -1);
+  prepare_metric_help();
+  help_verify(strcmp(#help_saved_reading, #help_current) == 0);
+  help_verify(g_help_intervals == 99 && g_help_jitter_intervals == 90);
 
-  // Threshold endpoints and just-above values (classification before rounding).
+  // Motion thresholds remain unchanged.
   help_verify(strcmp(get_rate_quality(15), "slow") == 0);
   help_verify(strcmp(get_rate_quality(16), "moderate") == 0);
   help_verify(strcmp(get_rate_quality(40), "moderate") == 0);
   help_verify(strcmp(get_rate_quality(41), "brisk") == 0);
   help_verify(strcmp(get_rate_quality(70), "brisk") == 0);
   help_verify(strcmp(get_rate_quality(71), "fast") == 0);
-  help_verify(strcmp(get_jitter_quality(5), "steady") == 0);
-  help_verify(strcmp(get_jitter_quality(5.001), "even") == 0);
-  help_verify(strcmp(get_jitter_quality(15), "even") == 0);
-  help_verify(strcmp(get_jitter_quality(15.001), "uneven") == 0);
-  help_verify(strcmp(get_jitter_quality(30), "uneven") == 0);
-  help_verify(strcmp(get_jitter_quality(30.001), "loose") == 0);
-  help_verify(strcmp(get_jitter_quality(50), "loose") == 0);
-  help_verify(strcmp(get_jitter_quality(50.001), "erratic") == 0);
 
   // Content variants must fit their live reserve and retain identical geometry.
   // Test real fonts at full and narrow widths, plus compact and suppressed space.
@@ -180,8 +178,11 @@ function help_row_capture(pair, value, x, y) (
         g_help_events = help_variant == 0 ? 0 : 500;
         g_help_motion = help_variant == 0 ? 0 : help_variant * 20;
         strcpy(#help_motion_q, get_rate_quality(g_help_motion));
-        g_help_jitter = help_variant == 0 ? -1 : (help_variant - 1) * 15;
-        strcpy(#help_jitter_q, get_jitter_quality(g_help_jitter));
+        g_help_p50 = help_variant == 0 ? -1 : (help_variant - 1) * 15;
+        g_help_p95 = 1000; g_help_min = 0; g_help_max = 1000;
+        g_help_coincident = 100;
+        g_help_jitter = help_variant % 2 ? -1 : 100;
+        g_help_jitter_intervals = help_variant % 2 ? 3 : 499;
         g_help_intervals = 499; g_help_value = help_variant == 0 ? 0 : 127;
         prepare_metric_help();
         gfx_r = 0.2; gfx_g = 0.3; gfx_b = 0.4; gfx_a = 0.5; gfx_mode = 1;
@@ -191,7 +192,7 @@ function help_row_capture(pair, value, x, y) (
         help_verify(tip_visible == (help_size < 3));
         tip_visible ? (
           help_verify(tip_x >= 6 && tip_y >= 6 && tip_x + tip_w <= gfx_w - 6 && tip_y + tip_h <= gfx_h - 6);
-          help_size == 0 ? help_verify(tip_cache_live_lines < 6);
+          help_size == 0 ? help_verify(tip_cache_live_lines <= 4);
           help_variant == 0 ? ( help_saved_h = tip_h; help_saved_y = tip_y; ) : (
             help_verify(tip_h == help_saved_h && tip_y == help_saved_y);
           );

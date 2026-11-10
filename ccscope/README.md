@@ -26,7 +26,7 @@ panels explaining a reading. The static screenshot used by ReaPack is
   own row — same hue per CC, a different shade per channel. The CC filter and the channel filter
   are independent and combine: one CC, one channel, or one CC on one channel.
 - **Three measurements per row**, over exactly the last second: **Messages**, **Motion**,
-  **Jitter**. Resting on a visible metric explains its reading on screen.
+  **Timing**. Resting on a visible metric explains its reading on screen.
 - **Rows below or beside the plot**, so a window that is wide and short can still show every
   pair. In a narrow window the labels go first and the status line says what does not fit.
 - **FREEZE** stops acquisition (MIDI keeps passing through) so a reading can be examined;
@@ -108,7 +108,7 @@ saturated values; and a selection larger than the rows on screen is exactly what
 |---|---|
 | **Messages** | received MIDI CC messages in the last second, including repeated identical values — not distinct values or physical movements |
 | **Motion** | sum of absolute CC value changes associated with messages in the last second, in CC units/s; rated slow, moderate, brisk, fast. This is MIDI value travel, not physical fader speed; intentional movement, noise and jumps can all contribute |
-| **Jitter** | **Message timing jitter:** population standard deviation of accepted inter-message intervals, in ms; rated steady, even, uneven, loose, erratic. The hover panel shows the accepted interval count for valid readings. Intervals **greater than four times** the shortest interval in the window are excluded by a gap heuristic; `n/a` means fewer than four usable intervals (normally at least five messages are needed) |
+| **Timing** | raw consecutive message intervals as **p50/p95 in ms**, with **n** intervals; hover for min/max, coincident timestamp percentage and explicitly secondary gap-filtered jitter. There is no Timing quality grade |
 
 All three use the rolling **last second**, independently of the plot's **WIN**. **FREEZE**
 keeps the same instant for the rows and their help, not a new wall-clock reading.
@@ -120,30 +120,38 @@ keeps the same instant for the rows and their help, not a new wall-clock reading
   where it started. The first-ever message contributes zero; later deltas can refer to a
   previous message outside the one-second window. `0 u/s` means no measured value travel,
   not necessarily a motionless physical fader.
-- **Jitter** is spread in message spacing, not the average spacing. Five equally spaced
-  messages provide four intervals and `0.0 ms`: no variation in those accepted intervals,
-  not proof of perfect timing. `n/a` is insufficient evidence, not zero jitter. The gap
-  heuristic can remove intentional pauses as well as gaps; it is not a device diagnosis.
-  For devices that send only when values change, spacing can also vary with the gesture.
-  CCScope observes the received stream, not the isolated timing contribution of the device,
-  transport or host. Its absolute millisecond scale is not normalized to the average interval.
+- **Timing** keeps **zero intervals and long pauses**. Both endpoints must be in the
+  closed window `[now - 1 s, now]`. It walks acquisition order, not sorted timestamps:
+  negative timestamps and out-of-window events break adjacency; a negative delta is
+  excluded and its current event starts the next interval. Timestamp zero is valid.
+  p50 is the median and p95 the 95th percentile. For sorted eligible intervals `d[1..n]`, **p50** is `d[ceil(0.50*n)]` and **p95** is
+  `d[ceil(0.95*n)]` (nearest rank, no interpolation). `n/a` means no eligible interval;
+  one interval is shown, but small **n** is weak evidence. The row reads
+  `10.0/10.0ms n=99` for 100 messages spaced 10 ms apart.
+- **Coincident** is the percentage of raw intervals equal to zero: `100 * zero_count / n`.
+  It means equal **host-observed timestamps**, not physical simultaneity or a device fault.
+  Ten batches of ten messages spaced 100 ms apart have 99 intervals: 90 zeros and 9 pauses.
+  They show p50/p95 `0.0/100.0ms`, coincident `90.9%`, despite the same 100 Messages as the
+  uniformly spaced example. Repeated identical values can give Motion zero in either case.
+- **Secondary filtered jitter**, available in Timing help only, is population standard
+  deviation after keeping raw intervals `<= 4 * min(raw)`. Its own **n** is the accepted
+  count; fewer than four give `n/a`. If the minimum is zero, only zeros pass, so filtered
+  jitter can be zero even with large raw pauses. This heuristic must not hide those pauses
+  in the primary raw statistics. It can exclude intentional gestures as well as gaps.
 
-The descriptive scales (not grades) are:
+Only Motion has a descriptive scale (not a grade): **slow** ≤15, **moderate** >15 to 40,
+**brisk** >40 to 70, **fast** >70 CC units/s, selected by the displayed integer.
 
-| Motion (displayed integer, CC units/s) | Meaning | Jitter (unrounded ms) | Meaning |
-|---|---|---|---|
-| **slow** ≤15 | little value travel | **steady** ≤5 | very little spacing variation |
-| **moderate** >15 to 40 | moderate value travel | **even** >5 to 15 | small spacing variation |
-| **brisk** >40 to 70 | brisk value travel | **uneven** >15 to 30 | noticeable spacing variation |
-| **fast** >70 | rapid value travel | **loose** >30 to 50 | large spacing variation |
-| | | **erratic** >50 | very large spacing variation |
+Timing describes the received stream, not the isolated contribution of the device,
+transport or host. It is **not latency, a guaranteed bound or a hardware-quality grade**.
+Devices that send only when values change also vary their spacing with the gesture. Motion
+cannot distinguish intentional gestures from noise or jumps. No incoming messages do not
+establish that a stationary fader is noise-free.
 
-Jitter is displayed to one decimal but classified before rounding: a reading just above
-5 ms can display `5.0 ms (even)`. Standard deviation is **not a guaranteed ± bound**, a latency
-measurement or a hardware-quality grade. These are observations of MIDI output, not physical
-calibration. Motion cannot distinguish intentional gestures from noise or jumps. No incoming
-messages do not establish that a stationary fader is noise-free: some devices send only when
-a value changes.
+Timing refreshes for each drawn row at the frame's one-second cutoff; help uses that row's
+complete cached reading, not a new computation on hover. The buffer retains at most **500
+messages per pair** (at most 499 intervals); faster streams can be under-represented. Freeze
+pins the cutoff and stops acquisition/pruning, so the reading and its help remain a snapshot.
 
 Labels, values with their units and descriptive words are all **left-aligned** at fixed
 positions, in both layouts and compact tiers. Changing the number of digits never moves
@@ -174,11 +182,10 @@ different pair or subject restarts the wait; leaving the target dismisses help i
 The number and its bar share one subject and a stable anchor; the gap between them is not a target. Each panel is anchored to its cell, not the
 moving pointer, and shows its current reading, definition/unit and descriptive scale. The
 count-only layout exposes **Messages** only. The consolidated **no activity** sentence is also
-a Messages target: it explains zero messages without inventing Motion or Jitter readings.
+a Messages target: it explains zero messages without inventing Motion or Timing readings.
 `n/a` has its own insufficient-data explanation. Gaps and blank right-hand space are not targets;
-the small valid-reading interval annotation belongs to Jitter. **`int` means accepted
-inter-message intervals**: `(15 int)` means 15 intervals used by the calculation, not 15
-messages. The abbreviation is expanded in both full and compact help. Open control-bar lists
+the sample count belongs to Timing in every tier that shows it. **`n` counts intervals,
+not messages**; the secondary filtered count can be smaller than the raw count. Open control-bar lists
 suppress help.
 
 Help wraps and stays inside the canvas, choosing above or below the cell according to space.

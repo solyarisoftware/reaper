@@ -1,63 +1,13 @@
-// ===================================================================
-// MIDI CC METRICS LIBRARY - MULTI-CHANNEL SUPPORT
-// ===================================================================
-// Real-time performance metrics for MIDI Continuous Controller analysis
-// Provides event rate, value change rate, and timing jitter calculations
-// with full support for multi-channel MIDI data.
-//
-// METRICS EXPLAINED:
-//
-// 1. EVENTS PER SECOND (evt/s)
-//    - Counts how many MIDI CC messages are received per second
-//    - Example: 45 evt/s means 45 MIDI messages in the last second
-//    - Includes repeated identical values; not a measure of value resolution
-//    - Zero: no received messages, not evidence of physical stability
-//
-// 2. RATE (u/s - units per second)
-//    - Measures how fast CC VALUES are changing (not timing)
-//    - Calculated as: sum of |current_value - previous_value| per second
-//    - Example: CC goes 60→65→70→75 in 1 sec = rate of 15 u/s
-//    - Descriptive terms: slow <=15, moderate <=40, brisk <=70, fast >70
-//    - MIDI value travel, not physical speed; noise and jumps also contribute
-//
-// 3. JITTER (milliseconds)
-//    - Population standard deviation of accepted inter-message intervals
-//    - Excludes intervals >4 times the shortest; needs >=4 accepted intervals
-//    - Descriptive terms: steady <=5, even <=15, uneven <=30, loose <=50,
-//      erratic >50 ms (unrounded values select the term)
-//    - Not a guaranteed bound, latency estimate or hardware grade
-//
-// CHANGELOG (v0.5.2):
-// - Removed the deprecated single-channel shims (update_metrics_for_cc,
-//   get_events_per_second, get_rate_per_second, get_jitter_ms)
-// - Fixed: the per-pair block was 600 slots for a layout that needs 602
-//   (2 header slots + 200 events * 3). The 200th event of a pair overwrote
-//   the event count and last value of the NEXT pair, so that pair stopped
-//   recording and the pruning loop started walking other blocks' data.
-//   CC_BLOCK_SIZE is now derived from the layout, not typed by hand.
-//
-// CHANGELOG (v0.5):
-// - Added multi-channel metrics tracking
-// - Each (CC#, Channel) pair maintains independent metrics
-// - Memory layout updated to support 128 CCs × 16 channels
-// - New functions for channel-aware metric retrieval
-// - Pruning algorithm updated for channel-aware data
-//
-// TECHNICAL DETAILS:
-// - All metrics calculated over a 1-second rolling window
-// - Window slides continuously (not reset)
-// - Old events automatically pruned when older than 1 second
-// - Metrics update smoothly without flickering
-// - Memory efficient: stores only last 1 second of events per (CC#, Channel) pair
-//
-// MEMORY LAYOUT (per CC per Channel):
-// - Event buffer: stores timestamps and values for last 1 second
-// - Each event: 3 floats (timestamp, value, delta)
-// - 500 events per (CC#, Channel) pair, i.e. up to 500 evt/s. The buffer is
-//   larger than the window needs at that rate on purpose: the window is
-//   filtered on read (see g_metrics_now), so a buffer holding exactly one
-//   second of events would under-report as soon as the prune runs late.
-// ===================================================================
+// CCScope one-second metrics. Messages and Motion preserve their event/delta
+// rules. Timing walks acquisition order over the closed [now-1, now] window.
+// Negative timestamps and out-of-window events break adjacency. Zero is valid;
+// a negative delta is skipped and its current endpoint starts the next interval.
+// Raw intervals include zeros and all pauses; nearest-rank p50/p95 use sorted ms.
+// At most 500 retained events / 499 intervals per pair. Capacity saturation can
+// under-represent a faster stream; this is not a hardware or latency assessment.
+// get_timing_cc_channel() publishes scalar outputs for immediate row capture.
+// It recomputes once per drawn row/frame at g_metrics_now, never on hover. The
+// shared scratch is GUI-only, bounded heapsort O(n log n), and never a snapshot.
 
 @init
 
@@ -155,11 +105,12 @@ function update_metrics_for_cc_channel(cc_num, channel, value, time_sec)
 );
 
 /**
- * Removes events older than METRICS_WINDOW_SEC from all (CC#, Channel) buffers
+ * Removes the expired prefix from all (CC#, Channel) buffers, preserving
+ * interior separators if timestamps are non-monotonic
  * @param current_time_sec Current time in seconds
  */
 function prune_old_metrics(current_time_sec) 
-  local(cc, channel, base, count, cutoff_time, src_idx, dst_idx, event_ptr, event_time, block_idx) (
+  local(cc, channel, base, count, cutoff_time, src_idx, dst_idx, event_ptr, event_time, block_idx, keep_started) (
   
   cutoff_time = current_time_sec - METRICS_WINDOW_SEC;
   block_idx = 0;
@@ -174,14 +125,17 @@ function prune_old_metrics(current_time_sec)
       count > 0 ? (
         dst_idx = 0;
         src_idx = 0;
+        keep_started = 0;
         
-        // Compact buffer: keep only recent events
+        // Remove only the expired prefix. Retain later expired separators if
+        // timestamps went backwards: compacting those would invent adjacency.
         loop(count,
           event_ptr = base + 2 + (src_idx * 3);
           event_time = mem[event_ptr];
           
-          // Keep this event if it's recent enough
-          event_time >= cutoff_time ? (
+          // Normal monotonic streams have the same retained events as before.
+          event_time >= cutoff_time ? keep_started = 1;
+          keep_started ? (
             src_idx != dst_idx ? (
               // Copy event to new position
               mem[base + 2 + (dst_idx * 3)] = mem[event_ptr];
@@ -267,130 +221,99 @@ function get_rate_quality(rate_value) (
   "fast"
 );
 
-/**
- * Calculates jitter (timing consistency) for a (CC#, Channel) pair
- * Returns standard deviation of time intervals between events
- * @param cc_num CC number (0-127)
- * @param channel MIDI channel (0-15)
- * @return Jitter in milliseconds (standard deviation, not a bound)
- */
-// Accepted interval count for the last valid reading; zero on n/a is a sentinel,
-// not an actual accepted count. Capture immediately: the next pair overwrites it.
-g_jitter_intervals = 0;
+// Shared scratch is reserved by utils and checked by check_ccscope_memory.py.
+// In-place max-heap sift, inclusive end. No recursion or per-pair allocation.
+function timing_sift_down(root, end) local(child, swap_value, running) (
+  running = 1;
+  while(running && root * 2 + 1 <= end) (
+    child = root * 2 + 1;
+    child < end && mem[MEM_TIMING_SCRATCH + child] < mem[MEM_TIMING_SCRATCH + child + 1]
+      ? child += 1;
+    mem[MEM_TIMING_SCRATCH + root] < mem[MEM_TIMING_SCRATCH + child] ? (
+      swap_value = mem[MEM_TIMING_SCRATCH + root];
+      mem[MEM_TIMING_SCRATCH + root] = mem[MEM_TIMING_SCRATCH + child];
+      mem[MEM_TIMING_SCRATCH + child] = swap_value;
+      root = child;
+    ) : running = 0;
+  );
+);
 
-/**
- * Calculates jitter (timing consistency) for a (CC#, Channel) pair
- * Returns the standard deviation of the inter-arrival intervals in the window,
- * ignoring the gapped ones: an interval longer than GAP_FACTOR times the
- * shortest is a pause (or a loop jump, or a stale event), not jitter. Without
- * that filter a single gap would dominate the spacing variation.
- * @param cc_num CC number (0-127)
- * @param channel MIDI channel (0-15)
- * @return Jitter in milliseconds, or -1 when the window has fewer than
- *         MIN_JITTER_INTERVALS usable intervals (valid-reading count in g_jitter_intervals)
- */
-function get_jitter_ms_cc_channel(cc_num, channel)
-  local(base, count, i, ptr, cutoff, prev_time, curr_time, interval, first_time,
-        min_interval, limit, used, sum_intervals, mean_interval,
-        sum_squared_diff, variance) (
+function timing_sort(count) local(start, end, swap_value) (
+  start = floor(count / 2) - 1;
+  while(start >= 0) (timing_sift_down(start, count - 1); start -= 1;);
+  end = count - 1;
+  while(end > 0) (
+    swap_value = mem[MEM_TIMING_SCRATCH];
+    mem[MEM_TIMING_SCRATCH] = mem[MEM_TIMING_SCRATCH + end];
+    mem[MEM_TIMING_SCRATCH + end] = swap_value;
+    end -= 1;
+    timing_sift_down(0, end);
+  );
+);
 
+// All outputs reset even on n/a. Only count=0 is insufficient for raw stats;
+// n=1 is allowed, with the count always exposed in the row and help.
+g_timing_intervals = 0;
+g_timing_p50 = -1; g_timing_p95 = -1;
+g_timing_min = -1; g_timing_max = -1; g_timing_coincident = -1;
+g_timing_jitter = -1; g_timing_jitter_intervals = 0;
+
+function get_timing_cc_channel(cc_num, channel)
+  local(base, count, cutoff, i, time, previous, have_previous, interval,
+        zeros, used, sum, mean, squared, limit) (
   base = get_cc_channel_metrics_base(cc_num, channel);
-  count = mem[base];
+  count = min(mem[base], MAX_EVENTS_PER_CC);
   cutoff = g_metrics_now - METRICS_WINDOW_SEC;
-  g_jitter_intervals = 0;
-
-  // pass 1: shortest interval in the window
-  min_interval = 0;
-  prev_time = 0;
-  used = 0;
-  i = 0;
+  g_timing_intervals = 0;
+  g_timing_p50 = -1; g_timing_p95 = -1;
+  g_timing_min = -1; g_timing_max = -1; g_timing_coincident = -1;
+  g_timing_jitter = -1; g_timing_jitter_intervals = 0;
+  have_previous = 0; zeros = 0; i = 0;
   loop(count,
-    ptr = base + 2 + (i * 3);
-    mem[ptr] >= cutoff ? (
-      used == 0 ? (
-        prev_time = mem[ptr];
-      ) : (
-        interval = mem[ptr] - prev_time;
-        (min_interval == 0 || interval < min_interval) ? min_interval = interval;
-        prev_time = mem[ptr];
+    time = mem[base + 2 + i * 3];
+    time >= 0 && time >= cutoff && time <= g_metrics_now ? (
+      have_previous ? (
+        interval = time - previous;
+        interval >= 0 ? (
+          mem[MEM_TIMING_SCRATCH + g_timing_intervals] = interval * 1000;
+          g_timing_intervals += 1;
+          // EEL2 == is approximate; positive sub-10-us intervals are not zero.
+          interval === 0 ? zeros += 1;
+        );
       );
-      used += 1;
-    );
+      previous = time; have_previous = 1;
+    ) : have_previous = 0;
     i += 1;
   );
+  g_timing_intervals > 0 ? (
+    timing_sort(g_timing_intervals);
+    g_timing_min = mem[MEM_TIMING_SCRATCH];
+    g_timing_max = mem[MEM_TIMING_SCRATCH + g_timing_intervals - 1];
+    g_timing_p50 = mem[MEM_TIMING_SCRATCH + ceil(0.50 * g_timing_intervals) - 1];
+    g_timing_p95 = mem[MEM_TIMING_SCRATCH + ceil(0.95 * g_timing_intervals) - 1];
+    g_timing_coincident = 100 * zeros / g_timing_intervals;
 
-  used < MIN_JITTER_INTERVALS + 1 ? ( -1 ) : (
-    limit = min_interval * GAP_FACTOR;
-
-    // pass 2: mean of the intervals that are not gaps
-    sum_intervals = 0;
-    used = 0;
-    prev_time = 0;
-    i = 0;
-    loop(count,
-      ptr = base + 2 + (i * 3);
-      mem[ptr] >= cutoff ? (
-        used == 0 ? (
-          prev_time = mem[ptr];
-          used = 1;
-        ) : (
-          interval = mem[ptr] - prev_time;
-          prev_time = mem[ptr];
-          interval <= limit ? (
-            sum_intervals += interval;
-            used += 1;
-          );
-        );
-      );
+    // Secondary gap-filtered population SD, on the SAME eligible intervals.
+    // If the shortest is zero, only zeros pass: raw gaps remain in p50/p95/max.
+    limit = g_timing_min * GAP_FACTOR;
+    used = 0; sum = 0; i = 0;
+    loop(g_timing_intervals,
+      interval = mem[MEM_TIMING_SCRATCH + i];
+      interval <= limit ? (sum += interval; used += 1;);
       i += 1;
     );
-
-    used < MIN_JITTER_INTERVALS + 1 ? ( -1 ) : (
-      g_jitter_intervals = used - 1;
-      mean_interval = sum_intervals / (used - 1);
-
-      // pass 3: variance of the same intervals
-      sum_squared_diff = 0;
-      used = 0;
-      prev_time = 0;
-      i = 0;
-      loop(count,
-        ptr = base + 2 + (i * 3);
-        mem[ptr] >= cutoff ? (
-          used == 0 ? (
-            prev_time = mem[ptr];
-            used = 1;
-          ) : (
-            interval = mem[ptr] - prev_time;
-            prev_time = mem[ptr];
-            interval <= limit ? (
-              sum_squared_diff += (interval - mean_interval) * (interval - mean_interval);
-              used += 1;
-            );
-          );
-        );
+    g_timing_jitter_intervals = used;
+    used >= MIN_JITTER_INTERVALS ? (
+      mean = sum / used; squared = 0; i = 0;
+      loop(used,
+        interval = mem[MEM_TIMING_SCRATCH + i];
+        squared += (interval - mean) * (interval - mean);
         i += 1;
       );
-
-      variance = sum_squared_diff / (used - 1);
-      sqrt(variance) * 1000
+      g_timing_jitter = sqrt(squared / used);
     );
   );
+  g_timing_p50;
 );
 
-/**
- * Returns quality rating text for jitter value
- * @param jitter_ms Jitter in milliseconds
- * @return Descriptive string: "steady", "even", "uneven", "loose", or "erratic"
- */
-// How much the spacing between messages wobbles
-function get_jitter_quality(jitter_ms) (
-  jitter_ms <= 5 ? "steady" :
-  jitter_ms <= 15 ? "even" :
-  jitter_ms <= 30 ? "uneven" :
-  jitter_ms <= 50 ? "loose" :
-  "erratic"
-);
-
-// Initialize metrics system
 init_metrics();

@@ -114,6 +114,12 @@ MEM_PLOT_STATE = 12741;       // 12741..27076 prev event x, prev step x/y, seen,
 MEM_PLOT_SLOT = 27077;        // 27077..29124 pair key -> visible slot, -1 = not visible
 PLOT_STATE_STRIDE = 7;
 
+// GUI-only shared interval scratch. Metrics end at 3106096; the ring starts
+// at 3120000. Never indexed per pair: rows capture all scalar outputs before
+// the next pair reuses these 499 slots. The memory checker enforces capacity.
+MEM_TIMING_SCRATCH = 3106100;
+TIMING_SCRATCH_SIZE = 499;
+
 // The renderer's measured budget, not a setting: one mark plus one line measured
 // ~1.4 us, so 4000 of them -- 8000 draw commands -- is about 5.5 ms of a frame
 // and leaves the rest of the UI its time. It counts DRAW COMMANDS, not events,

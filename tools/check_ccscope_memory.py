@@ -51,6 +51,7 @@ def check(root: Path) -> list[str]:
         'MEM_PLOT_STATE': pairs * c['PLOT_STATE_STRIDE'],
         'MEM_PLOT_SLOT': pairs,
         'MEM_EVENT_RING': c['EVENT_CAPACITY'] * 2,
+        'MEM_TIMING_SCRATCH': c['TIMING_SCRATCH_SIZE'],
     }
     regions = sorted((c[name], c[name] + size, name) for name, size in sizes.items())
     errors = []
@@ -61,6 +62,8 @@ def check(root: Path) -> list[str]:
         errors.append('Pair count or dense-key capacity does not fit')
     if c['CC_BLOCK_SIZE'] < 2 + c['MAX_EVENTS_PER_CC'] * 3:
         errors.append('Metric block cannot hold its declared events')
+    if not c['MAX_EVENTS_PER_CC'] - 1 <= c['TIMING_SCRATCH_SIZE'] <= 500:
+        errors.append('Timing scratch must hold all intervals and use at most 500 slots')
     if c['EVENT_CAPACITY'] < c['MIN_EVENT_HISTORY_SECONDS'] * c['EVENT_FLOOD_HZ']:
         errors.append('Event ring cannot retain the full 30-second window at the declared flood rate')
     # The state block must be exactly one stride per pair: a pair that indexes

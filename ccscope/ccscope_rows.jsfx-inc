@@ -4,7 +4,7 @@
 // A library file (.jsfx-inc) imported by ccscope.jsfx.
 //
 // OWNS: the visible pair list as text and bars -- label in the pair colour, bar
-// with its value, and the three metric columns (Messages, Motion, Jitter) in the
+// with its value, and the three metric columns (Messages, Motion, Timing) in the
 // form the layout module chose; row/metric-specific hover resolution and help text.
 // The conductor coordinates dwell and the separate reusable tooltip renderer.
 //
@@ -32,11 +32,11 @@
  * @param events_ps events per second for this pair
  * @param rate_ps   units per second for this pair
  * @param rate_q    motion quality word
- * @param jitter_ms timing jitter, negative when there are too few intervals
- * @param jitter_q  timing quality word
- * @param y_pos     row top
+ * @param p50/p95 raw nearest-rank interval quantiles in ms (-1 on n/a)
+ * @param intervals raw interval sample count (always shown when valid)
+ * @param y_pos row top
  */
-function draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos)
+function draw_row_metrics(events_ps, rate_ps, rate_q, p50, p95, intervals, y_pos)
                           (
   gfx_y = y_pos + (BAR_HEIGHT - FONT_SIZE) / 2;
 
@@ -84,37 +84,17 @@ function draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos
       gfx_drawstr(#mtq);
     );
 
-    // ========== JITTER ==========
+    // ========== TIMING: p50/p95, never a qualitative grade ==========
     gfx_r = 0.72; gfx_g = 0.72; gfx_b = 0.72;
     g_metrics_tier >= 2 ? (
       gfx_x = g_col_tmg_x;
-      gfx_drawstr("Jitter");
+      gfx_drawstr("Timing");
     );
-    jitter_ms < 0 ? (
-      gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
-      gfx_x = g_col_tmg_v_x;
-      gfx_drawstr("n/a");
-    ) : (
-      gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
-      sprintf(#mtf, "%.1fms", jitter_ms);
-      gfx_x = g_col_tmg_v_x;
-      gfx_drawstr(#mtf);
-
-      g_metrics_tier == 3 ? (
-        gfx_r = 0.60; gfx_g = 0.60; gfx_b = 0.62;
-        strcpy(#mtq, jitter_q);
-        gfx_x = g_col_tmg_q_x;
-        gfx_drawstr(#mtq);
-
-        // The sample size is shown only when it is small enough to matter: with
-        // 240 intervals the number speaks for itself, with 5 it does not. It is
-        // written after the field and never reserved, so the rows stay aligned.
-        g_row_intervals < 20 ? (
-          gfx_x = g_col_tmg_q_r + 6;
-          gfx_printf("(%d int)", g_row_intervals);
-        );
-      );
-    );
+    p50 < 0 ? strcpy(#mtf, "n/a")
+            : sprintf(#mtf, "%.1f/%.1fms n=%d", p50, p95, intervals);
+    gfx_r = 0.86; gfx_g = 0.86; gfx_b = 0.87;
+    gfx_x = g_col_tmg_v_x;
+    gfx_drawstr(#mtf);
   );
 );
 
@@ -155,7 +135,7 @@ function capture_row_help(pair, value, y) local(kind, top, bottom, tw, th, value
   );
 );
 
-function capture_metric_help(pair, events, motion, motion_q, jitter, jitter_q, intervals, y)
+function capture_metric_help(pair, events, motion, motion_q, p50, p95, intervals, y)
   local(metric, left, right, top, bottom, tw, th) (
   metric = 0;
   top = y + (BAR_HEIGHT - FONT_SIZE) / 2;
@@ -179,15 +159,10 @@ function capture_metric_help(pair, events, motion, motion_q, jitter, jitter_q, i
       metric_help_hit(left, right, top, bottom) ? metric = 2;
     );
     metric == 0 ? (
-      jitter < 0 ? strcpy(#help_field, "n/a")
-                 : sprintf(#help_field, "%.1fms", jitter);
+      p50 < 0 ? strcpy(#help_field, "n/a")
+              : sprintf(#help_field, "%.1f/%.1fms n=%d", p50, p95, intervals);
       gfx_measurestr(#help_field, tw, th);
-      left = g_col_tmg_x; right = max(g_col_tmg_q_r, g_col_tmg_v_x + tw);
-      g_metrics_tier == 3 && jitter >= 0 && intervals < 20 ? (
-        sprintf(#help_field, "(%d int)", intervals);
-        gfx_measurestr(#help_field, tw, th);
-        right = max(right, g_col_tmg_q_r + 6 + tw);
-      );
+      left = g_col_tmg_x; right = max(g_col_tmg_r, g_col_tmg_v_x + tw);
       metric_help_hit(left, right, top, bottom) ? metric = 3;
     );
   );
@@ -198,8 +173,13 @@ function capture_metric_help(pair, events, motion, motion_q, jitter, jitter_q, i
     g_help_left = max(0, left); g_help_right = min(gfx_w, right);
     g_help_top = top; g_help_bottom = bottom;
     g_help_events = events; g_help_motion = motion;
-    g_help_jitter = jitter; g_help_intervals = intervals;
-    strcpy(#help_motion_q, motion_q); strcpy(#help_jitter_q, jitter_q);
+    g_help_p50 = p50; g_help_p95 = p95; g_help_intervals = intervals;
+    // Capture the whole reading before the next row reuses metric outputs/scratch.
+    g_help_min = g_timing_min; g_help_max = g_timing_max;
+    g_help_coincident = g_timing_coincident;
+    g_help_jitter = g_timing_jitter;
+    g_help_jitter_intervals = g_timing_jitter_intervals;
+    strcpy(#help_motion_q, motion_q);
   );
 );
 
@@ -216,7 +196,7 @@ function metric_help_dwell(hit, now, suppressed) (
 // Draw the visible selection using the layout's geometry and one-second clock.
 function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
                                fill, avail,
-                               events_ps, rate_ps, rate_q, jitter_ms, jitter_q,
+                               events_ps, rate_ps, rate_q, p50, p95,
                                tw, th) (
   y_pos = g_start_y;
   i = 0;
@@ -260,27 +240,25 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
       gfx_printf("%d", val);
 
       events_ps = get_events_per_second_cc_channel(cc_num, channel);
-      // Count-only rows do not display Motion or Jitter. Do not walk their
+      // Count-only rows do not display Motion or Timing. Do not walk their
       // buffers to calculate values that draw_row_metrics() will discard.
       rate_ps = 0;
       rate_q = "";
-      jitter_ms = -1;
-      jitter_q = "";
+      p50 = -1; p95 = -1;
       g_row_intervals = 0;
       events_ps > 0 && g_metrics_tier > 0 ? (
         rate_ps = floor(get_rate_per_second_cc_channel(cc_num, channel));
         rate_q = get_rate_quality(rate_ps);
-        jitter_ms = get_jitter_ms_cc_channel(cc_num, channel);
-        // Capture the scratch output now, before another pair overwrites it.
-        g_row_intervals = g_jitter_intervals;
-        jitter_q = jitter_ms < 0 ? "" : get_jitter_quality(jitter_ms);
+        get_timing_cc_channel(cc_num, channel);
+        p50 = g_timing_p50; p95 = g_timing_p95;
+        g_row_intervals = g_timing_intervals;
       );
 
       // The three numbers, in three fixed columns: see draw_row_metrics().
-      draw_row_metrics(events_ps, rate_ps, rate_q, jitter_ms, jitter_q, y_pos);
+      draw_row_metrics(events_ps, rate_ps, rate_q, p50, p95, g_row_intervals, y_pos);
       capture_row_help(cc_channel_pair, val, y_pos);
       capture_metric_help(cc_channel_pair, events_ps, rate_ps, rate_q,
-                          jitter_ms, jitter_q, g_row_intervals, y_pos);
+                          p50, p95, g_row_intervals, y_pos);
     );
 
     y_pos += BAR_HEIGHT + BAR_SPACING;
@@ -288,9 +266,23 @@ function draw_cc_bars() local(y_pos, i, cc_channel_pair, cc_num, channel, val,
   );
 );
 
+// One formatter supplies live and representative Timing readings. All input is
+// scalar snapshot data, never the shared scratch or another buffer traversal.
+function timing_help_reading(p50, p95, low, high, coincident, intervals, jitter, accepted) (
+  p50 < 0 ? (
+    #help_reading = "Raw: n/a; n=0 intervals (need two usable events).";
+  ) : (
+    sprintf(#help_reading, "Raw p50/p95: %.1f/%.1f ms; min/max: %.1f/%.1f ms; coincident: %.1f%%; n=%d intervals. ",
+            p50, p95, low, high, coincident, intervals);
+    jitter < 0 ? sprintf(#help_secondary, "Secondary filtered jitter: n/a (n=%d; need 4).", accepted)
+               : sprintf(#help_secondary, "Secondary filtered jitter: %.1f ms (n=%d).", jitter, accepted);
+    strcat(#help_reading, #help_secondary);
+  );
+);
+
 // One formatter supplies both live text and representative state samples, so
 // changing an explanation cannot silently leave the stable reserve outdated.
-function metric_help_reading(metric, events, motion, motion_q, jitter, jitter_q, intervals, pair, value)
+function metric_help_reading(metric, events, motion, motion_q, p50, p95, intervals, pair, value)
   local(meaning) (
   metric == 4 ? (
     sprintf(#help_reading, "CC number: %d. MIDI channel: %d.", key_to_cc(pair), key_to_channel(pair) + 1);
@@ -306,21 +298,15 @@ function metric_help_reading(metric, events, motion, motion_q, jitter, jitter_q,
               strcmp(motion_q, "moderate") == 0 ? "moderate value travel" :
               strcmp(motion_q, "brisk") == 0 ? "brisk value travel" : "rapid value travel";
     sprintf(#help_reading, "Reading: %d u/s (%s) - %s.", motion, motion_q, meaning);
-  ) : jitter < 0 ? (
-    #help_reading = "Reading: n/a - insufficient data: need at least 4 intervals after the >4x shortest gap filter.";
   ) : (
-    meaning = strcmp(jitter_q, "steady") == 0 ? "very little spacing variation" :
-              strcmp(jitter_q, "even") == 0 ? "small spacing variation" :
-              strcmp(jitter_q, "uneven") == 0 ? "noticeable spacing variation" :
-              strcmp(jitter_q, "loose") == 0 ? "large spacing variation" : "very large spacing variation";
-    sprintf(#help_reading, "Reading: %.1f ms (%s) - %s. %d accepted intervals.",
-            jitter, jitter_q, meaning, intervals);
+    timing_help_reading(p50, p95, g_help_min, g_help_max, g_help_coincident,
+                        intervals, g_help_jitter, g_help_jitter_intervals);
   );
 );
 
 // Static definitions and complete representative readings keep geometry stable
 // without reserving six blank lines for every metric and viewport.
-function prepare_metric_help() local(i, sample_value, sample_jitter, sample_count) (
+function prepare_metric_help() local(i, sample_value, sample_count) (
   g_help_metric == 4 ? (
     #help_title = "CC / MIDI channel";
     #help_full = "CC is the MIDI controller number (0-127); CH is the MIDI channel (1-16). Leading zeroes are formatting. Each (CC, channel) is a separate stream.\nLabel, bar and value share the CC's base color with a channel shade. Colors and shades can repeat: read the label to identify the pair. This is MIDI identity, not automatic identification of a physical device.";
@@ -338,28 +324,32 @@ function prepare_metric_help() local(i, sample_value, sample_jitter, sample_coun
     #help_full = "Sum of absolute successive CC value changes in the last second (CC units/s, not percent). MIDI value travel, not physical speed; gestures, noise and jumps all contribute.\nslow <=15; moderate >15 to 40; brisk >40 to 70; fast >70 u/s. The displayed integer selects the term.\nOne-second window, independent of WIN.";
     #help_compact = "Absolute CC value travel in the last second (CC units/s), not physical speed or percent. One second, independent of WIN. See README: What the numbers mean.";
   ) : (
-    #help_title = "Message timing jitter";
-    #help_full = "Population standard deviation of accepted inter-message intervals (ms) in the last second. Intervals >4 times the shortest are excluded; at least 4 accepted intervals are needed, otherwise n/a. 'int' means accepted inter-message intervals.\nsteady <=5; even >5 to 15; uneven >15 to 30; loose >30 to 50; erratic >50 ms. Terms use unrounded values.\nOne second, independent of WIN. Not a guaranteed +/- bound, latency or hardware grade; no data is not stability.";
-    #help_compact = "Standard deviation of accepted message intervals (ms) over one second, independent of WIN. 'int' means accepted inter-message intervals. Not a bound, latency or hardware grade. See README: What the numbers mean.";
+    #help_title = "Timing: raw message intervals";
+    #help_full = "Raw consecutive message intervals in ms over the closed last-second window, independent of WIN. Both endpoints must be inside it. Zero intervals and long gaps stay. p50 is the median, p95 the 95th percentile (nearest rank ceil(p*n)); n is interval count, not messages. Small n is weak evidence. Coincident means equal host-observed timestamps, not physical simultaneity.\nNegative timestamps/out-of-window events break adjacency; negative deltas are skipped, with the current event starting the next interval. Zero timestamps are valid.\nSecondary filtered jitter is population SD after excluding intervals >4 times the raw minimum; needs 4 accepted intervals. If minimum is zero, only zeros pass: jitter can be zero despite large raw gaps. Not latency, a bound or a hardware grade.";
+    #help_compact = "Raw p50/p95 (nearest rank), min/max in ms; n counts intervals. Both endpoints in the last second; zeros/gaps stay. Coincident = equal host timestamps, not physical simultaneity. Secondary jitter filters >4x minimum (zero minimum keeps only zeros); needs 4 intervals. Not latency or a hardware grade. See README: What the numbers mean.";
   );
   // Include zero/n/a and every qualitative wording, with the longest pair and
   // Frozen prefix. Numeric representatives cover each category's printed width.
   #help_samples = "";
-  sample_count = g_help_metric == 1 ? 2 : g_help_metric == 2 ? 5 : g_help_metric == 3 ? 6 : 1;
+  sample_count = g_help_metric == 1 ? 2 : g_help_metric == 2 ? 5 : g_help_metric == 3 ? 3 : 1;
   i = 0;
   loop(sample_count,
     sample_value = i == 0 ? 0 : i == 1 ? 15 : i == 2 ? 40 : i == 3 ? 70 : 63500;
-    sample_jitter = i == 0 ? -1 : i == 1 ? 5 : i == 2 ? 15 : i == 3 ? 30 : i == 4 ? 50 : 999.9;
-    metric_help_reading(g_help_metric, i == 0 ? 0 : 500,
-                        sample_value, get_rate_quality(sample_value),
-                        sample_jitter, get_jitter_quality(sample_jitter), 499, 2047, 127);
+    g_help_metric == 3 ? (
+      // Widest supported numbers and unavailable secondary detail. These samples
+      // reserve the whole cached reading in every tooltip width, not only p50/95.
+      timing_help_reading(i == 0 ? -1 : 1000, 1000, 1000, 1000, 100,
+                          499, i == 2 ? -1 : 1000, 499);
+    ) : metric_help_reading(g_help_metric, i == 0 ? 0 : 500,
+                            sample_value, get_rate_quality(sample_value),
+                            -1, -1, 499, 2047, 127);
     strcat(#help_samples, "CC127/CH16 - Frozen - ");
     strcat(#help_samples, #help_reading);
     strcat(#help_samples, "\n");
     i += 1;
   );
   metric_help_reading(g_help_metric, g_help_events, g_help_motion, #help_motion_q,
-                      g_help_jitter, #help_jitter_q, g_help_intervals, g_help_pair, g_help_value);
+                      g_help_p50, g_help_p95, g_help_intervals, g_help_pair, g_help_value);
   sprintf(#help_pair, "CC%02d/CH%02d - ", key_to_cc(g_help_pair), key_to_channel(g_help_pair) + 1);
   slider2 ? strcat(#help_pair, "Frozen - ");
   strcat(#help_pair, #help_reading);

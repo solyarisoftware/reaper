@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.16.1
+// @version 0.17.0
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -18,10 +18,18 @@ desc:CCScope
 //   shade, and the CC and channel filters combine. Three numbers per row are
 //   measured over exactly the last second: Messages (how often the controller
 //   sends, including repeats), Motion (absolute MIDI value travel, in CC units/s)
-//   and Jitter (standard deviation of accepted message intervals, in ms).
+//   and Timing (raw message-interval p50/p95 in ms, with interval count n).
 //   Resting on a visible metric explains its reading and descriptive scale;
 //   the row label explains CC/channel/color and the colored bar/value its 0-127 range.
-//   Jitter needs at least four intervals after excluding gaps >4x the shortest.
+//   Timing keeps zeros and long gaps; help adds min/max, coincident timestamp
+//   percentage and secondary gap-filtered jitter. Quantiles use nearest rank:
+//   sorted rank ceil(p*n). Both endpoints must be inside [now-1s, now]; negative
+//   timestamps/out-of-window events break adjacency, backwards intervals are
+//   skipped with the current event as next endpoint. Timestamp zero is valid.
+//   No interval means n/a; one is shown, but small n is weak evidence. Coincident
+//   means equal host timestamps, not physical simultaneity. Secondary jitter is
+//   population SD after keeping intervals <=4x raw minimum, needs 4 intervals;
+//   a zero minimum keeps only zeros, even when raw intervals include long gaps.
 //   Metrics use one second independent of WIN; Freeze keeps the displayed instant.
 //
 //   The pair list sits below the plot or beside it, for windows that are wide
@@ -33,7 +41,7 @@ desc:CCScope
 //   presets and under Param.
 //
 //   These describe MIDI output, not physical speed, value resolution or hardware
-//   quality. Jitter is not latency or a guaranteed bound; no data is not stability.
+//   quality. Timing is not latency or a guaranteed bound; no data is not stability.
 //   Written for REAPER 6.37 or newer.
 //
 //   Bugs, defined changes and the roadmap live in the repository's issues and
@@ -54,7 +62,7 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   **Keep event points in every DOTS mode.** Dense streams retain circle markers instead of vertical ticks; points-only mode draws no connecting lines, and step and tail geometry is unchanged. [#27](https://github.com/solyarisoftware/reaper/issues/27)
+//   **The third column now describes delivery timing instead of guessing at quality.** Timing shows raw p50/p95 message intervals in ms with the interval count n: coincident timestamps and long pauses both stay, so a burst-and-pause stream is visible instead of being summarised as steady. Resting on it adds min/max, the coincident-timestamp percentage and a secondary gap-filtered jitter, labelled as filtered. Quality words and the old single jitter number are gone; Messages and Motion are unchanged. [#30](https://github.com/solyarisoftware/reaper/discussions/30)
 
 
 // ===================================================================
@@ -70,7 +78,7 @@ desc:CCScope
 // - Per-pair observations of MIDI output, not hardware grades:
 //   * Messages: received messages per second, including repeated values
 //   * Motion: absolute value travel in CC units/s
-//   * Jitter: standard deviation of accepted message intervals in ms
+//   * Timing: raw interval p50/p95 in ms, with interval sample count
 // - Dynamic layout: the pair list can sit under the plot (rows take height from
 //   the graph) or beside it (a column that uses the whole window height, so a
 //   short, wide window still shows every pair); the plot keeps a minimum share
@@ -174,7 +182,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.16.1
+version: 0.17.0
 date: 2026-11-07
 
 // Import utility libraries
@@ -227,20 +235,20 @@ MIN_GRAPH_PROPORTION = 0.35;
 // rows below the plot, so the whole window height is available for pairs. The
 // width is fixed by what a row has to hold -- label, bar, value and the compact
 // metrics -- because a column that adapts its width would move the plot while
-// the data changes. Measured in REAPER at FONT_SIZE 16 (Arial): label 67 px,
-// compact metrics 175 px; the reserves below are those numbers plus air.
+// the data changes. The label was measured in REAPER at FONT_SIZE 16 (Arial):
+// 67 px. Timing reserves raw p50/p95 up to 1000 ms plus an interval count.
 SIDE_PAD = 8;             // px between the column content and the window edge
 SIDE_COLUMN_GAP = 16;     // px between the plot and the column
 SIDE_LABEL_WIDTH = 76;    // "CCnn/CHnn" plus air
 SIDE_BAR_WIDTH = 90;      // the bar itself: narrower than below the plot, on purpose
 SIDE_VALUE_WIDTH = 30;    // the 3-digit value, right after the bar
-SIDE_METRICS_WIDTH = 220; // left-aligned compact fields, including maximum values
+SIDE_METRICS_WIDTH = 360; // left-aligned compact fields, including maximum values
 MIN_PLOT_WIDTH = 240;     // below this the plot stops being a plot: fall back
 SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ... "now")
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.16.1";
+CCSCOPE_VERSION = "0.17.0";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair
@@ -308,7 +316,7 @@ g_value_x = 0;
 g_metrics_x = 0;
 
 // ========== THE THREE METRIC COLUMNS ==========
-// The numbers under Messages, Motion and Jitter are written into fixed fields so
+// The numbers under Messages, Motion and Timing are written into fixed fields so
 // that rows read as a table: labels, values/units and quality words each have a
 // fixed LEFT edge in every tier. calculate_metric_columns() measures reserved
 // widths and decides which form fits; changing a number never moves a field.
@@ -324,16 +332,16 @@ g_col_mot_q_r = 0;
 g_col_tmg_x = 0;
 g_col_tmg_v_x = 0;
 g_col_tmg_r = 0;
-g_col_tmg_q_x = 0;
-g_col_tmg_q_r = 0;
 
-// Only the hovered row is cached; no new mem[] allocation or buffer traversal.
+// Only the hovered row reading is cached; no tooltip mem[] or buffer traversal.
 g_row_intervals = 0;
 g_help_hit = 0; g_help_previous = 0; g_help_since = 0;
-// Subjects: 1 Messages, 2 Motion, 3 Jitter, 4 stream identity, 5 stored value.
+// Subjects: 1 Messages, 2 Motion, 3 Timing, 4 stream identity, 5 stored value.
 g_help_metric = 0; g_help_pair = 0; g_help_value = 0;
 g_help_left = 0; g_help_right = 0; g_help_top = 0; g_help_bottom = 0;
-g_help_events = 0; g_help_motion = 0; g_help_jitter = -1; g_help_intervals = 0;
+g_help_events = 0; g_help_motion = 0; g_help_intervals = 0;
+g_help_p50 = -1; g_help_p95 = -1; g_help_min = -1; g_help_max = -1;
+g_help_coincident = -1; g_help_jitter = -1; g_help_jitter_intervals = 0;
 
 // ========== CONTROL BAR STATE ==========
 // The bar's own state -- cell geometry, values, the open list, the pointer edges

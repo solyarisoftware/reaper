@@ -34,10 +34,17 @@ def expression(text, values):
 
 
 class MetricAlgorithmRegressionTests(unittest.TestCase):
-    def test_metric_code_is_identical_to_a023aa0_ignoring_comments(self):
-        # The whole module: window, count/delta/gap filters, variance, thresholds.
-        self.assertEqual(digest((SOURCE / 'ccscope_metrics.jsfx-inc').read_text()),
-                         'f4a5ed237a279ad4a392bf06f1ef5eada7361498b29b2803192e884b9d3b8e11')
+    def test_messages_motion_and_ingest_are_unchanged_from_0161(self):
+        text = (SOURCE / 'ccscope_metrics.jsfx-inc').read_text()
+        expected = {
+            'update_metrics_for_cc_channel': '4d2690f1b647757568368f53b7cfa0465f3c3a70d7c88b9d8a6aef5368d506c3',
+            'get_events_per_second_cc_channel': '473b1f2a6a2fc8353016207070eaca7f5e12675964b1e7cea53c6c675a188d5c',
+            'get_rate_per_second_cc_channel': '82682c12ce58bfababa75a12bb4c4239f4111d3d7edc6b052650c0ca06b81aae',
+            'get_rate_quality': '779ffdbbff8820085bc0a37b0f7a6fe592451f5ac97b6170c9dee452136fff6e',
+        }
+        for name, baseline in expected.items():
+            body = function(text, name).split('\n);', 1)[0] + '\n);'
+            self.assertEqual(digest(body), baseline, name)
 
     def test_midi_acquisition_freeze_pruning_and_passthrough_are_unchanged(self):
         main = (SOURCE / 'ccscope.jsfx').read_text()
@@ -52,9 +59,7 @@ class MetricAlgorithmRegressionTests(unittest.TestCase):
         for name, variable, cases in (
             ('get_rate_quality', 'rate_value', [(0, 'slow'), (15, 'slow'), (16, 'moderate'),
              (40, 'moderate'), (41, 'brisk'), (70, 'brisk'), (71, 'fast')]),
-            ('get_jitter_quality', 'jitter_ms', [(0, 'steady'), (5, 'steady'), (5.001, 'even'),
-             (15, 'even'), (15.001, 'uneven'), (30, 'uneven'), (30.001, 'loose'),
-             (50, 'loose'), (50.001, 'erratic')]),
+
         ):
             actual = function(text, name).split(') (', 1)[1].split('\n);', 1)[0].strip()
             # These functions are nested, side-effect-free EEL2 conditional expressions.
@@ -96,15 +101,15 @@ class MetricHoverTests(unittest.TestCase):
         capture = function(self.rows, 'capture_metric_help')
         self.assertIn('events <= 0 || g_metrics_tier == 0', capture)
         self.assertIn('gfx_measurestr(#help_field, tw, th);', capture)
-        self.assertIn('g_metrics_tier == 3 && jitter >= 0 && intervals < 20', capture)
+        self.assertIn('p50, p95, intervals', capture)
         self.assertIn('g_help_hit = pair * 5 + metric;', capture)
 
     def test_hit_bounds_include_actual_left_aligned_numeric_extents(self):
         capture = function(self.rows, 'capture_metric_help')
         self.assertIn('sprintf(#help_field, "%d u/s", motion);', capture)
         self.assertIn('right = max(g_col_mot_q_r, g_col_mot_v_x + tw);', capture)
-        self.assertIn('sprintf(#help_field, "%.1fms", jitter);', capture)
-        self.assertIn('right = max(g_col_tmg_q_r, g_col_tmg_v_x + tw);', capture)
+        self.assertIn('sprintf(#help_field, "%.1f/%.1fms n=%d", p50, p95, intervals);', capture)
+        self.assertIn('right = max(g_col_tmg_r, g_col_tmg_v_x + tw);', capture)
         self.assertIn('g_help_right = min(gfx_w, right);', capture)
         fixture = (ROOT / 'tools/ccscope_tooltip_probe.txt').read_text()
         self.assertIn('162.4', fixture)
@@ -113,10 +118,10 @@ class MetricHoverTests(unittest.TestCase):
 
     def test_every_displayed_value_and_quality_uses_a_fixed_left_edge(self):
         draw = function(self.rows, 'draw_row_metrics')
-        for field in ('msg_v_x', 'mot_v_x', 'mot_q_x', 'tmg_v_x', 'tmg_q_x'):
+        for field in ('msg_v_x', 'mot_v_x', 'mot_q_x', 'tmg_v_x'):
             self.assertIn(f'gfx_x = g_col_{field};', draw)
         self.assertNotRegex(draw, r'gfx_x\s*=\s*g_col_\w+_r\s*-')
-        for reading in ('500/s', '63500 u/s', '999.9ms'):
+        for reading in ('500/s', '63500 u/s', '1000.0/1000.0ms n=499'):
             self.assertIn(f'gfx_measurestr("{reading}"', self.layout)
         self.assertIn('g_col_msg_v_x = g_col_msg_x;', self.layout)
         self.assertIn('g_col_mot_v_x = g_col_mot_x;', self.layout)
@@ -151,9 +156,13 @@ class MetricHoverTests(unittest.TestCase):
         prepare = function(self.rows, 'prepare_metric_help')
         self.assertNotRegex(capture + prepare, r'get_(events_per_second|rate_per_second|jitter_ms)')
         self.assertIn('g_help_intervals = intervals;', capture)
-        self.assertIn('g_row_intervals = g_jitter_intervals;', self.rows)
-        self.assertLess(self.rows.index('g_row_intervals = g_jitter_intervals;'),
-                        self.rows.index('jitter_q = jitter_ms < 0'))
+        self.assertIn('g_row_intervals = g_timing_intervals;', self.rows)
+        for snapshot in ('min', 'max', 'coincident', 'jitter', 'jitter_intervals'):
+            self.assertIn(f'g_help_{snapshot} = g_timing_{snapshot};', capture)
+        self.assertNotIn('MEM_TIMING_SCRATCH', capture + prepare)
+        self.assertNotIn('get_timing_cc_channel(', capture + prepare)
+        self.assertLess(self.rows.index('get_timing_cc_channel(cc_num, channel);'),
+                        self.rows.index('capture_metric_help(cc_channel_pair'))
         main = (SOURCE / 'ccscope.jsfx').read_text()
         self.assertIn('g_help_hit = 0;\ndraw_cc_bars();', main)
         self.assertIn('metric_help_dwell(g_help_hit, time_precise(), cbm_open() > 0)', main)
@@ -170,24 +179,26 @@ class MetricHoverTests(unittest.TestCase):
     def test_live_reserve_uses_the_same_formatter_and_int_is_explicit(self):
         prepare = function(self.rows, 'prepare_metric_help')
         self.assertEqual(prepare.count('metric_help_reading('), 2)
-        self.assertIn('sample_count = g_help_metric == 1 ? 2 : g_help_metric == 2 ? 5 : g_help_metric == 3 ? 6 : 1;', prepare)
+        self.assertIn('sample_count = g_help_metric == 1 ? 2 : g_help_metric == 2 ? 5 : g_help_metric == 3 ? 3 : 1;', prepare)
         self.assertIn('CC127/CH16 - Frozen - ', prepare)
         self.assertIn('strcat(#help_samples, #help_reading);', prepare)
-        self.assertEqual(prepare.count("'int' means accepted inter-message intervals"), 2)
+        self.assertIn('n is interval count, not messages', prepare)
+        self.assertIn('timing_help_reading(i == 0 ? -1 : 1000', prepare)
 
-    def test_display_help_and_docs_use_jitter_without_plus_minus(self):
-        self.assertIn('gfx_drawstr("Jitter")', self.rows)
-        self.assertIn('sprintf(#mtf, "%.1fms", jitter_ms)', self.rows)
+    def test_timing_is_raw_with_secondary_filtered_detail_and_no_quality_grade(self):
+        self.assertIn('gfx_drawstr("Timing")', self.rows)
+        self.assertIn('sprintf(#mtf, "%.1f/%.1fms n=%d", p50, p95, intervals)', self.rows)
         self.assertNotIn('±', self.rows)
-        self.assertIn('gfx_measurestr("999.9ms", wv_tmg, th)', self.layout)
-        for phrase in ['Message timing jitter', 'Population standard deviation',
-                       'Intervals >4 times the shortest', 'at least 4 accepted intervals',
-                       'steady <=5; even >5 to 15; uneven >15 to 30; loose >30 to 50; erratic >50',
+        self.assertNotIn('steady', self.rows)
+        self.assertIn('gfx_measurestr("1000.0/1000.0ms n=499", wv_tmg, th)', self.layout)
+        for phrase in ['Timing: raw message intervals', 'nearest rank',
+                       'Both endpoints', 'Small n is weak evidence',
+                       'Zero intervals and long gaps stay', 'not physical simultaneity',
+                       'Secondary filtered jitter', 'only zeros pass',
                        'slow <=15; moderate >15 to 40; brisk >40 to 70; fast >70',
                        'no measured value travel', 'no data is not evidence of stability',
-                       'insufficient data', 'Terms use unrounded values', 'See README']:
+                       'need two usable events', 'See README']:
             self.assertIn(phrase, self.rows)
-        self.assertNotIn('0 accepted intervals', self.rows)
         self.assertIn('slider2 ? strcat(#help_pair, "Frozen - ");', self.rows)
 
 
@@ -258,7 +269,7 @@ class TooltipRendererTests(unittest.TestCase):
             fixture = (output / 'tooltip_checks.jsfx').read_text()
             for phrase in ['options:gmem=CCScopeTooltip18', 'help_tiers == 15',
                            'metric_help_dwell(1, 2.399, 0)', 'help_saved_h = tip_h',
-                           'help_n == 4 ? 19 : 20', 'get_jitter_quality(5.001)',
+                           'get_timing_cc_channel(0, 0)', 'g_help_jitter_intervals == 90',
                            'help_verify(!tip_visible)', 'gmem[2] = 1']:
                 self.assertIn(phrase, fixture)
             self.assertEqual((output / 'ccscope_tooltip.jsfx-inc').read_bytes(),

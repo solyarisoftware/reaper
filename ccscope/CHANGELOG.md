@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.17.0 — 2026-11-10
+
+- **The third column now describes delivery timing instead of guessing at quality.** Timing shows raw p50/p95 message intervals in ms with the interval count n: coincident timestamps and long pauses both stay, so a burst-and-pause stream is visible instead of being summarised as steady. Resting on it adds min/max, the coincident-timestamp percentage and a secondary gap-filtered jitter, labelled as filtered. Quality words and the old single jitter number are gone; Messages and Motion are unchanged. [#30](https://github.com/solyarisoftware/reaper/discussions/30)
+
 ## 0.16.1 — 2026-11-10
 
 - **Keep event points in every DOTS mode.** Dense streams retain circle markers instead of vertical ticks; points-only mode draws no connecting lines, and step and tail geometry is unchanged. [#27](https://github.com/solyarisoftware/reaper/issues/27)

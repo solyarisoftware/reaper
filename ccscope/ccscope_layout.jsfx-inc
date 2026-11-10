@@ -134,24 +134,19 @@ function calculate_layout(filtered_count) local(required_bar_height, max_bar_hei
  * moves another field nor overprints it. Half-open field bounds feed hover help.
  */
 function calculate_metric_columns() local(
-    tw, th, wmsg, wmot, wtmg, wv_msg, wv_mot, wv_tmg, wq_mot, wq_tmg,
+    tw, th, wmsg, wmot, wtmg, wv_msg, wv_mot, wv_tmg, wq_mot,
     avail, gap, total) (
   gap = 14;
   avail = g_layout_side ? SIDE_METRICS_WIDTH : max(gfx_w - g_metrics_x - 8, 80);
 
   gfx_measurestr("Messages", wmsg, th);
   gfx_measurestr("Motion", wmot, th);
-  gfx_measurestr("Jitter", wtmg, th);
+  gfx_measurestr("Timing", wtmg, th);
   gfx_measurestr("500/s", wv_msg, th);
-  // 500 retained events * 127 units/event; jitter cannot span a whole second.
+  // Both raw interval endpoints can span the closed one-second window.
   gfx_measurestr("63500 u/s", wv_mot, th);
-  gfx_measurestr("999.9ms", wv_tmg, th);
+  gfx_measurestr("1000.0/1000.0ms n=499", wv_tmg, th);
   gfx_measurestr("moderate", wq_mot, th);
-  gfx_measurestr("erratic", wq_tmg, th);
-  gfx_measurestr("steady", tw, th); wq_tmg = max(wq_tmg, tw);
-  gfx_measurestr("even", tw, th); wq_tmg = max(wq_tmg, tw);
-  gfx_measurestr("uneven", tw, th); wq_tmg = max(wq_tmg, tw);
-  gfx_measurestr("loose", tw, th); wq_tmg = max(wq_tmg, tw);
 
   // ========== THE WIDEST FORM: LABELS AND QUALITY WORDS ==========
   g_metrics_tier = 3;
@@ -166,9 +161,7 @@ function calculate_metric_columns() local(
   g_col_tmg_x = g_col_mot_q_r + gap;
   g_col_tmg_v_x = g_col_tmg_x + wtmg + 8;
   g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
-  g_col_tmg_q_x = g_col_tmg_r + 8;
-  g_col_tmg_q_r = g_col_tmg_q_x + wq_tmg;
-  total = g_col_tmg_q_r - g_metrics_x;
+  total = g_col_tmg_r - g_metrics_x;
 
   // ========== WITHOUT THE QUALITY WORDS ==========
   total > avail ? (
@@ -177,7 +170,6 @@ function calculate_metric_columns() local(
     g_col_tmg_x = g_col_mot_r + gap;
     g_col_tmg_v_x = g_col_tmg_x + wtmg + 8;
     g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
-    g_col_tmg_q_r = g_col_tmg_r;
     total = g_col_tmg_r - g_metrics_x;
   );
 
@@ -193,7 +185,6 @@ function calculate_metric_columns() local(
     g_col_tmg_x = g_col_mot_r + gap;
     g_col_tmg_v_x = g_col_tmg_x;
     g_col_tmg_r = g_col_tmg_v_x + wv_tmg;
-    g_col_tmg_q_r = g_col_tmg_r;
     total = g_col_tmg_r - g_metrics_x;
   );
 

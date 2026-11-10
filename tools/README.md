@@ -18,6 +18,67 @@ point-index ranges. Tests verify that deliberate overlap, an enlarged history
 without relocated ranges, and narrower/wider pair keys are rejected. These checks do not
 execute EEL2 or establish thread safety.
 
+## Native Timing metrics and cost checks
+
+Generate text files in **new WSL temporary directories**; these commands do not run
+REAPER or modify installed Effects:
+
+```bash
+work=$(mktemp -d)
+python3 tools/ccscope_metrics_probe.py --source ccscope --output "$work/metrics"
+python3 tools/ccscope_metrics_probe.py --source ccscope --benchmark --output "$work/cost"
+python3 tools/ccscope_tooltip_probe.py --source ccscope --output "$work/tooltip"
+```
+
+An authorized operator must arrange loading of these copies in a disposable native
+REAPER environment. Do not attach MIDI input/generators: fixtures own their buffers.
+`metrics_checks.jsfx` imports exact copies of the production metrics, storage and
+window functions. Twenty fixtures cover uniform spacing, coincident batches with
+pauses, empty/one-event/one-interval samples, repeated values, zero timestamps,
+closed boundaries, excluded future/past/negative endpoints, backwards deltas, exact
+nearest-rank quantiles, and 499-interval descending/repeated/permuted sorting cases.
+It checks every sorted element as well as scalar outputs and secondary filtered
+sample counts. Additional cases exercise prefix-only pruning without bridging invalid
+endpoints, monotonic Messages/Motion preservation, capacity/overflow, cutoff advance,
+WIN independence, Clear and the actual frozen-window function. These deterministic
+checks do not replace live MIDI/Freeze/thread interaction acceptance.
+
+Read gmem namespace **CCScopeMetricsTiming**: `[0]` assertions, `[1]` failures,
+`[2]` complete, `[3]` first failing assertion ordinal, `[4]` first failing case
+(1-based fixture order in `CASES`; 99 pruning/capacity, 100 Freeze/cutoff), `[5]`
+fixture count. Require `[2]=1`, `[1]=0` and a nonzero assertion count. For example,
+from an authorized Lua runner:
+
+```lua
+reaper.gmem_attach("CCScopeMetricsTiming")
+for i = 0, 5 do
+  reaper.ShowConsoleMsg(string.format("gmem[%d] = %.9g\n", i, reaper.gmem_read(i)))
+end
+```
+
+To verify red capability, mutate only a generated assertion (for example, uniform
+p50's expected 10 ms to 11 ms); require a failure, then regenerate the clean probe.
+The Python oracle/generator and source checks **do not execute EEL2**.
+
+`metrics_cost.jsfx` measures the actual `get_timing_cc_channel()` call over **1, 16,
+64 pairs**, each holding **500 messages**, at fixed `g_metrics_now=1`. Open its UI;
+work runs once per `@gfx` frame, two warm-ups then 32 timed frames per case. Read
+**CCScopeMetricsCost**: `[0..2]` best microseconds, `[3..5]` mean microseconds in pair
+count order; `[6]=3` means all cases complete, `[7]=500` records buffer occupancy.
+This isolates Timing collection, heapsort and secondary SD, not drawing, Messages,
+Motion, audio scheduling or rasterisation. No speed or real-time safety claim follows
+from its bounded operation count: measure the full UI separately before acceptance.
+There is no time-based Timing cache: each drawn row recomputes at the frame's exact
+cutoff; the hovered row snapshots scalar results before shared scratch is reused.
+
+The **499 GUI-only scratch slots** occupy `[3106100, 3106599)`, after metrics ending
+at 3106096 and before the ring starting at 3120000. The ring still ends at 8320000,
+below the default 8388608-slot ceiling. The memory checker rejects overlap and
+scratch capacities smaller than `MAX_EVENTS_PER_CC-1` or greater than 500. Prefix-only
+pruning preserves interior expired/invalid adjacency separators in non-monotonic
+streams; these can consume retained capacity until the prefix expires, but cannot
+extend storage beyond 500 messages per pair.
+
 ## Native graph-command regression
 
 Export the baseline `ccscope.jsfx` to a temporary reference file, then build a probe
@@ -123,8 +184,8 @@ No MIDI input/generator: this fixture owns the metrics buffers. It calls the act
 row hover/content, dwell, metrics and generic tooltip functions, with native font measurements.
 It checks all four tiers, field gaps/right edges and half-open row boundaries, zero/n/a,
 pair/subject changes, identity and bar/value targets (including their gaps and stable anchors),
-399/401 ms dwell and menu suppression, 3/4/19/20 intervals, the gap
-filter, scratch-output caching, threshold endpoints/rounding, fixed geometry across content
+399/401 ms dwell and menu suppression, maximum Timing widths and side-layout fallback,
+complete raw/filtered snapshot caching across later rows, Motion thresholds, fixed geometry across content
 variants (including Frozen), narrow/full/compact/suppressed panels, and restored font/colour/blend.
 
 Results use `CCScopeTooltip18` gmem: `[0]` checks, `[1]` failures, `[2]` completed, `[3]` first

@@ -30,6 +30,18 @@ class MemoryMapTests(unittest.TestCase):
     def test_current_ranges_fit(self):
         self.assertEqual(MEMORY.check(self.source), [])
 
+    def test_timing_scratch_overlap_is_rejected(self):
+        self.replace('MEM_TIMING_SCRATCH = 3106100;', 'MEM_TIMING_SCRATCH = 3106000;')
+        self.assertTrue(any('overlaps' in error for error in MEMORY.check(self.source)))
+
+    def test_timing_scratch_must_hold_every_interval_and_stay_bounded(self):
+        for size in (498, 501):
+            path = self.source / 'ccscope_utils.jsfx-inc'
+            text = path.read_text()
+            path.write_text(text.replace('TIMING_SCRATCH_SIZE = 499;', f'TIMING_SCRATCH_SIZE = {size};'))
+            self.assertTrue(any('Timing scratch' in error for error in MEMORY.check(self.source)))
+            path.write_text(text)
+
     def test_event_ring_overlap_is_rejected(self):
         self.replace('MEM_EVENT_RING = 3120000;', 'MEM_EVENT_RING = 20000;')
         self.assertTrue(any('overlaps' in error for error in MEMORY.check(self.source)))
@@ -286,6 +298,10 @@ class Eel2OrderTests(unittest.TestCase):
         # Native tooltip fixtures call production functions too: catch stale
         # signatures/forward references before a parent-authorized native run.
         parts.append((ROOT / 'tools/ccscope_tooltip_probe.txt').read_text())
+        spec = importlib.util.spec_from_file_location('metrics_probe', ROOT / 'tools/ccscope_metrics_probe.py')
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        parts.append(probe.HELPERS + probe.checks() + probe.BENCHMARK_INIT + probe.BENCHMARK_FRAME)
         text = '\n'.join(parts)
         text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
         return re.sub(r'//[^\n]*', '', text)
@@ -328,7 +344,7 @@ class Eel2OrderTests(unittest.TestCase):
             return args
 
         declared = {}
-        for match in re.finditer(r'^function\s+([A-Za-z_]\w*)\s*\(([^)]*)\)[^\n(]*\(', clean, re.M):
+        for match in re.finditer(r'^function\s+([A-Za-z_]\w*)\s*\(([^)]*)\)[^(]*\(', clean, re.M):
             declared[match.group(1)] = len(split_args(match.group(2)))
         self.assertGreater(len(declared), 90, 'the package must be parsed, not skipped')
         problems = []
