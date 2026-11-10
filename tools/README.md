@@ -211,9 +211,9 @@ drawing the plugin claims to do, not a golden image of what it happens to do:
   vertical at the new event -- and a diagonal is never drawn, for any `DOTS` state;
 - the hold runs at the previous value (`history_fx1/fy1/fx2/fy2` capture the first
   line), and an unchanged value draws the hold with no vertical at all;
-- a mark is a circle while successive marks stay `MARK_CIRCLE_MIN` px apart and a
-  **tick** below that, and the count never drops: at 4001 events in the window the
-  probe expects 4001 marks and `g_segment_stride == 2`;
+- every event has a circle marker in all three modes, including dense bursts;
+  no marker is replaced by a vertical tick. At 4001 events in the window the
+  probe expects 4001 circles and `g_segment_stride == 2`;
 - only the steps decimate, and at exactly `SEGMENT_BUDGET` commands nothing is
   skipped;
 - the coda is dashed, sits at the held value and stops at the right edge; it

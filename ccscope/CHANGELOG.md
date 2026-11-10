@@ -4,6 +4,10 @@ Notable changes only — what someone using the plugin would notice. One entry p
 line per change; the reasoning and the measurements behind each one live in the linked issue or
 discussion, or in `git log`.
 
+## 0.16.1 — 2026-11-10
+
+- **Keep event points in every DOTS mode.** Dense streams retain circle markers instead of vertical ticks; points-only mode draws no connecting lines, and step and tail geometry is unchanged. [#27](https://github.com/solyarisoftware/reaper/issues/27)
+
 ## 0.16.0 — 2026-11-07
 
 - **Colours and names are yours, in a file you edit.** `ccscope_cc_table.jsfx-inc` lists every CC with a colour and a short name; the six palettes and the COLOR cell are gone, and the parameter that drove them stays declared so existing presets keep their numbering.

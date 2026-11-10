@@ -19,8 +19,9 @@ panels explaining a reading. The static screenshot used by ReaPack is
   the value held in between — a step, never a diagonal through values that were never sent. After
   the last event the held value continues dashed, because there the drawing is an inference, and
   it keeps being drawn -- from the left edge -- after that event scrolls out of the window. A
-  dense stream swaps the circle for a short tick instead of dropping events: only the step is
-  decimated, and the status line says by how much.
+  circle marks every received event in all three DOTS modes, even in dense streams; markers
+  are never replaced by vertical ticks. **Points only** draws no step or tail. Only the step
+  is decimated, and the status line says by how much.
 - **Per (CC, channel)**: the same CC number on different channels is shown and measured as its
   own row — same hue per CC, a different shade per channel. The CC filter and the channel filter
   are independent and combine: one CC, one channel, or one CC on one channel.

@@ -280,10 +280,10 @@ function plot_dashed_h(x1, x2, y) local(k, n, dx, de) (
 // Pass 3 releases the map.
 //
 // The marks are never decimated: a mark IS a received event, and a monitor that
-// drops events silently is lying about the stream. What adapts to density is the
-// primitive -- a filled circle (r=2) while successive marks of a pair stay
-// MARK_CIRCLE_MIN px apart, a short vertical tick beyond it, where a row of
-// circles would fuse into a band. The steps ARE decimated, above SEGMENT_BUDGET
+// drops events silently is lying about the stream. Every mode draws a filled
+// circle (r=2) per event, even at high density: marker ticks could merge into
+// vertical strokes or hide the event points on a step. Only the steps are
+// decimated above SEGMENT_BUDGET
 // draw commands, because they are the expensive part; g_segment_stride says by
 // how much and the status line repeats it.
 //
@@ -294,7 +294,7 @@ function plot_dashed_h(x1, x2, y) local(k, n, dx, de) (
 function draw_cc_data_lines(visible_count) local(
   i, pair, slot, state, e, n, idx, packed, t, v, x, y, cc, ch,
   oldest, seen_n, total, stride, cnt, px, py, seen, newest, done,
-  x_right, last_x, last_y, dist, x_left, missing, scanned, gap_y) (
+  x_right, last_x, last_y, x_left, missing, scanned, gap_y) (
 
   g_marks_drawn = 0;
   g_events_in_window = 0;
@@ -427,12 +427,7 @@ function draw_cc_data_lines(visible_count) local(
       );
 
       // the mark: one per event, never decimated
-      dist = seen != 0 ? x - mem[state + 2] : MARK_CIRCLE_MIN;
-      dist >= MARK_CIRCLE_MIN ? (
-        gfx_circle(x, y, 2, 1);
-      ) : (
-        gfx_line(x, y - MARK_TICK_HALF, x, y + MARK_TICK_HALF);
-      );
+      gfx_circle(x, y, 2, 1);
       g_marks_drawn += 1;
 
       mem[state] = 1;

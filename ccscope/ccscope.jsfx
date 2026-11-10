@@ -1,7 +1,7 @@
 desc:CCScope
 // @description CCScope
 // @author Giorgio Robino
-// @version 0.16.0
+// @version 0.16.1
 // @about
 //   Shows what a MIDI controller actually sends: the shape of the movement over
 //   time, one fader bar per active CC, and how fast and how regularly each CC
@@ -9,7 +9,8 @@ desc:CCScope
 //
 //   Two display modes: a scrolling time graph with a labelled axis (1-30 s
 //   window) and one bar per active CC with its current value. The graph is
-//   literal: a mark is a received event, and the line between two events is the
+//   literal: every received event has a circle marker in all three DOTS modes,
+//   even in dense streams. The line between two events is the
 //   value the controller HOLDS, drawn as a step -- never an interpolation through
 //   values that were never sent. After the last event the held value continues
 //   dashed, because there it is an inference rather than a measurement. The same
@@ -53,9 +54,7 @@ desc:CCScope
 //   ccscope_controlbar.jsfx-inc
 //   ccscope_tooltip.jsfx-inc
 // @changelog
-//   **Colours and names are yours, in a file you edit.** `ccscope_cc_table.jsfx-inc` lists every CC with a colour and a short name; the six palettes and the COLOR cell are gone, and the parameter that drove them stays declared so existing presets keep their numbering.
-//   **A shade can no longer disappear.** The channels of one CC are four shades of its colour, drawn by moving luminance instead of multiplying the red, green and blue channels, which used to bury a blue in the background.
-//   **The status line names the stream** instead of counting it when there is exactly one: `CC11 expr` rather than `1 stream`.
+//   **Keep event points in every DOTS mode.** Dense streams retain circle markers instead of vertical ticks; points-only mode draws no connecting lines, and step and tail geometry is unchanged. [#27](https://github.com/solyarisoftware/reaper/issues/27)
 
 
 // ===================================================================
@@ -175,7 +174,7 @@ desc:CCScope
 // ===================================================================
 
 author: Giorgio Robino
-version: 0.16.0
+version: 0.16.1
 date: 2026-11-07
 
 // Import utility libraries
@@ -241,7 +240,7 @@ SIDE_TIME_LABEL_BAND = 20; // room under the plot for the time labels ("-10s" ..
 
 // The version the status line shows. REAPER cannot read this file's own @version,
 // so it is a constant here -- and the test suite asserts it equals @version.
-CCSCOPE_VERSION = "0.16.0";
+CCSCOPE_VERSION = "0.16.1";
 
 // Space reserved for the status line at the bottom. One line, always: a second one
 // was implemented and measured in 0.10.0 -- it costs two rows of pairs on a 60-pair

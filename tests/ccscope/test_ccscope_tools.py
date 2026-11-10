@@ -105,7 +105,12 @@ class HistoryProbeTests(unittest.TestCase):
             self.assertIn('history_verify(event_slot(EVENT_CAPACITY)==MEM_EVENT_RING)', text)
             # above the budget the STEPS decimate and publish the stride; the marks do not
             self.assertIn('history_verify(g_segment_stride==2);', text)
-            self.assertIn('history_verify(history_dots==1 && history_ticks==4000);', text)
+            self.assertIn('history_verify(history_dots==4001 && history_radius==2);', text)
+            # Dense markers remain circles in all three display modes.
+            self.assertIn('history_verify(history_dots==2 && history_lines==0);', text)
+            self.assertIn('history_verify(history_dots==81 && history_lines==0 && g_marks_drawn==81);', text)
+            self.assertIn('history_verify(history_dots==81 && history_horizontal==80 && history_vertical==80);', text)
+            self.assertIn('history_verify(history_dots==81 && history_horizontal>80 && history_vertical==80);', text)
             # the three modes, and a filter that hides a pair
             self.assertIn('slider5=0;', text)
             self.assertIn('slider5=2;', text)

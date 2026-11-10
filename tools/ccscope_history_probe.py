@@ -15,12 +15,7 @@ function history_line(x1,y1,x2,y2) (
  history_lines+=1; history_low=min(history_low,min(y1,y2));
  history_high=max(history_high,max(y1,y2));
  x1!=x2 && y1==y2 ? history_horizontal+=1;
- x1==x2 && y1!=y2 ? (
-   // A mark drawn as a tick is a vertical line too. It is the only vertical of
-   // exactly 2*MARK_TICK_HALF px: a step vertical spans a value difference, and
-   // the cases below keep those far from that length.
-   abs(y2-y1)==2*MARK_TICK_HALF ? history_ticks+=1 : history_vertical+=1;
- );
+ x1==x2 && y1!=y2 ? history_vertical+=1;
  x1!=x2 && y1!=y2 ? history_diagonal+=1;
  history_lines==1 ? (
    history_fx1=x1; history_fy1=y1; history_fx2=x2; history_fy2=y2;
@@ -40,7 +35,7 @@ function history_verify(condition) (
 );
 function history_reset_capture() (
  history_lines=0; history_dots=0; history_low=1000000; history_high=-1000000;
- history_horizontal=0; history_vertical=0; history_ticks=0; history_diagonal=0;
+ history_horizontal=0; history_vertical=0; history_diagonal=0;
  history_radius=0; history_fx1=0; history_fy1=0; history_fx2=0; history_fy2=0;
  history_x1=0; history_y1=0; history_x2=0; history_y2=0;
 );
@@ -92,14 +87,27 @@ clear_history(); add_event(1.1,0,50); add_event(1.9,0,50);
 history_reset_capture(); draw_cc_data_lines(1);
 history_verify(history_dots==2 && history_horizontal==1 && history_vertical==0);
 
-// the mark adapts to the spacing, the count never does: 4 px apart is a tick,
-// 8 px apart is a filled circle of radius 2
-slider5=2; clear_history(); add_event(1.1,0,64); add_event(1.104,0,65);
+// Dense events retain circle markers even with steps enabled.
+slider5=1; clear_history(); add_event(1.1,0,64); add_event(1.104,0,65);
 history_reset_capture(); draw_cc_data_lines(1);
-history_verify(history_dots==1 && history_ticks==1 && history_lines==1);
+history_verify(history_dots==2 && history_lines==2 && history_radius==2);
+// Points only must never turn dense markers into vertical strokes.
+slider5=2; history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==2 && history_lines==0);
+// Consecutive values at nearly identical x positions used to merge their ticks.
+clear_history();
+i=0; loop(81, add_event(1.5+i*0.000001,0,20+i); i+=1;);
+history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==81 && history_lines==0 && g_marks_drawn==81);
+// Both step modes keep every circle; no extra vertical marker lines.
+slider5=1; history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==81 && history_horizontal==80 && history_vertical==80);
+slider5=0; history_reset_capture(); draw_cc_data_lines(1);
+history_verify(history_dots==81 && history_horizontal>80 && history_vertical==80);
+slider5=2;
 clear_history(); add_event(1.1,0,64); add_event(1.108,0,66);
 history_reset_capture(); draw_cc_data_lines(1);
-history_verify(history_dots==2 && history_ticks==0 && history_radius==2);
+history_verify(history_dots==2 && history_lines==0 && history_radius==2);
 
 // the coda: the held value continues dashed after the last event, at that value
 slider5=0; clear_history(); add_event(1.1,0,20); add_event(1.5,0,100);
@@ -162,13 +170,13 @@ history_verify(history_dots==2 && history_diagonal==0);
 history_verify(abs(history_x2-300)<0.001 && abs(history_y2-27)<0.001);
 
 // above the drawing budget the STEPS decimate and the trace says by how much;
-// the marks still count one per event, as ticks at this density
+// the circle markers still count one per event at this density
 clear_history();
 i=0; loop(4001, add_event(1 + i*0.0002, 0, i%128); i+=1;);
 history_reset_capture(); draw_cc_data_lines(1);
 history_verify(g_segment_stride==2);
 history_verify(g_marks_drawn==4001 && g_events_in_window==4001);
-history_verify(history_dots==1 && history_ticks==4000);
+history_verify(history_dots==4001 && history_radius==2);
 history_verify(history_horizontal==2000 && history_vertical==2000);
 
 // at exactly the budget nothing is skipped
@@ -176,10 +184,9 @@ clear_history();
 i=0; loop(4000, add_event(1 + i*0.0002, 0, i%128); i+=1;);
 history_reset_capture(); draw_cc_data_lines(1);
 history_verify(g_segment_stride==1);
-history_verify(history_vertical==3999 && history_ticks==3999);
+history_verify(history_vertical==3999 && history_dots==4000);
 
 // the constants are the ones the geometry above assumes
-history_verify(MARK_CIRCLE_MIN>4);
 history_verify(SEGMENT_BUDGET>=8000);
 
 // ---- the CC table: lookup order, shades, names -------------------------

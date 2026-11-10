@@ -118,17 +118,8 @@ PLOT_STATE_STRIDE = 7;
 // ~1.4 us, so 4000 of them -- 8000 draw commands -- is about 5.5 ms of a frame
 // and leaves the rest of the UI its time. It counts DRAW COMMANDS, not events,
 // because that is what costs: an event of the trace is a hold plus a change, a
-// mark is a tick, a circle or nothing at all.
+// mark is always a circle.
 SEGMENT_BUDGET = 8000;
-
-// Marks are never decimated -- a mark IS a received event, and a monitor that
-// drops events silently is lying about the stream -- so what adapts is the
-// primitive, not the count. Two circles of radius 2 start to touch when their
-// centres are 4 px apart, so MARK_CIRCLE_MIN leaves them air; below it the event
-// is a short vertical tick, which stays readable where a row of circles would
-// fuse into a band.
-MARK_CIRCLE_MIN = 6;    // px between successive marks of one pair
-MARK_TICK_HALF = 3;     // px above and below the value: the tick is 7 px tall
 
 // How far back the walk may go, past the window, to find the event that started
 // each pair's silence. Bounded on purpose: a pair that has been quiet for hours
