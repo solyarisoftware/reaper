@@ -78,6 +78,37 @@ last seconds of history are lost with it.
 The name is what the status line calls the stream when there is exactly one, and what
 the rows would call it; an empty name reads as `CCnn`.
 
+#### Setting your own colours
+
+**Where the file is.** It sits next to `ccscope.jsfx` in the folder REAPER loads the effect
+from — `Effects/<category>/` inside the resource directory, which REAPER opens with *Options →
+Show REAPER resource path in explorer/finder*. A ReaPack install puts it in `Effects/ccscope/`; a
+manual copy can be anywhere under `Effects/`, and if you keep both, REAPER lists both.
+
+**Which line to write.** Three ways to give a CC a colour, in increasing order of how much you
+want to say:
+
+| you want | write | what happens |
+|---|---|---|
+| one colour for a CC, every channel | `cc_entry(74, 0x2dd4bf, "cutoff");` | the other three channels are shades of it |
+| that exact colour on one channel | `cc_entry_ch(11, 4, 0x00ff00);` | wins over the CC line and is drawn as written, with no shade |
+| to move a whole family of CCs | edit the `cc_fallback()` block | every CC left at `-1` follows its slot |
+
+**Two things to know before choosing a colour.** The sixteen ladder colours are measured to be at
+least dE00 15 apart on black, which is what separates "two colours" from "two shades"; a colour
+you write yourself has no such company, so two CCs can end up looking alike — the row label is the
+identity, never the colour. And a dark custom colour fights the channel shade: the darker variant
+is floored at relative luminance 0.12 (contrast 3.4 on black), so it is lifted towards white and
+can come out *brighter* than the base. When the exact colour of a channel matters, write it with
+`cc_entry_ch()` rather than relying on a shade.
+
+**Updating the plugin.** ReaPack reinstalls a package's files on every update and does not notice
+that one of them was edited — the request for per-file protection is still open at
+[cfillion/reapack#48](https://codeberg.org/cfillion/reapack/issues/48) — so a table edited inside
+a ReaPack-managed folder is replaced by the next update. Keep your tuned copy in your own folder
+under `Effects/`: the ten files (the effect and its nine includes), in a folder ReaPack does not
+own. That table survives every update, and the stock one stays free to change.
+
 ### The status line
 
 One line under the canvas, in four states:
