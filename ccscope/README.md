@@ -1,5 +1,11 @@
 # CCScope — MIDI CC oscilloscope and fader tester
 
+> [!NOTE]
+> **BETA** — the behaviour is defined and documented, and the parameter numbering is frozen for
+> the `0.x` line: a parameter is appended, never reordered, so presets keep their numbering.
+> Behaviour still changes between releases, and every change is a line in the
+> [changelog](CHANGELOG.md). Maturity levels: [CONTRIBUTING](../CONTRIBUTING.md#maturity-levels).
+
 A JSFX for REAPER 6.37 or newer. It shows what a MIDI controller actually sends: the shape of
 the movement over time, one fader bar per active CC, and how fast and how regularly each CC
 transmits — on each MIDI channel separately.

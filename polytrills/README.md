@@ -1,5 +1,12 @@
 # PolyTrills
 
+> [!WARNING]
+> **ALPHA** — a prototype: it does what the front page says on the author's material, but the
+> parameter surface may still be redesigned, and nothing here promises that a saved project
+> survives an update. What it does not do is listed under
+> [Requirements and limits](#requirements-and-limits) — read that before relying on it. Maturity
+> levels: [CONTRIBUTING](../CONTRIBUTING.md#maturity-levels).
+
 Turns the notes you hold into trills. Hold two keys and they alternate; hold one and it passes
 through untouched; hold three and the lowest becomes a drone; hold four and you get two parallel
 trills. Written for REAPER's JSFX engine, so it runs anywhere REAPER runs and costs nothing.

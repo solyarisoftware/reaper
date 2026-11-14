@@ -25,6 +25,48 @@ The maintainer applies labels such as `plugin:ccscope`, `bug` and `enhancement`;
 are not expected to have permission to manage labels. The Ideas category describes an
 exploratory stage; the enhancement label does not imply an implementation commitment.
 
+## Maturity levels
+
+Every package declares one of three levels, and the level is **bound to the version number**:
+`0.0.x`–`0.1.x` is ALPHA, `0.2.x`–`0.9.x` is BETA, `1.0.0` and above is STABLE. The level is a
+promise to the person using the tool — what they may assume — not a summary of how much work went
+into it. That is why the three words are the ordinary ones and not a vocabulary of their own.
+
+| Level | What a user may assume |
+|---|---|
+| **ALPHA** | A prototype answering one question. The parameter surface, the file layout and the preset numbering may change or disappear with no deprecation path, and a saved project may not survive an update. The README says what it does not do; the author's setup is the only one known to work. |
+| **BETA** | The behaviour is defined and defended, and every visible element is documented. The parameter numbering and preset compatibility are frozen for the ongoing `0.x` line: a parameter is appended, never reordered or removed. Behaviour may still change, but each change carries a CHANGELOG line and a linked reason. No open defect corrupts a project or a preset. |
+| **STABLE** | Someone can build a project on it and forget the plugin. Semantic versioning holds: no breaking change before `2.0.0`. Preset and project compatibility is tested, not promised. The performance envelope is published — CPU and frame cost at the documented sizes, block sizes, sample rates. What remains is waived as out of scope, not pending. |
+
+**Promotion is a version bump, not a word edit.** A package becomes BETA with `0.2.0` and STABLE
+with `1.0.0`, and the CHANGELOG entry for that release says so. **Demotion is allowed and
+expected**: a STABLE package that turns out to lose data goes back to BETA in the next release,
+with the reason in the CHANGELOG. A level that can only go up is marketing, not a state.
+
+### Where the level is written, and what GitHub colours it
+
+Three places, with three different readers:
+
+| Place | Reader | Form |
+|---|---|---|
+| the package table in the [repository README](README.md) | someone choosing a tool | a shield badge |
+| the top of each package `README.md` | someone reading that plugin | a GitHub alert block |
+| this section | whoever needs the gates | the table above, once — the definitions live here and nowhere else |
+
+GitHub renders `> [!NOTE]`-style alerts with a border and an icon coloured by type, and that is
+the only colour a Markdown file gets: `style="color:…"` is stripped from HTML in `.md` files.
+The type is therefore part of the convention, not a choice:
+
+| Level | Alert | Shown as |
+|---|---|---|
+| ALPHA | `[!WARNING]` | yellow |
+| BETA | `[!NOTE]` | blue |
+| STABLE | `[!TIP]` | green |
+| withdrawn or unmaintained | `[!CAUTION]` | red |
+
+The alert does **not** repeat the version number: the `@version` header and `CHANGELOG.md` already
+hold it, and a third copy is a third thing that drifts.
+
 ## Report a bug
 
 Include:

@@ -16,10 +16,14 @@ folder inside your REAPER resource directory (`Effects/<category>/` on Windows).
 
 ## Packages
 
-| Package | ReaPack category | What it does |
-|---|---|---|
-| [CCScope](ccscope/) | `ccscope` | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
-| [PolyTrills](polytrills/) | `polytrills` | Turns held notes into trills — one note passes through, four give two parallel trills — with a rate in notes per second and a gesture calibrated on measured performances |
+| Package | Maturity | ReaPack category | What it does |
+|---|---|---|---|
+| [CCScope](ccscope/) | ![status: BETA](https://img.shields.io/badge/status-BETA-blue) | `ccscope` | Oscilloscope for MIDI CC: scrolling graph and fader bars, per channel, with performance metrics |
+| [PolyTrills](polytrills/) | ![status: ALPHA](https://img.shields.io/badge/status-ALPHA-yellow) | `polytrills` | Turns held notes into trills — one note passes through, four give two parallel trills — with a rate in notes per second and a gesture calibrated on measured performances |
+
+Maturity is a promise bound to the version number — ALPHA `0.0`–`0.1`, BETA `0.2`–`0.9`,
+STABLE `1.0` and above — not a claim of quality: what each level allows you to assume is in
+[CONTRIBUTING.md](CONTRIBUTING.md#maturity-levels).
 
 Each package keeps its documentation next to its sources — README, changelog, screenshots:
 
