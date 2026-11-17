@@ -1,5 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="solyarisoftware reaper" commit="2c2a7238ad6068ce9ae4824b45f37d820b3ab1e6">
+<index version="1" name="solyarisoftware reaper" commit="900385d75be170cde87f45e7d35c4ef2e9d4f42e">
+  <category name="bloomscope">
+    <reapack name="bloomscope.jsfx" type="effect" desc="BloomScope">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 See how your instrument's sound unfolds in relation to MIDI notes.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 {\b ALPHA}: parameters, file layout and saved-project compatibility may change without a migration path. Try a disposable project before relying on it.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 BloomScope visualizes the amplitude envelope of a sample-based instrument's combined audio output over time using Peak and RMS traces. Place it after the instrument to compare that sound with an optional MIDI note strip, from attack through sustain and release.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Chords, ensembles, overlapping notes and release tails contribute to the measured signal. This is not a separate envelope for each MIDI note: the detectors measure the resulting audio, not a sum of per-note envelopes. Received note-on/off events are timing references, not isolated voice levels.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 MIDI input is optional. Recorded audio, microphone signals, other instruments, buses and the master mix can also be inspected without MIDI, during playback. Capture runs only while playing, not while stopped, paused or recording. Use project playrate 1 for timing interpretation. Only audio channels 1/2 and bus-0 MIDI note references are analyzed; downstream MIDI delivery depends on the instrument's MIDI-output settings.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Standalone capture has a known first-note timing defect at intra-block loop wraps. The included optional Main action supplies instance-bound loop context; run it explicitly on one selected track containing one BloomScope. Restart it after recompilation. It supports top-level normal-track FX only, unit playrate and loops longer than one audio block. It does not repair earlier history. No automatic startup; audio-device configuration is never changed by it.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Draws the amplitude envelope of the audio at its point in the FX chain: project time across, dBFS up a single axis whose top edge is 0 dB, so the shape of an attack or a release is read instead of guessed. Peak and RMS are extracted per hop of 32 samples, independent of the audio buffer, so detector arithmetic does not depend on block partitioning. Peak is the filled area, RMS the line on top; the trace breaks where the transport jumped, because a locate is not a level. Freeze holds the instant while the audio keeps passing; the status line says what is being shown and that the reading is taken before the track fader.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Optional bus-0 MIDI notes appear below all three audio views, with shared note-on/off guides, readable pitch labels and channel/velocity tooltips. Full/Levels/Off grids and contextual control help are available. Received MIDI passes unchanged. No CC lanes or per-note metrics. Not a loudness meter or an oscilloscope: no K-weighting, no LUFS, no waveform.\par}
+}
+]]></description>
+        <link rel="website" href="https://github.com/solyarisoftware/reaper">GitHub</link>
+        <link rel="website" href="https://github.com/solyarisoftware/reaper/tree/master/bloomscope">Documentation</link>
+        <link rel="website" href="https://github.com/solyarisoftware/reaper/issues">Issues</link>
+        <link rel="website" href="https://github.com/solyarisoftware/reaper/discussions">Discussions</link>
+      </metadata>
+      <version name="0.1.3" author="Giorgio Robino" time="2026-11-17T15:11:08Z">
+        <changelog><![CDATA[Initial public ALPHA: stereo Peak/RMS envelope history with optional MIDI note references and an explicit loop companion.]]></changelog>
+        <source>https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope.jsfx</source>
+        <source file="bloomscope_midi.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_midi.jsfx-inc</source>
+        <source file="bloomscope_capture.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_capture.jsfx-inc</source>
+        <source file="bloomscope_loop.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_loop.jsfx-inc</source>
+        <source file="bloomscope_layout.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_layout.jsfx-inc</source>
+        <source file="bloomscope_notes.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_notes.jsfx-inc</source>
+        <source file="bloomscope_plot.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_plot.jsfx-inc</source>
+        <source file="bloomscope_controlbar.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_controlbar.jsfx-inc</source>
+        <source file="bloomscope_tooltip.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_tooltip.jsfx-inc</source>
+        <source file="bloomscope_help.jsfx-inc">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_help.jsfx-inc</source>
+        <source main="main" type="script" file="bloomscope_loop_companion.lua">https://github.com/solyarisoftware/reaper/raw/900385d75be170cde87f45e7d35c4ef2e9d4f42e/bloomscope/bloomscope_loop_companion.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="ccscope">
     <reapack name="ccscope.jsfx" type="effect" desc="CCScope">
       <metadata>
