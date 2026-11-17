@@ -12,6 +12,15 @@ Study how a sample-based instrument's sound develops through attack, sustain and
 release. BloomScope plots Peak and RMS level history in dBFS, with optional MIDI
 note bars and note-on/off guides on the same timeline.
 
+## Demo
+
+A 38-second oboe example with audio: **Stereo → Overlay → Split → Freeze → Clear**.
+
+https://github.com/user-attachments/assets/0031c808-6012-45c2-b7c6-9e57d8b8f72f
+
+The plot and soundtrack use the same rendered instrument output; the original
+MIDI supplies timing references.
+
 ## One output, not one curve per note
 
 BloomScope measures the **combined audio signal** at its position in the FX chain:
