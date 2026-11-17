@@ -1,0 +1,428 @@
+desc:BloomScope
+// @description BloomScope
+// @author Giorgio Robino
+// @version 0.1.3
+// @about
+//   See how your instrument's sound unfolds in relation to MIDI notes.
+//
+//   **ALPHA**: parameters, file layout and saved-project compatibility may change
+//   without a migration path. Try a disposable project before relying on it.
+//
+//   BloomScope visualizes the amplitude envelope of a sample-based instrument's
+//   combined audio output over time using Peak and RMS traces. Place it after
+//   the instrument to compare that sound with an optional MIDI note strip,
+//   from attack through sustain and release.
+//
+//   Chords, ensembles, overlapping notes and release tails contribute to the
+//   measured signal. This is not a separate envelope for each MIDI note: the
+//   detectors measure the resulting audio, not a sum of per-note envelopes.
+//   Received note-on/off events are timing references, not isolated voice levels.
+//
+//   MIDI input is optional. Recorded audio, microphone signals, other instruments,
+//   buses and the master mix can also be inspected without MIDI, during playback.
+//   Capture runs only while playing, not while stopped, paused or recording.
+//   Use project playrate 1 for timing interpretation. Only audio channels 1/2 and
+//   bus-0 MIDI note references are analyzed; downstream MIDI delivery depends
+//   on the instrument's MIDI-output settings.
+//
+//   Standalone capture has a known first-note timing defect at intra-block loop
+//   wraps. The included optional Main action supplies instance-bound loop context;
+//   run it explicitly on one selected track containing one BloomScope. Restart it
+//   after recompilation. It supports top-level normal-track FX only, unit playrate
+//   and loops longer than one audio block. It does not repair earlier history.
+//   No automatic startup; audio-device configuration is never changed by it.
+//
+//   Draws the amplitude envelope of the audio at its point in the FX chain:
+//   project time across, dBFS up a single axis whose top edge is 0 dB, so the
+//   shape of an attack or a release is read instead of guessed. Peak and RMS
+//   are extracted per hop of 32 samples, independent of the audio buffer, so
+//   detector arithmetic does not depend on block partitioning. Peak is the filled
+//   area, RMS the line on top; the trace breaks where the transport jumped,
+//   because a locate is not a level. Freeze holds the instant while the audio
+//   keeps passing; the status line says what is being shown and that the
+//   reading is taken before the track fader.
+//
+//   Optional bus-0 MIDI notes appear below all three audio views, with shared
+//   note-on/off guides, readable pitch labels and channel/velocity tooltips.
+//   Full/Levels/Off grids and contextual control help are available. Received MIDI passes
+//   unchanged. No CC lanes or per-note metrics. Not a loudness meter or an
+//   oscilloscope: no K-weighting, no LUFS, no waveform.
+// @link
+//   GitHub https://github.com/solyarisoftware/reaper
+//   Documentation https://github.com/solyarisoftware/reaper/tree/master/bloomscope
+//   Issues https://github.com/solyarisoftware/reaper/issues
+//   Discussions https://github.com/solyarisoftware/reaper/discussions
+// @provides
+//   bloomscope_midi.jsfx-inc
+//   bloomscope_capture.jsfx-inc
+//   bloomscope_loop.jsfx-inc
+//   bloomscope_layout.jsfx-inc
+//   bloomscope_notes.jsfx-inc
+//   bloomscope_plot.jsfx-inc
+//   bloomscope_controlbar.jsfx-inc
+//   bloomscope_tooltip.jsfx-inc
+//   bloomscope_help.jsfx-inc
+//   [script main=main] bloomscope_loop_companion.lua
+// @changelog
+//   Initial public ALPHA: stereo Peak/RMS envelope history with optional MIDI note references and an explicit loop companion.
+// kind: audio
+// Audio effect: stereo passthrough pins are required.
+
+options:no_meter
+options:gmem=BloomScope_Loop_v1
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+
+// The slider strip is hidden and replaced by the control bar drawn in @gfx.
+// Hidden sliders stay automatable, saved in presets, and listed under Param.
+slider1:0<0,1,1>-Freeze (stop acquiring)
+slider2:10<1,30,1>-Time window (seconds)
+slider3:-60<-96,-24,6>-Floor (dBFS)
+slider4:2<0,2,1{Peak,RMS,Peak + RMS}>-Detector
+slider5:1<0,3,1{hop,30 ms,100 ms,300 ms}>-RMS smoothing
+slider6:0<0,2,1{Stereo,Stereo Overlay,Stereo Split}>-View
+slider7:1<0,1,1>-Reset on play start
+slider8:0<0,1,1>-Clear history
+// Appended parameter: older presets retain the original Full grid by default.
+slider9:0<0,2,1{Full,Levels,Off}>-Audio grid
+// Independent opt-in/out for MIDI event guides; available under host Param.
+slider10:2<0,2,1{Off,Plot only,Linked to MIDI}>-MIDI guides
+// Assigned only by the explicit companion action; 0 keeps standalone capture.
+slider11:0<0,1073741823,1>-Loop companion token
+
+// ===================================================================
+// IMPORTS - dependency order: MIDI reset precedes capture lifecycle hooks;
+// layout defines axes, then plot/notes render the two completed snapshots.
+// ===================================================================
+import bloomscope_midi.jsfx-inc
+import bloomscope_capture.jsfx-inc
+import bloomscope_loop.jsfx-inc
+import bloomscope_layout.jsfx-inc
+import bloomscope_plot.jsfx-inc
+import bloomscope_notes.jsfx-inc
+import bloomscope_controlbar.jsfx-inc
+import bloomscope_tooltip.jsfx-inc
+import bloomscope_help.jsfx-inc
+
+@init
+
+// Preserve history across transport starts; @block detects sample-rate changes.
+// The host may not have established srate in @init when ext_noinit is enabled.
+ext_noinit = 1;
+
+// Fixed UI and scratch ranges must not move when capture capacity changes.
+MEM_CBM_BASE = 0;
+MEM_WIN_LIST = MEM_CBM_BASE + CBM_ARRAYS_END;
+MEM_FLOOR_LIST = MEM_WIN_LIST + 6;
+MEM_COLS_PEAK = MEM_FLOOR_LIST + 6;
+MEM_COLS_RMS = MEM_COLS_PEAK + CAP_MAX_COLS;
+MEM_COLS_BRK = MEM_COLS_RMS + CAP_MAX_COLS;
+// Reserve bounded MIDI storage before B's 24 strides; existing UI stays fixed.
+loop_init(MEM_COLS_BRK + CAP_MAX_COLS);
+midi_init(MEM_LOOP_END);
+MEM_CAPTURE_BASE = MEM_MIDI_END;
+capture_init();
+
+// ========== THE CONTROL BAR, REGISTERED ==========
+// Cells are ordered by what is reached for first, not by the slider order.
+// kinds: 0 numeric list, 1 enum list, 2 toggle, 3 action, 4 cycle.
+cbm_init(MEM_CBM_BASE, 8);
+cbm_style(CTRL_CELL_GAP, CTRL_CELL_PAD, CTRL_CORNER, CTRL_ITEM_HEIGHT,
+          CTRL_MENU_ROWS, CTRL_MENU_MIN_WIDTH, CTRL_MENU_DROP);
+cbm_group_right(2);
+cbm_cell(1, 0, 1, 30, 10);      // time window
+cbm_cell(2, 1, 0, 2, 2);        // detector
+cbm_cell(3, 0, -96, -24, -60);  // floor
+cbm_cell(4, 1, 0, 3, 1);        // rms smoothing
+cbm_cell(5, 4, 0, 2, 0);        // view: one click cycles
+cbm_cell(6, 4, 0, 2, 0);        // grid: Full / Levels / Off
+cbm_cell(7, 2, 0, 1, 0);        // Freeze
+cbm_cell(8, 3, 0, 1, 0);        // Clear
+
+// The window offers a ladder instead of every second in 1..30: a preset can
+// still hold 12, and the menu stays one screenful with no scroll.
+mem[MEM_WIN_LIST + 0] = 1;
+mem[MEM_WIN_LIST + 1] = 2;
+mem[MEM_WIN_LIST + 2] = 5;
+mem[MEM_WIN_LIST + 3] = 10;
+mem[MEM_WIN_LIST + 4] = 20;
+mem[MEM_WIN_LIST + 5] = 30;
+cbm_list(1, MEM_WIN_LIST, 6);
+
+mem[MEM_FLOOR_LIST + 0] = -96;
+mem[MEM_FLOOR_LIST + 1] = -72;
+mem[MEM_FLOOR_LIST + 2] = -60;
+mem[MEM_FLOOR_LIST + 3] = -48;
+mem[MEM_FLOOR_LIST + 4] = -36;
+mem[MEM_FLOOR_LIST + 5] = -24;
+cbm_list(3, MEM_FLOOR_LIST, 6);
+
+// ========== THE BAR ADAPTER ==========
+// The widget never touches a slider. This is the only place where a cell and a
+// parameter meet, so the mapping lives here once and nowhere else.
+function ctl_slider_number(i) (
+  i == 1 ? 2 : i == 2 ? 4 : i == 3 ? 3 : i == 4 ? 5 : i == 5 ? 6 :
+  i == 6 ? 9 : i == 7 ? 1 : 8;
+);
+
+function ctl_slider_value(i) local(s) (
+  s = ctl_slider_number(i);
+  s == 1 ? slider1 : s == 2 ? slider2 : s == 3 ? slider3 : s == 4 ? slider4 :
+  s == 5 ? slider5 : s == 6 ? slider6 : s == 7 ? slider7 : s == 9 ? slider9 : slider8;
+);
+
+// sliderchange() tells REAPER the value was set from code, so presets, the
+// Param list and embedded displays follow. It does not write automation.
+function ctl_slider_write(s, v) (
+  s == 1 ? ( slider1 = v; sliderchange(slider1); ) :
+  s == 2 ? ( slider2 = v; sliderchange(slider2); ) :
+  s == 3 ? ( slider3 = v; sliderchange(slider3); ) :
+  s == 4 ? ( slider4 = v; sliderchange(slider4); ) :
+  s == 5 ? ( slider5 = v; sliderchange(slider5); ) :
+  s == 6 ? ( slider6 = v; sliderchange(slider6); ) :
+  s == 7 ? ( slider7 = v; sliderchange(slider7); ) :
+  s == 9 ? ( slider9 = v; sliderchange(slider9); ) :
+           ( slider8 = v; sliderchange(slider8); );
+);
+
+#ctl_key = "";
+#ctl_key_w = "";
+#ctl_val = "";
+#ctl_val_w = "";
+#ctl_item = "";
+#ev_det = "";
+#ev_rms = "";
+#ev_view = "";
+#ev_grid = "";
+
+function ctl_key_text(i) (
+  i == 1 ? ( #ctl_key = "WINDOW"; ) :
+  i == 2 ? ( #ctl_key = "DETECT"; ) :
+  i == 3 ? ( #ctl_key = "FLOOR"; ) :
+  i == 4 ? ( #ctl_key = "RMS"; ) :
+  i == 5 ? ( #ctl_key = "VIEW"; ) :
+  i == 6 ? ( #ctl_key = "GRID"; ) :
+  i == 7 ? ( #ctl_key = "FREEZE"; ) :
+           ( #ctl_key = "CLEAR"; );
+);
+
+function ctl_key_widest(i) (
+  i == 1 ? ( #ctl_key_w = "WINDOW"; ) :
+  i == 2 ? ( #ctl_key_w = "DETECT"; ) :
+  i == 3 ? ( #ctl_key_w = "FLOOR"; ) :
+  i == 4 ? ( #ctl_key_w = "RMS"; ) :
+  i == 5 ? ( #ctl_key_w = "VIEW"; ) :
+  i == 6 ? ( #ctl_key_w = "GRID"; ) :
+  i == 7 ? ( #ctl_key_w = "FREEZE"; ) :
+           ( #ctl_key_w = "CLEAR"; );
+);
+
+function ev_detector_text(v) (
+  v == 0 ? ( #ev_det = "Peak"; ) :
+  v == 1 ? ( #ev_det = "RMS"; ) :
+           ( #ev_det = "Peak+RMS"; );
+);
+
+function ev_rms_text(v) (
+  v == 0 ? ( #ev_rms = "hop"; ) :
+  v == 1 ? ( #ev_rms = "30ms"; ) :
+  v == 2 ? ( #ev_rms = "100ms"; ) :
+           ( #ev_rms = "300ms"; );
+);
+
+function ev_view_text(v) (
+  v == 0 ? ( #ev_view = "Stereo"; ) :
+  v == 1 ? ( #ev_view = "Overlay"; ) :
+           ( #ev_view = "Split"; );
+);
+
+function ev_grid_text(v) (
+  v == 0 ? ( #ev_grid = "Full"; ) :
+  v == 1 ? ( #ev_grid = "Levels"; ) :
+           ( #ev_grid = "Off"; );
+);
+
+function ctl_value_text(i, v) (
+  i == 1 ? ( sprintf(#ctl_val, "%ds", v); ) :
+  i == 2 ? ( ev_detector_text(v); #ctl_val = #ev_det; ) :
+  i == 3 ? ( sprintf(#ctl_val, "%ddB", v); ) :
+  i == 4 ? ( ev_rms_text(v); #ctl_val = #ev_rms; ) :
+  i == 5 ? ( ev_view_text(v); #ctl_val = #ev_view; ) :
+  i == 6 ? ( ev_grid_text(v); #ctl_val = #ev_grid; ) :
+           ( #ctl_val = ""; );
+);
+
+function ctl_value_widest(i) (
+  i == 1 ? ( #ctl_val_w = "30s"; ) :
+  i == 2 ? ( #ctl_val_w = "Peak+RMS"; ) :
+  i == 3 ? ( #ctl_val_w = "-96dB"; ) :
+  i == 4 ? ( #ctl_val_w = "300ms"; ) :
+  i == 5 ? ( #ctl_val_w = "Overlay"; ) :
+  i == 6 ? ( #ctl_val_w = "Levels"; ) :
+           ( #ctl_val_w = ""; );
+);
+
+function ctl_item_text(i, v) (
+  i == 1 ? ( sprintf(#ctl_item, "%d s", v); ) :
+  i == 2 ? ( ev_detector_text(v); #ctl_item = #ev_det; ) :
+  i == 3 ? ( sprintf(#ctl_item, "%d dB", v); ) :
+  i == 4 ? ( ev_rms_text(v); #ctl_item = #ev_rms; ) :
+  i == 5 ? ( ev_view_text(v); #ctl_item = #ev_view; ) :
+  i == 6 ? ( ev_grid_text(v); #ctl_item = #ev_grid; ) :
+           ( #ctl_item = ""; );
+);
+
+// ========== THE FRAME, IN THE ORDER THE MODULE ASKS FOR ==========
+// The parameters are the truth: a preset or automation wins over what the bar
+// remembers.
+function ctl_push_values() local(i) (
+  i = 1;
+  loop(cbm_cells(),
+    cbm_value_push(i, ctl_slider_value(i));
+    i += 1;
+  );
+  0;
+);
+
+function ctl_push_texts() local(i) (
+  i = 1;
+  loop(cbm_cells(),
+    ctl_key_text(i);
+    ctl_key_widest(i);
+    ctl_value_text(i, cbm_value(i));
+    ctl_value_widest(i);
+    cbm_text(i, #ctl_key, #ctl_key_w, #ctl_val, #ctl_val_w);
+    i += 1;
+  );
+  0;
+);
+
+function ctl_apply_changes() local(mask, i, v) (
+  mask = cbm_changes();
+  mask != 0 ? (
+    i = 1;
+    loop(cbm_cells(),
+      (mask & (1 << (i - 1))) ? (
+        v = cbm_value(i);
+        ctl_slider_write(ctl_slider_number(i), v);
+        cbm_applied(i, v);
+      );
+      i += 1;
+    );
+  );
+  0;
+);
+
+// Geometry runs on the text, so the texts go in first; the module leaves the
+// bar font in force, and the rest of the frame is FONT_SIZE.
+function ctl_layout() (
+  cbm_layout(PLOT_LEFT, gfx_w - PLOT_RIGHT, CTRL_BAR_TOP, CTRL_BAR_HEIGHT, BAR_FONT);
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);
+
+// EEL2 has no array of strings: the module hands out the rows, the host draws
+// what they say.
+function ctl_draw_menu_items() local(r, i, y) (
+  cbm_open() > 0 ? (
+    i = cbm_open();
+    gfx_setfont(1, "Arial", BAR_FONT);
+    r = 0;
+    loop(cbm_rows(),
+      y = cbm_row_y(r);
+      ctl_item_text(i, cbm_row_value(r));
+      gfx_r = 0.78; gfx_g = 0.78; gfx_b = 0.80; gfx_a = 1;
+      cbm_row_is_current(r) ? ( gfx_r = 1.0; gfx_g = 0.76; gfx_b = 0.36; );
+      gfx_x = cbm_menu_x() + 10;
+      gfx_y = y + floor((CTRL_ITEM_HEIGHT - BAR_FONT) / 2);
+      gfx_drawstr(#ctl_item);
+      r += 1;
+    );
+    gfx_setfont(1, "Arial", FONT_SIZE);
+  );
+  0;
+);
+
+@block
+// Capture state has one writer: consume Clear on the audio thread, not @gfx.
+slider8 == 1 ? (
+  slider8 = 0;
+  sliderchange(slider8);
+  capture_reset();
+  loop_overflows = 0;
+);
+// One call per block: the time anchor, the gap test and the transport rules.
+capture_block();
+loop_block();
+// The receive loop must run to exhaustion even when stopped, frozen or full.
+// midirecv automatically passes SysEx; buses other than bus 0 stay untouched.
+// A frozen/idle drain cannot mutate history: do not reject its immutable frames.
+midi_writing = !cap_freeze && (midi_running || (midi_ready && cap_ready && play_state == 1));
+midi_writing ? (
+  atomic_add(midi_revision, 1);
+  midi_block();
+  loop_limit_segment();
+);
+while (midirecv(midi_offset, midi_msg1, midi_msg2, midi_msg3)) (
+  midisend(midi_offset, midi_msg1, midi_msg2, midi_msg3);
+  midi_writing ? loop_receive(midi_offset, midi_msg1, midi_msg2, midi_msg3);
+);
+midi_writing ? atomic_add(midi_revision, 1);
+
+@sample
+// The envelope is accumulated sample by sample; the audio is not touched, so
+// the effect is transparent by construction (acceptance criterion 1).
+loop_sample_boundary();
+capture_sample(spl0, spl1);
+loop_sample_boundary();
+
+@gfx 900 420
+gfx_mode = 0;
+
+// Canvas: black, by the user's choice. The plot's own panel is black too, so
+// the frame reads as one surface and only the grid separates the axis from the
+// space outside it.
+gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", FONT_SIZE);
+
+// ========== CONTROL BAR ==========
+// Values in, then geometry (it runs on the text), then the pointer, then back
+// out what the pointer changed -- in one frame, so what you click is what you
+// see. The second push is for the cell the pointer just moved.
+ctl_push_values();
+ctl_push_texts();
+ctl_layout();
+cbm_mouse();
+ctl_apply_changes();
+ctl_push_texts();
+
+// ========== FRAME ==========
+// A lifecycle epoch guards audio + MIDI against a reset/rate/gap during copying.
+frame_epoch = atomic_get(cap_lifecycle_epoch);
+// Copy audio first: later note events are clipped to its captured instant.
+frame_ok = snapshot_capture();
+frame_ok ? frame_ok = snapshot_midi();
+atomic_get(cap_lifecycle_epoch) != frame_epoch ? frame_ok = 0;
+frame_ok ? (
+  prepare_notes();
+  calculate_layout();
+  draw_plot();
+  draw_notes();
+  draw_time_axis();
+  draw_status();
+) : (
+  g_midi_visible = 0;
+  calculate_layout();
+  gfx_r = 0.9; gfx_g = 0.7; gfx_b = 0.3; gfx_a = 1;
+  gfx_x = g_plot_x; gfx_y = g_plot_y;
+  gfx_drawstr("Capture updating");
+);
+cbm_draw();
+cbm_draw_menu();
+ctl_draw_menu_items();
+help_guide_menu(frame_ok);
+// Tooltips are last, opaque and suppressed during menus/drags or rejected frames.
+draw_context_help(frame_ok);

@@ -1,0 +1,315 @@
+// ===================================================================
+// BLOOMSCOPE CAPTURE - the envelope series, the hop counter, the ring
+// ===================================================================
+// A library file (.jsfx-inc) imported by bloomscope.jsfx.
+//
+// OWNS: the mem[] ranges of the four envelope series (Lpeak, Lrms, Rpeak,
+// Rrms), the time axis and the segment flag, the per-pixel column scratch of
+// the plot, and every acquisition variable. capture_init() assigns the ranges
+// in one place; nothing outside this file may hard-code a slot.
+//
+// READS: play_position, play_state, samplesblock, srate, slider1 (freeze),
+// slider7 (reset on play start).
+// WRITES: its own mem[] ranges and the cap_* globals; the audio is untouched.
+//
+// FOUR SERIES, NOT TWO: L and R are always measured
+// separately, and every presentation mode is derived from them at draw time.
+// A view change therefore never clears history -- what changes is the drawing,
+// not the measurement. The price is memory: 4 x capacity instead of 2.
+//
+// THREADING: atomic publication plus per-slot tickets lets @gfx reject a
+// snapshot if a slot is overwritten while it copies the ring.
+//
+// EEL2 RULES THIS FILE RESPECTS
+//   * A function may only call functions defined before it: order below is
+//     the dependency order.
+//   * An empty branch is a syntax error: every conditional ends in a
+//     statement.
+// ===================================================================
+
+@init
+
+// ========== CONSTANTS ==========
+// The hop is in SAMPLES on purpose: a block-based detector would answer
+// differently at 128 and at 1024 samples of buffer size, and a measuring
+// tool must not. Documented value, not a parameter.
+CAP_HOP = 32;
+CAP_MAX_WINDOW = 30;     // maximum visible window in seconds
+CAP_RMS_PREROLL = 0.3;   // longest smoothing window, retained before it
+CAP_MAX_COLS = 2048;     // per-pixel scratch; wider canvases cap the plot width
+
+// ========== MEMORY MAP (slots) ==========
+// Fixed UI scratch precedes twenty-four fixed-stride ranges: capture, tickets,
+// snapshot series, visibility, merge-sort and coverage-tree scratch. At 192 kHz a 30 s window
+// needs about 180 000 slots per range; capture_init() checks the available stride.
+MEM_CAP_LPK = 0;
+MEM_CAP_LRMS = 0;
+MEM_CAP_RPK = 0;
+MEM_CAP_RRMS = 0;
+MEM_CAP_TIME = 0;
+MEM_CAP_FLAG = 0;
+MEM_CAP_BEAT_TIME = 0;
+MEM_CAP_BEAT = 0;
+MEM_COLS_PEAK = 0;
+MEM_COLS_RMS = 0;
+MEM_COLS_BRK = 0;
+MEM_CAP_TICKET = 0;
+MEM_SNAP_LPK = 0;
+MEM_SNAP_LRMS = 0;
+MEM_SNAP_RPK = 0;
+MEM_SNAP_RRMS = 0;
+MEM_SNAP_TIME = 0;
+MEM_SNAP_FLAG = 0;
+MEM_SNAP_BEAT_TIME = 0;
+MEM_SNAP_BEAT = 0;
+MEM_PLOT_VISIBLE = 0;
+MEM_PLOT_START = 0;
+MEM_PLOT_END = 0;
+MEM_PLOT_TREE = 0;
+MEM_CAPTURE_END = 0;
+
+// ========== STATE ==========
+cap_lifecycle_epoch = 0; // changes on reset/rate/gap; guards joint audio/MIDI frames
+cap_boundary = 1; // block-local discontinuity notification for MIDI pairing
+cap_revision = 0;  // even when metadata is published, odd during a write
+cap_written = 0;   // monotonic ticket, never reset with history
+cap_capacity = 0;   // slots per series, from the sample rate
+cap_rate = 0;       // sample rate for the current capture map
+cap_ready = 0;      // map fits in the available memory
+cap_n = 0;          // points currently held (0..cap_capacity)
+cap_head = 0;       // where the next point goes
+cap_hopn = 0;       // samples accumulated in the current hop
+cap_a_lpk = 0;      // peak accumulator of the current hop, left
+cap_a_rpk = 0;      // peak accumulator of the current hop, right
+cap_a_lsq = 0;      // sum of squares of the current hop, left
+cap_a_rsq = 0;      // sum of squares of the current hop, right
+cap_play_t = 0;     // play_position of the block being processed
+cap_s = 0;          // samples into the current block
+cap_freeze = 0;     // freeze, latched per block: a slider read per sample is waste
+cap_brk = 1;        // the next point starts a new segment
+cap_now_t = 0;      // time of the newest stored point
+cap_now_segment = 0; // segment of that point; @block alone never publishes it
+cap_last_pp = 0;    // play_position of the previous block
+cap_last_block = 0; // previous block length, not the current block length
+cap_prev_freeze = 0;
+cap_prev_state = -1;
+cap_beat_t = 0;     // current block-start project-time anchor
+cap_beat_b = 0;
+
+/**
+ * Drops the partially accumulated hop. Used on a reset, on a stop and on a
+ * locate: half a hop mixed into the next segment would be a measurement that
+ * never happened.
+ *
+ * Defined before capture_reset() because EEL2 resolves function names at the
+ * point of definition: a caller above its callee fails to compile.
+ */
+function capture_drop_hop() (
+  cap_hopn > 0 || !cap_brk ? atomic_add(cap_lifecycle_epoch, 1);
+  cap_boundary = 1;
+  cap_hopn = 0;
+  cap_a_lpk = 0;
+  cap_a_rpk = 0;
+  cap_a_lsq = 0;
+  cap_a_rsq = 0;
+  cap_brk = 1;
+  0;
+);
+
+/**
+ * Empties the series and the current hop. Parameters survive, and so does the
+ * memory map: a sample-rate change is what re-assigns it.
+ */
+function capture_reset_data() (
+  atomic_add(cap_lifecycle_epoch, 1);
+  midi_reset_data();
+  cap_n = 0;
+  cap_head = 0;
+  capture_drop_hop();
+  cap_now_t = 0;
+  cap_now_segment = 0;
+  atomic_add(cap_lifecycle_epoch, 1);
+  0;
+);
+
+function capture_reset() (
+  atomic_add(cap_revision, 1);
+  capture_reset_data();
+  atomic_add(cap_revision, 1);
+  0;
+);
+
+/**
+ * Stores one envelope point, four series and the shared time coordinate.
+ *
+ * @param t    project time of the end of the hop, seconds
+ * @param lpk  peak of the hop, left (linear amplitude)
+ * @param lrms rms of the hop, left
+ * @param rpk  peak of the hop, right
+ * @param rrms rms of the hop, right
+ */
+function capture_push(t, lpk, lrms, rpk, rrms) (
+  atomic_add(cap_revision, 1);
+  atomic_set(mem[MEM_CAP_TICKET + cap_head], 0);
+  mem[MEM_CAP_LPK + cap_head] = lpk;
+  mem[MEM_CAP_LRMS + cap_head] = lrms;
+  mem[MEM_CAP_RPK + cap_head] = rpk;
+  mem[MEM_CAP_RRMS + cap_head] = rrms;
+  mem[MEM_CAP_TIME + cap_head] = t;
+  mem[MEM_CAP_FLAG + cap_head] = cap_brk;
+  mem[MEM_CAP_BEAT_TIME + cap_head] = cap_beat_t;
+  mem[MEM_CAP_BEAT + cap_head] = cap_beat_b;
+  cap_written += 1;
+  midi_publish_audio_hop(cap_written);
+  atomic_set(mem[MEM_CAP_TICKET + cap_head], cap_written);
+  cap_brk = 0;
+  cap_head += 1;
+  cap_head >= cap_capacity ? cap_head = 0;
+  cap_n = min(cap_n + 1, cap_capacity);
+  cap_now_t = t;
+  cap_now_segment = midi_segment_id;
+  atomic_add(cap_revision, 1);
+  0;
+);
+
+/**
+ * Ring index of the k-th oldest point (k = 0 is the oldest held).
+ */
+function capture_index(k) local(i) (
+  i = cap_head - cap_n + k;
+  i < 0 ? i += cap_capacity;
+  i >= cap_capacity ? i -= cap_capacity;
+  i;
+);
+
+// ========== ACCESSORS ==========
+// The plot reads the series through these, so the slot arithmetic stays in
+// this file. Each is one mem[] read at the caller's index.
+function capture_lpk(idx) ( mem[MEM_CAP_LPK + idx]; );
+function capture_lrms(idx) ( mem[MEM_CAP_LRMS + idx]; );
+function capture_rpk(idx) ( mem[MEM_CAP_RPK + idx]; );
+function capture_rrms(idx) ( mem[MEM_CAP_RRMS + idx]; );
+function capture_time(idx) ( mem[MEM_CAP_TIME + idx]; );
+function capture_break(idx) ( mem[MEM_CAP_FLAG + idx]; );
+function capture_beat_time(idx) ( mem[MEM_CAP_BEAT_TIME + idx]; );
+function capture_beat(idx) ( mem[MEM_CAP_BEAT + idx]; );
+
+/**
+ * Rebuilds only the capture ranges. UI and plot scratch addresses are fixed,
+ * and the capture, snapshot and visibility scratch use fixed strides.
+ * A rate change discards the old series, whose time base is obsolete.
+ */
+function capture_init() local(stride) (
+  atomic_add(cap_revision, 1);
+  cap_ready = 0;
+  capture_reset_data();
+  cap_rate = srate;
+  cap_capacity = srate > 0 ? ceil((CAP_MAX_WINDOW + CAP_RMS_PREROLL) * srate / CAP_HOP) + 2 : 0;
+  stride = floor((__memtop() - MEM_CAPTURE_BASE) / 24);
+  cap_capacity > 0 && cap_capacity <= stride ? (
+    MEM_CAP_LPK = MEM_CAPTURE_BASE;
+    MEM_CAP_LRMS = MEM_CAP_LPK + stride;
+    MEM_CAP_RPK = MEM_CAP_LRMS + stride;
+    MEM_CAP_RRMS = MEM_CAP_RPK + stride;
+    MEM_CAP_TIME = MEM_CAP_RRMS + stride;
+    MEM_CAP_FLAG = MEM_CAP_TIME + stride;
+    MEM_CAP_BEAT_TIME = MEM_CAP_FLAG + stride;
+    MEM_CAP_BEAT = MEM_CAP_BEAT_TIME + stride;
+    MEM_CAP_TICKET = MEM_CAP_BEAT + stride;
+    MEM_SNAP_LPK = MEM_CAP_TICKET + stride;
+    MEM_SNAP_LRMS = MEM_SNAP_LPK + stride;
+    MEM_SNAP_RPK = MEM_SNAP_LRMS + stride;
+    MEM_SNAP_RRMS = MEM_SNAP_RPK + stride;
+    MEM_SNAP_TIME = MEM_SNAP_RRMS + stride;
+    MEM_SNAP_FLAG = MEM_SNAP_TIME + stride;
+    MEM_SNAP_BEAT_TIME = MEM_SNAP_FLAG + stride;
+    MEM_SNAP_BEAT = MEM_SNAP_BEAT_TIME + stride;
+    MEM_PLOT_VISIBLE = MEM_SNAP_BEAT + stride;
+    MEM_PLOT_START = MEM_PLOT_VISIBLE + stride;
+    MEM_PLOT_END = MEM_PLOT_START + stride;
+    MEM_PLOT_TREE = MEM_PLOT_END + stride;
+    MEM_CAPTURE_END = MEM_PLOT_TREE + 4 * stride;
+    cap_ready = 1;
+  );
+  cap_prev_state = -1;
+  cap_last_pp = 0;
+  cap_last_block = 0;
+  cap_prev_freeze = slider1;
+  atomic_add(cap_revision, 1);
+  0;
+);
+
+/**
+ * Block boundary: the time anchor, the gap test, the transport rules.
+ *
+ * play_position is documented as "as of last @block", so it is the anchor of
+ * the block and a sample counter adds the offset inside it. A position that
+ * does not match the previous one plus one block is a locate or a loop jump:
+ * the next point starts a new segment, and the plot breaks the line there.
+ * Nothing is acquired unless the transport is playing (play_state == 1).
+ */
+function capture_block() local(expected, tol) (
+  cap_boundary = 0;
+  srate != cap_rate ? capture_init();
+  cap_play_t = play_position;
+  cap_freeze = slider1;
+  cap_beat_t = play_position;
+  cap_beat_b = beat_position;
+
+  play_state == 1 && srate > 0 ? (
+    cap_prev_state == 1 ? (
+      expected = cap_last_pp + cap_last_block / srate;
+      // Half a block of tolerance catches a missing block without flagging the
+      // sample quantization of play_position (the model test pins both sides).
+      tol = 0.5 * cap_last_block / srate + 0.0005;
+      abs(play_position - expected) > tol ? capture_drop_hop();
+    ) : (
+      // Transport started: a stale stop order, a locate, a fresh play.
+      slider7 && !cap_freeze ? ( capture_reset(); );
+      capture_drop_hop();
+    );
+  ) : (
+    // Stopped, paused or recording: no acquisition, and a half hop is dropped
+    // rather than mixed into the next segment.
+    capture_drop_hop();
+  );
+
+  cap_freeze != cap_prev_freeze ? capture_drop_hop();
+  cap_prev_freeze = cap_freeze;
+  cap_prev_state = play_state;
+  cap_last_pp = play_position;
+  cap_last_block = samplesblock;
+  cap_s = 0;
+  0;
+);
+
+/**
+ * One audio sample: accumulate into the current hop, emit one point per hop.
+ *
+ * Both channels are always accumulated separately.
+ * Nothing here knows what the screen will show.
+ */
+function capture_sample(l, r) (
+  cap_ready && play_state == 1 && cap_freeze == 0 ? (
+    l < 0 ? l = -l;
+    r < 0 ? r = -r;
+    l > cap_a_lpk ? cap_a_lpk = l;
+    r > cap_a_rpk ? cap_a_rpk = r;
+    cap_a_lsq += l * l;
+    cap_a_rsq += r * r;
+    cap_hopn += 1;
+    cap_s += 1;
+
+    cap_hopn >= CAP_HOP ? (
+      capture_push(cap_play_t + cap_s / srate,
+                   cap_a_lpk, sqrt(cap_a_lsq / cap_hopn),
+                   cap_a_rpk, sqrt(cap_a_rsq / cap_hopn));
+      cap_hopn = 0;
+      cap_a_lpk = 0;
+      cap_a_rpk = 0;
+      cap_a_lsq = 0;
+      cap_a_rsq = 0;
+    );
+  );
+  0;
+);

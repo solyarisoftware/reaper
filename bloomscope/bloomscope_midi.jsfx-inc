@@ -1,0 +1,260 @@
+// BloomScope C: bounded bus-0 note capture and frame-local snapshot.
+// Audio thread owns records/queues; @gfx owns only the snapshot/scratch.
+// MIDI notes use FIFO pairing for repeated (channel,pitch); other MIDI is
+// never captured, but the conductor drains and re-sends every midirecv event.
+@init
+
+MIDI_CAPACITY = 4096;
+MIDI_KEYS = 16 * 128;
+MIDI_SEGMENTS = 256;
+MIDI_SEGMENT_FIELDS = 4; // id, block start/end time, first completed audio-hop ticket
+MIDI_FIELDS = 8; // on time, end time, pitch, channel, velocity, end kind, segment, has on
+MIDI_RECORD_STRIDE = MIDI_FIELDS + 2; // FIFO next/previous, encoded index+1
+MIDI_MEMORY_SLOTS = MIDI_CAPACITY * (MIDI_RECORD_STRIDE + MIDI_FIELDS + 1) +
+                    2 * MIDI_KEYS + 2 * MIDI_SEGMENT_FIELDS * MIDI_SEGMENTS + 256;
+midi_ready = 0;
+midi_revision = 0;
+midi_written = 0; // monotonic new-record count, not a total received-event count
+midi_segment_id = 0;
+midi_n = 0;
+midi_head = 0;
+midi_seg_n = 0;
+midi_seg_head = 0;
+midi_running = 0;
+midi_dropped = 0;
+snap_midi_n = 0;
+snap_midi_seg_n = 0;
+snap_midi_dropped = 0;
+g_midi_visible = 0;
+g_midi_pitches = 0;
+
+function midi_reset_data() local(k) (
+  atomic_add(midi_revision, 1);
+  midi_n = 0; midi_head = 0;
+  midi_seg_n = 0; midi_seg_head = 0;
+  midi_running = 0; midi_dropped = 0;
+  midi_ready ? (
+    k = 0;
+    loop(MIDI_KEYS,
+      mem[MEM_MIDI_FIRST + k] = 0;
+      mem[MEM_MIDI_LAST + k] = 0;
+      k += 1;
+    );
+  );
+  atomic_add(midi_revision, 1);
+  0;
+);
+
+function midi_init(base) (
+  MEM_MIDI_RECORD = base;
+  MEM_MIDI_FIRST = MEM_MIDI_RECORD + MIDI_CAPACITY * MIDI_RECORD_STRIDE;
+  MEM_MIDI_LAST = MEM_MIDI_FIRST + MIDI_KEYS;
+  MEM_MIDI_SEG = MEM_MIDI_LAST + MIDI_KEYS;
+  MEM_MIDI_SNAP = MEM_MIDI_SEG + MIDI_SEGMENT_FIELDS * MIDI_SEGMENTS;
+  MEM_MIDI_SEG_SNAP = MEM_MIDI_SNAP + MIDI_CAPACITY * MIDI_FIELDS;
+  MEM_MIDI_VISIBLE = MEM_MIDI_SEG_SNAP + MIDI_SEGMENT_FIELDS * MIDI_SEGMENTS;
+  MEM_MIDI_PITCH = MEM_MIDI_VISIBLE + MIDI_CAPACITY;
+  MEM_MIDI_ROW = MEM_MIDI_PITCH + 128;
+  MEM_MIDI_END = MEM_MIDI_ROW + 128;
+  midi_ready = MEM_MIDI_END <= __memtop();
+  midi_reset_data();
+  0;
+);
+
+/** Remove an active record from its key's FIFO, including on ring eviction. */
+function midi_unlink(idx) local(r, key, next, prev) (
+  r = MEM_MIDI_RECORD + idx * MIDI_RECORD_STRIDE;
+  key = mem[r + 3] * 128 + mem[r + 2];
+  next = mem[r + 8]; prev = mem[r + 9];
+  prev ? mem[MEM_MIDI_RECORD + (prev - 1) * MIDI_RECORD_STRIDE + 8] = next :
+         mem[MEM_MIDI_FIRST + key] = next;
+  next ? mem[MEM_MIDI_RECORD + (next - 1) * MIDI_RECORD_STRIDE + 9] = prev :
+         mem[MEM_MIDI_LAST + key] = prev;
+  0;
+);
+
+/** A discontinuity terminates bars, but never fabricates a received note-off. */
+function midi_end_segment() local(k, r, seg, t) (
+  midi_running ? (
+    seg = (midi_seg_head + MIDI_SEGMENTS - 1) % MIDI_SEGMENTS;
+    t = mem[MEM_MIDI_SEG + seg * MIDI_SEGMENT_FIELDS + 2];
+    k = 0;
+    loop(midi_n,
+      r = MEM_MIDI_RECORD + ((midi_head - midi_n + k + MIDI_CAPACITY) % MIDI_CAPACITY) * MIDI_RECORD_STRIDE;
+      mem[r + 5] == 0 ? ( mem[r + 1] = t; mem[r + 5] = 2; );
+      k += 1;
+    );
+    k = 0;
+    loop(MIDI_KEYS,
+      mem[MEM_MIDI_FIRST + k] = 0; mem[MEM_MIDI_LAST + k] = 0;
+      k += 1;
+    );
+    midi_running = 0;
+  );
+  0;
+);
+
+function midi_begin_segment(t) local(r) (
+  midi_segment_id += 1;
+  r = MEM_MIDI_SEG + midi_seg_head * MIDI_SEGMENT_FIELDS;
+  mem[r] = midi_segment_id; mem[r + 1] = t; mem[r + 2] = t;
+  mem[r + 3] = 0; // a block anchor alone is not published audio history
+  midi_seg_head = (midi_seg_head + 1) % MIDI_SEGMENTS;
+  midi_seg_n = min(midi_seg_n + 1, MIDI_SEGMENTS);
+  midi_running = 1;
+  0;
+);
+
+/** @sample publishes only the first hop ticket of the current MIDI segment.
+ * Zero-ticket segments never acquired an audio hop and cannot own a frame. */
+function midi_publish_audio_hop(ticket) local(r) (
+  r = MEM_MIDI_SEG + ((midi_seg_head + MIDI_SEGMENTS - 1) % MIDI_SEGMENTS) * MIDI_SEGMENT_FIELDS;
+  midi_running && mem[r + 3] == 0 ? (
+    atomic_add(midi_revision, 1);
+    mem[r + 3] = ticket;
+    atomic_add(midi_revision, 1);
+  );
+  0;
+);
+
+function midi_new_record(t, pitch, channel, velocity, has_on) local(r, key, last, idx) (
+  idx = midi_head;
+  r = MEM_MIDI_RECORD + idx * MIDI_RECORD_STRIDE;
+  midi_n == MIDI_CAPACITY ? (
+    mem[r + 5] == 0 ? midi_unlink(idx);
+    midi_dropped += 1;
+  );
+  mem[r] = t; mem[r + 1] = t;
+  mem[r + 2] = pitch; mem[r + 3] = channel; mem[r + 4] = velocity;
+  mem[r + 5] = has_on ? 0 : 1;
+  mem[r + 6] = midi_segment_id; mem[r + 7] = has_on;
+  mem[r + 8] = 0; mem[r + 9] = 0;
+  has_on ? (
+    key = channel * 128 + pitch;
+    last = mem[MEM_MIDI_LAST + key];
+    mem[r + 9] = last;
+    last ? mem[MEM_MIDI_RECORD + (last - 1) * MIDI_RECORD_STRIDE + 8] = idx + 1 :
+           mem[MEM_MIDI_FIRST + key] = idx + 1;
+    mem[MEM_MIDI_LAST + key] = idx + 1;
+  );
+  midi_head = (midi_head + 1) % MIDI_CAPACITY;
+  midi_n = min(midi_n + 1, MIDI_CAPACITY);
+  midi_written += 1;
+  0;
+);
+
+function midi_receive(offset, msg1, msg2, msg3) local(type, ch, pitch, vel, t, first, r) (
+  midi_ready && cap_ready && play_state == 1 && !cap_freeze && midi_running ? (
+    type = msg1 & 240; ch = msg1 & 15;
+    pitch = msg2 & 127; vel = msg3 & 127;
+    t = cap_play_t + offset / cap_rate;
+    type == 144 && vel > 0 ? midi_new_record(t, pitch, ch, vel, 1) :
+    (type == 128 || (type == 144 && vel == 0)) ? (
+      first = mem[MEM_MIDI_FIRST + ch * 128 + pitch];
+      first ? (
+        r = MEM_MIDI_RECORD + (first - 1) * MIDI_RECORD_STRIDE;
+        midi_unlink(first - 1);
+        mem[r + 1] = t; mem[r + 5] = 1;
+      ) : midi_new_record(t, pitch, ch, 0, 0);
+    );
+  );
+  0;
+);
+
+/** Called after capture_block(), inside one MIDI publication transaction. */
+function midi_block() local(seg, changed) (
+  changed = 0;
+  // Freeze never rewrites note history, even through stop/start or incoming offs.
+  !cap_freeze ? (
+    (cap_boundary || play_state != 1 || !cap_ready) && midi_running ? (
+      midi_end_segment(); changed = 1;
+    );
+    midi_ready && cap_ready && play_state == 1 ? (
+      !midi_running ? ( midi_begin_segment(cap_play_t); changed = 1; );
+      seg = (midi_seg_head + MIDI_SEGMENTS - 1) % MIDI_SEGMENTS;
+      mem[MEM_MIDI_SEG + seg * MIDI_SEGMENT_FIELDS + 2] = cap_play_t + samplesblock / cap_rate;
+    );
+  );
+  changed ? atomic_add(cap_lifecycle_epoch, 1);
+  0;
+);
+
+/** Seqlock rejects mutable note/off/queue updates; no retries or live drawing. */
+function snapshot_midi() local(rev, n, head, sn, sh, dropped, k, idx, f, ok) (
+  rev = atomic_get(midi_revision);
+  ok = (rev % 2) == 0;
+  n = midi_n; head = midi_head;
+  sn = midi_seg_n; sh = midi_seg_head; dropped = midi_dropped;
+  n < 0 || n > MIDI_CAPACITY || sn < 0 || sn > MIDI_SEGMENTS ? ok = 0;
+  k = 0;
+  while (ok && k < n) (
+    idx = (head - n + k + MIDI_CAPACITY) % MIDI_CAPACITY;
+    f = 0;
+    loop(MIDI_FIELDS,
+      mem[MEM_MIDI_SNAP + k * MIDI_FIELDS + f] = mem[MEM_MIDI_RECORD + idx * MIDI_RECORD_STRIDE + f];
+      f += 1;
+    );
+    k += 1;
+  );
+  k = 0;
+  while (ok && k < sn) (
+    idx = (sh - sn + k + MIDI_SEGMENTS) % MIDI_SEGMENTS;
+    f = 0;
+    loop(MIDI_SEGMENT_FIELDS,
+      mem[MEM_MIDI_SEG_SNAP + k * MIDI_SEGMENT_FIELDS + f] = mem[MEM_MIDI_SEG + idx * MIDI_SEGMENT_FIELDS + f];
+      f += 1;
+    );
+    k += 1;
+  );
+  atomic_get(midi_revision) != rev ? ok = 0;
+  ok ? ( snap_midi_n = n; snap_midi_seg_n = sn; snap_midi_dropped = dropped; );
+  ok;
+);
+
+function note_field(k, f) ( mem[MEM_MIDI_SNAP + k * MIDI_FIELDS + f]; );
+function note_segment(k, f) ( mem[MEM_MIDI_SEG_SNAP + k * MIDI_SEGMENT_FIELDS + f]; );
+
+/** Eligibility belongs to the copied audio instant, never to the current block. */
+function note_segment_published(k) (
+  note_segment(k, 0) <= snap_audio_segment && note_segment(k, 3) > 0 &&
+    note_segment(k, 3) <= snap_written;
+);
+
+/** Conservative ownership: omit a whole older bar if newer audio overlaps it.
+ * Segment retention is bounded; notes whose segment was evicted are omitted. */
+function prepare_notes() local(k, s, on, end, id, found, hidden, visible, p) (
+  g_midi_visible = 0; g_midi_pitches = 0;
+  k = 0;
+  midi_ready ? loop(128, mem[MEM_MIDI_PITCH + k] = 0; k += 1; );
+  k = 0;
+  loop(snap_midi_n,
+    on = note_field(k, 0);
+    end = note_field(k, 5) == 0 ? snap_now_t : min(note_field(k, 1), snap_now_t);
+    id = note_field(k, 6);
+    found = 0; hidden = 0; s = 0;
+    loop(snap_midi_seg_n,
+      note_segment_published(s) ? (
+        note_segment(s, 0) == id ? found = 1;
+        note_segment(s, 0) > id && note_segment(s, 1) <= snap_now_t &&
+          note_segment(s, 1) <= end && note_segment(s, 2) >= on ? hidden = 1;
+      );
+      s += 1;
+    );
+    visible = found && !hidden && on <= snap_now_t && end >= snap_now_t - max(slider2, 1);
+    mem[MEM_MIDI_VISIBLE + k] = visible;
+    visible ? (
+      g_midi_visible += 1;
+      mem[MEM_MIDI_PITCH + note_field(k, 2)] = 1;
+    );
+    k += 1;
+  );
+  p = 127;
+  midi_ready ? loop(128,
+    mem[MEM_MIDI_PITCH + p] ? (
+      mem[MEM_MIDI_ROW + p] = g_midi_pitches;
+      g_midi_pitches += 1;
+    );
+    p -= 1;
+  );
+  0;
+);

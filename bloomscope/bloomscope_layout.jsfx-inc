@@ -1,0 +1,192 @@
+// ===================================================================
+// BLOOMSCOPE LAYOUT - where the panels, their axis and the status line are
+// ===================================================================
+// A library file (.jsfx-inc) imported by bloomscope.jsfx.
+//
+// OWNS: the frame geometry (one panel, or two stacked panels for Stereo
+// Split), the dB axis transform, and the choice of which grid lines can be
+// labelled without overlapping. Nothing here draws and nothing here reads the
+// series.
+//
+// READS: gfx_w, gfx_h, slider3 (the floor, i.e. the bottom of the axis),
+// slider6 (the view).
+// WRITES: the g_* geometry globals and g_axis_*.
+//
+// The axis is deliberately one-sided: 0 dBFS is the TOP EDGE of every panel
+// and the floor is the BOTTOM EDGE, with no padding beyond either. Padding
+// would suggest the scale continues past a limit that the signal cannot cross
+// beyond the documented range, and it is where a level plot starts to look like an
+// oscilloscope. Both panels of Stereo Split carry the same scale and the same
+// floor, so the two channels are read by eye without a mental conversion.
+// ===================================================================
+
+@init
+
+// ========== PIXELS ==========
+FONT_SIZE = 16;
+AXIS_FONT = 13;          // slightly larger time/dB tick labels
+AXIS_LABEL_SPACING = 18;
+BAR_FONT = FONT_SIZE - 3;
+
+PLOT_LEFT = 46;          // gutter: "-60" plus air, at FONT_SIZE 16 (Arial)
+PLOT_RIGHT = 12;
+STATUS_TEXT_MARGIN = 24; // one line under the plot
+TIME_AXIS_HEIGHT = 17;   // one shared project-time label row
+MIDI_STRIP_HEADING = 18;
+MIDI_STRIP_ROW = 22;
+MIDI_STRIP_MAX_ROWS = 8; // adaptive height budget, not a pitch/storage limit
+
+CTRL_BAR_TOP = 6;
+CTRL_BAR_HEIGHT = 24;
+CTRL_BAR_GAP = 8;
+CTRL_CELL_GAP = 6;
+CTRL_CELL_PAD = 6;
+CTRL_CORNER = 2;
+CTRL_ITEM_HEIGHT = 15;
+CTRL_MENU_ROWS = 12;
+CTRL_MENU_MIN_WIDTH = 92;
+CTRL_MENU_DROP = 3;
+
+// Two stacked panels need a gap for the border of the upper one and the label
+// of the lower one, and each panel needs enough height to read a curve rather
+// than a stripe (never compress a plot below approximately 40 px).
+PANEL_GAP = 6;
+PANEL_MIN_H = 40;
+
+// The three presentation modes. The order is the slider order.
+VIEW_STEREO = 0;
+VIEW_OVERLAY = 1;
+VIEW_SPLIT = 2;
+
+BLOOMSCOPE_VERSION = "0.1.3";
+
+// ========== GEOMETRY (calculated every frame) ==========
+g_view = 0;         // slider6, clamped
+g_panels = 1;       // 1 for Stereo and Overlay, 2 for Split
+g_panels_fit = 1;   // 0 when Split was asked for and the window is too short
+g_panel_h = 0;      // height of one panel
+g_panel_y0 = 0;     // top of the upper (or only) panel
+g_panel_y1 = 0;     // top of the lower panel, when there is one
+g_plot_x = 0;
+g_plot_y = 0;
+g_plot_w = 0;
+g_plot_h = 0;
+g_status_y = 0;
+g_time_y = 0;
+g_midi_y = 0;
+g_midi_h = 0;
+g_axis_floor_db = -60;
+
+/**
+ * Places the panels in whatever window REAPER gave the plugin.
+ *
+ * The plot takes everything between the control bar and the status line. Its
+ * height has a floor so that a very short window still shows a curve rather
+ * than a stripe; below that the status line is what shrinks, not the axis.
+ * Stereo Split asks for two panels: when the window cannot hold two readable
+ * ones the view is NOT silently replaced -- it is drawn as a resize hint, so
+ * what the slider says and what the screen says cannot disagree.
+ */
+function calculate_layout() local(top, bottom, w, h, short_notes, audio_min_h, rows) (
+  top = CTRL_BAR_TOP + CTRL_BAR_HEIGHT + CTRL_BAR_GAP;
+  bottom = gfx_h - STATUS_TEXT_MARGIN - TIME_AXIS_HEIGHT;
+  w = gfx_w - PLOT_LEFT - PLOT_RIGHT;
+  g_view = slider6 < 0 ? 0 : slider6 > 2 ? 2 : slider6;
+  g_panels = g_view == VIEW_SPLIT ? 2 : 1;
+  audio_min_h = g_panels * PANEL_MIN_H + (g_panels - 1) * PANEL_GAP;
+  // Keep the four-row fallback; grow only with room for every audio panel.
+  rows = min(MIDI_STRIP_MAX_ROWS, max(4,
+         floor((bottom - top - audio_min_h - MIDI_STRIP_HEADING) / MIDI_STRIP_ROW)));
+  g_midi_h = g_midi_visible > 0 ? MIDI_STRIP_HEADING +
+             MIDI_STRIP_ROW * min(g_midi_pitches, rows) : 0;
+  h = bottom - top - g_midi_h;
+  short_notes = g_midi_visible > 0 && h < audio_min_h;
+  // The resize hint paints no notes: do not reserve an invisible strip there.
+  // Keep the hint selected even if releasing that space restores panel height.
+  short_notes ? ( g_midi_h = 0; h = bottom - top; );
+  h = short_notes ? max(h, 1) : max(h, PANEL_MIN_H);
+  g_panels_fit = !short_notes;
+
+  g_plot_x = PLOT_LEFT;
+  g_plot_y = top;
+  // Column scratch has CAP_MAX_COLS slots; keep the entire time window visible
+  // even when the host gives us a wider canvas.
+  g_plot_w = min(max(w, 40), CAP_MAX_COLS);
+  g_plot_h = h;
+  g_panel_h = h;
+  g_panel_y0 = top;
+  g_panel_y1 = top;
+
+  g_panels == 2 ? (
+    g_panel_h = floor((h - PANEL_GAP) / 2);
+    g_panel_h < PANEL_MIN_H ? (
+      g_panels_fit = 0;
+      g_panel_h = max(floor((h - PANEL_GAP) / 2), 1);
+    );
+    g_panel_y1 = g_panel_y0 + g_panel_h + PANEL_GAP;
+  );
+
+  // Time labels belong directly to the audio baseline, before MIDI rows.
+  g_time_y = g_plot_y + g_plot_h + 2;
+  g_midi_y = g_time_y + TIME_AXIS_HEIGHT;
+  g_status_y = gfx_h - STATUS_TEXT_MARGIN + 4;
+  g_axis_floor_db = slider3;
+  0;
+);
+
+/**
+ * Top edge of a panel. The index is clamped: a caller that asks for panel 1
+ * when there is only one gets the single panel rather than nothing.
+ */
+function ev_panel_y(p) (
+  p == 1 && g_panels == 2 ? g_panel_y1 : g_panel_y0;
+);
+
+/**
+ * dBFS to pixel y inside a panel. 0 dB is the panel's top edge, slider3
+ * (negative) its bottom edge. The argument is not clamped here: the caller
+ * clamps, because a value above 0 dBFS is a fact to display, not a coordinate
+ * to hide.
+ */
+function ev_y_of_db_p(db, p) (
+  ev_panel_y(p) + (0 - db) / (0 - slider3) * g_panel_h;
+);
+
+/**
+ * Pixel y back to dBFS inside a panel, for a readout under the pointer.
+ */
+function ev_db_of_y_p(y, p) (
+  -((y - ev_panel_y(p)) / g_panel_h) * (0 - slider3);
+);
+
+// ========== SINGLE-PANEL SHORTCUTS ==========
+// The upper panel is the whole plot in Stereo and Overlay, so the callers that
+// predate the split keep working and stay readable.
+function ev_y_of_db(db) ( ev_y_of_db_p(db, 0); );
+function ev_db_of_y(y) ( ev_db_of_y_p(y, 0); );
+
+/**
+ * How many 6 dB lines to skip so the larger labels have enough vertical room.
+ */
+function ev_grid_step() local(h_per_line, s) (
+  h_per_line = g_panel_h * 6 / (0 - slider3);
+  s = 1;
+  h_per_line < AXIS_LABEL_SPACING ? s = 2;
+  h_per_line * 2 < AXIS_LABEL_SPACING ? s = 5;
+  s;
+);
+
+/**
+ * Number of labelled lines: 0, -6, -12, ... down to the floor.
+ */
+function ev_grid_count() local(step) (
+  step = ev_grid_step();
+  floor((0 - slider3) / (6 * step)) + 1;
+);
+
+/**
+ * dB value of the i-th labelled line.
+ */
+function ev_grid_db(i) (
+  0 - i * 6 * ev_grid_step();
+);

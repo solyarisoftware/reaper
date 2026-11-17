@@ -1,0 +1,128 @@
+// BloomScope contextual help: host-owned content, hit testing and dwell.
+// Renderer: bloomscope_tooltip.jsfx-inc, copied byte-for-byte from CCScope
+// revision 2c2a7238ad6068ce9ae4824b45f37d820b3ab1e6. No mem[] allocation.
+// Reads only control geometry, sliders and the completed frame's note snapshot.
+@init
+
+#help_title = "";
+#help_body = "";
+#help_current = "";
+#help_identity = "";
+#help_previous = "";
+help_since = 0;
+help_last_x = -1000;
+help_last_y = -1000;
+help_prev_right = 0;
+
+// A native context menu keeps guide opt-in/out reachable without a ninth bar cell.
+function help_guide_menu(ready) local(right, choice) (
+  right = mouse_cap & 2;
+  right && !help_prev_right && ready && cbm_open() == 0 &&
+  mouse_x >= g_plot_x && mouse_x <= g_plot_x + g_plot_w &&
+  mouse_y >= g_plot_y && mouse_y < g_midi_y + g_midi_h ? (
+    sprintf(#help_guide_menu, "%sGuides: Off|%sGuides: Plot only|%sGuides: Linked to MIDI",
+            slider10 == 0 ? "!" : "", slider10 == 1 ? "!" : "", slider10 == 2 ? "!" : "");
+    gfx_x = mouse_x; gfx_y = mouse_y;
+    choice = gfx_showmenu(#help_guide_menu);
+    choice > 0 ? (
+      slider10 = choice - 1;
+      sliderchange(slider10);
+    );
+  );
+  help_prev_right = right;
+  0;
+);
+
+function help_control_content(hit) (
+  #help_current = "";
+  hit == 1 ? (
+    #help_title = "Time window";
+    #help_body = "Visible history in seconds. Changing the window does not clear capture. Bars is a future option, not implemented yet.";
+    sprintf(#help_current, "%d seconds", slider2);
+  ) : hit == 2 ? (
+    #help_title = "Peak and RMS";
+    #help_body = "Peak is the largest absolute sample in each 32-sample hop. RMS measures average signal power; smoothing makes its shape easier to read.";
+    strcat(#help_body, " Peak + RMS draws two lines per channel. The fill runs from Peak to the floor: not a third measurement or a difference band. RMS is not LUFS.");
+    slider4 == 0 ? #help_current = "Peak" : slider4 == 1 ? #help_current = "RMS" : #help_current = "Peak + RMS";
+  ) : hit == 3 ? (
+    #help_title = "dBFS floor";
+    #help_body = "The bottom of each audio panel. Values at or below this level are clamped to the floor. The top of each panel is 0 dBFS.";
+    sprintf(#help_current, "%d dBFS", slider3);
+  ) : hit == 4 ? (
+    #help_title = "RMS smoothing";
+    #help_body = "A moving average of hop RMS amplitudes, applied when drawing. Longer windows smooth rapid changes but blur timing. Peak is not smoothed; history is not rewritten.";
+    slider5 == 0 ? #help_current = "One hop (32 samples)" :
+    sprintf(#help_current, "%d ms", slider5 == 1 ? 30 : slider5 == 2 ? 100 : 300);
+  ) : hit == 5 ? (
+    #help_title = "Stereo presentation";
+    slider6 == 0 ? (
+      #help_current = "Stereo: linked";
+      #help_body = "One panel: Peak is the louder channel; RMS combines mean L/R power. This is not a mono fold-down and cannot cancel opposite-phase channels.";
+    ) : slider6 == 1 ? (
+      #help_current = "Stereo Overlay";
+      #help_body = "L and R share one dBFS axis, with distinct colours and no fill. Peak + RMS can show four lines: two detectors for each channel.";
+    ) : (
+      #help_current = "Stereo Split";
+      #help_body = "Left above Right, with identical dBFS scales and aligned time. Peak + RMS shows two lines and a Peak fill in each panel. The lower panel is not mirrored.";
+    );
+    strcat(#help_body, " View chooses channel presentation; Detector chooses measurements. Changing View preserves history.");
+  ) : hit == 6 ? (
+    #help_title = "Audio grid";
+    #help_body = "Full shows level and time/beat lines. Levels keeps horizontal dBFS lines only. Off hides internal grid lines. Axis labels and MIDI event guides remain.";
+    slider9 == 0 ? #help_current = "Full" : slider9 == 1 ? #help_current = "Levels" : #help_current = "Off";
+  ) : hit == 7 ? (
+    #help_title = "Freeze";
+    #help_body = "Hold the captured audio and MIDI history while audio and MIDI keep passing. Clear still clears a frozen history.";
+    slider1 ? #help_current = "Frozen" : #help_current = "Acquiring while transport plays";
+  ) : (
+    #help_title = "Clear history";
+    #help_body = "Discard the captured audio and MIDI history without changing the display parameters. This also clears a frozen window.";
+    #help_current = "Capture reset";
+  );
+  0;
+);
+
+function help_note_content(k) (
+  note_pitch_name(note_field(k, 2));
+  strcpy(#help_title, #note_label);
+  note_field(k, 7) ? (
+    sprintf(#help_current, "MIDI channel %d | velocity %d", note_field(k, 3) + 1, note_field(k, 4));
+    #help_body = "Received MIDI note. Red above: note-on; orange below: received note-off. Right-click plot/strip for guide modes: Off, Plot only, Linked to MIDI.";
+    strcat(#help_body, " Velocity is event data, not a prediction of dBFS. Its effect depends on the instrument/patch; dynamics may instead use CC1 or CC11.");
+  ) : (
+    sprintf(#help_current, "MIDI channel %d | unmatched note-off", note_field(k, 3) + 1);
+    #help_body = "A received note-off without a captured matching note-on. No start time, velocity or note duration is invented.";
+  );
+  strcat(#help_body, " Pitch uses MIDI 60 = C4. With overlapping notes, the audio plot shows their combined signal, not separate note envelopes.");
+  0;
+);
+
+function draw_context_help(ready) local(hit, now, ax, ay, ab, k) (
+  tip_visible = 0;
+  #help_identity = "";
+  ready && cbm_open() == 0 && (mouse_cap & 3) == 0 &&
+  mouse_x >= 0 && mouse_x < gfx_w && mouse_y >= 0 && mouse_y < gfx_h ? (
+    hit = cbm_hit_test(mouse_x, mouse_y);
+    hit > 0 ? (
+      sprintf(#help_identity, "control:%d", hit);
+      help_control_content(hit);
+      ax = mouse_x; ay = CTRL_BAR_TOP; ab = CTRL_BAR_TOP + CTRL_BAR_HEIGHT;
+    ) : g_note_hover > 0 ? (
+      k = g_note_hover - 1;
+      sprintf(#help_identity, "note:%d:%.9f:%d:%d", k, note_field(k, 0), note_field(k, 2), note_field(k, 3));
+      help_note_content(k);
+      ax = mouse_x; ay = g_note_hover_top; ab = g_note_hover_bottom;
+    );
+  );
+  now = time_precise();
+  strcmp(#help_previous, #help_identity) || abs(mouse_x - help_last_x) > 4 || abs(mouse_y - help_last_y) > 4 ? (
+    strcpy(#help_previous, #help_identity);
+    help_since = now; help_last_x = mouse_x; help_last_y = mouse_y;
+  );
+  strlen(#help_identity) && now - help_since >= 0.45 ? (
+    // Same subject in full/compact variants: never replace a definition by a value.
+    tip_draw(ax, ay, ab, #help_title, #help_body, #help_body, #help_current,
+             "MIDI channel 16 | unmatched note-off\nMIDI channel 16 | velocity 127\nAcquiring while transport plays");
+  );
+  0;
+);

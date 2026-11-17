@@ -149,8 +149,12 @@ thing to a test suite the engine has. The cases that only a DAW can answer are l
 
 ## Where the tests live
 
-Per package, not per repository: `tests/ccscope/` and `tests/polytrills/`. The index ignores
-`tests/`, and each folder has its own step in the check workflow, so adding a package means adding
+Per package, not per repository: `tests/ccscope/`, `tests/polytrills/` and
+`tests/bloomscope/`. BloomScope keeps its JSFX, nine includes and optional Lua Main
+action together in `bloomscope/`; package metadata installs the action with the effect.
+Its test README distinguishes source/model checks from real-host acceptance.
+The index ignores `tests/`, and each folder has its own step in the check workflow,
+so adding a package means adding
 a folder and one line — not editing a discovery that guesses.
 
 ## Documentation conventions

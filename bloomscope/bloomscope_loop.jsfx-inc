@@ -1,0 +1,141 @@
+// Optional instance-bound loop context. No host output is modified.
+// Protocol v1: 64 slots x 32 doubles in BloomScope_Loop_v1.
+// Lua owns 0..12: sequence, token, nonce echo, enabled, start, end,
+// sample rate, start QN, configuration revision, heartbeat counter, host clock.
+// JSFX owns 16..23: nonce, status, split count, queue overflow count.
+// Publication is odd/even; the reader never retries on the audio thread.
+@init
+LOOP_SLOTS = 64;
+LOOP_STRIDE = 32;
+LOOP_QUEUE_CAPACITY = 4096;
+LOOP_QUEUE_FIELDS = 4;
+loop_nonce = 1 + floor(rand(1073741823));
+loop_token = 0;
+loop_age = 10;
+loop_seen_heartbeat = -1;
+loop_config = -1;
+loop_status = 0;
+loop_splits = 0;
+loop_overflows = 0;
+loop_split = -1;
+loop_queued = 0;
+
+function loop_init(base) (
+  MEM_LOOP_QUEUE = base;
+  MEM_LOOP_END = base + LOOP_QUEUE_CAPACITY * LOOP_QUEUE_FIELDS;
+  0;
+);
+
+// Called once per @block, after capture_block and before midi_block.
+function loop_block() local(b, seq, token, nonce, enabled, start, end, rate, qn, config, hb, stamp, age, ok, delta, split) (
+  loop_split = -1;
+  loop_queued = 0;
+  token = floor(slider11);
+  loop_status = token > 0 ? 2 : 0;
+  token > 0 ? (
+    b = (token % LOOP_SLOTS) * LOOP_STRIDE;
+    token != loop_token ? (
+      loop_token = token;
+      loop_age = 10;
+      loop_seen_heartbeat = -1;
+      loop_config = -1;
+    );
+    // A dormant instance must not clobber a slot reassigned to a new token.
+    gmem[b + 1] == token ? gmem[b + 16] = loop_nonce;
+    seq = gmem[b];
+    nonce = gmem[b + 2]; enabled = gmem[b + 3];
+    start = gmem[b + 4]; end = gmem[b + 5]; rate = gmem[b + 6];
+    qn = gmem[b + 7]; config = gmem[b + 8]; hb = gmem[b + 9]; stamp = gmem[b + 10];
+    ok = seq > 0 && seq % 2 == 0 && gmem[b + 1] == token && nonce == loop_nonce;
+    seq != gmem[b] ? ok = 0;
+    ok && hb != loop_seen_heartbeat ? (
+      loop_seen_heartbeat = hb;
+      loop_age = 0;
+    ) : loop_age += samplesblock / max(srate, 1);
+    // Shared host clock also rejects a stale publication after idle/suspension.
+    age = time_precise() - stamp;
+    ok = ok && loop_age < 1 && age >= 0 && age < 1 && enabled == 1 && rate == srate && end > start && start >= 0;
+    ok && (end - start) * srate <= samplesblock ? (
+      loop_status = 3;
+      ok = 0;
+    );
+    ok ? (
+      loop_status = loop_overflows > 0 ? 4 : 1;
+      config != loop_config ? (
+        // Changed loop configuration is a gap, never a retiming of history.
+        loop_config >= 0 && play_state == 1 && !cap_freeze ? capture_drop_hop();
+        loop_config = config;
+      );
+      delta = (end - cap_play_t) * srate;
+      split = floor(delta + 0.5);
+      !cap_boundary && play_state == 1 && !cap_freeze && cap_ready && midi_ready &&
+        cap_play_t >= start - 0.5 / srate && split >= 0 && split <= samplesblock ? (
+        // One wrap at most. Sub-sample endpoints are rounded to a host sample.
+        loop_split = split;
+        loop_start = start; loop_end = end; loop_start_qn = qn;
+      );
+    );
+    gmem[b + 17] = loop_status;
+    gmem[b + 18] = loop_splits;
+    gmem[b + 19] = loop_overflows;
+  );
+  0;
+);
+
+// Keep the old segment's extent at its real boundary, not the linear block end.
+function loop_limit_segment() local(r) (
+  loop_split >= 0 && midi_running ? (
+    r = MEM_MIDI_SEG + ((midi_seg_head + MIDI_SEGMENTS - 1) % MIDI_SEGMENTS) * MIDI_SEGMENT_FIELDS;
+    mem[r + 2] = loop_end;
+  );
+  0;
+);
+
+function loop_receive(offset, msg1, msg2, msg3) local(type, r) (
+  loop_split >= 0 && offset >= loop_split ? (
+    type = msg1 & 240;
+    (type == 128 || type == 144) ? (
+      loop_queued < LOOP_QUEUE_CAPACITY ? (
+        r = MEM_LOOP_QUEUE + loop_queued * LOOP_QUEUE_FIELDS;
+        mem[r] = offset; mem[r + 1] = msg1; mem[r + 2] = msg2; mem[r + 3] = msg3;
+        loop_queued += 1;
+      ) : (
+        loop_status = 4;
+        loop_overflows += 1;
+        midi_dropped += 1;
+      );
+    );
+  ) : midi_receive(offset, msg1, msg2, msg3);
+  0;
+);
+
+// Called at the sample boundary, including at the exact end of a block.
+// Queued notes cannot acquire a frame until the new audio segment has a hop.
+function loop_sample_boundary() local(k, r, seg) (
+  loop_split >= 0 && cap_s == loop_split ? (
+    atomic_add(cap_revision, 1);
+    atomic_add(midi_revision, 1);
+    capture_drop_hop();
+    midi_end_segment();
+    cap_play_t = loop_start - loop_split / cap_rate;
+    cap_last_pp = cap_play_t; // reconcile next host anchor without a second gap
+    cap_beat_t = loop_start;
+    cap_beat_b = loop_start_qn;
+    midi_begin_segment(loop_start);
+    seg = MEM_MIDI_SEG + ((midi_seg_head + MIDI_SEGMENTS - 1) % MIDI_SEGMENTS) * MIDI_SEGMENT_FIELDS;
+    mem[seg + 2] = cap_play_t + samplesblock / cap_rate;
+    k = 0;
+    loop(loop_queued,
+      r = MEM_LOOP_QUEUE + k * LOOP_QUEUE_FIELDS;
+      midi_receive(mem[r], mem[r + 1], mem[r + 2], mem[r + 3]);
+      k += 1;
+    );
+    loop_split = -1;
+    loop_queued = 0;
+    loop_splits += 1;
+    atomic_add(cap_lifecycle_epoch, 1);
+    atomic_add(midi_revision, 1);
+    atomic_add(cap_revision, 1);
+  );
+  0;
+);

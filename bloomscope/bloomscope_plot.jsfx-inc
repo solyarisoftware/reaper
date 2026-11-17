@@ -1,0 +1,857 @@
+// ===================================================================
+// BLOOMSCOPE PLOT - the grid, the axis labels and the envelope traces
+// ===================================================================
+// A library file (.jsfx-inc) imported by bloomscope.jsfx.
+//
+// OWNS: the painting of the panel(s), the dB grid and its labels, the beat
+// and second grid, the per-column aggregation of both channels, the three
+// presentation modes, and the readouts the status line prints. Nothing here
+// writes the series or a slider.
+//
+// READS: g_plot_*, g_view, g_panels, slider1..slider6, cap_* and the accessors
+// from bloomscope_capture.jsfx-inc. slider9 selects Full/Levels/Off grid.
+// WRITES: pixels, g_now_*_db, g_hold_*_db, g_channels_differ_db.
+//
+// THE VIEW IS A DRAWING DECISION: the four stored series are
+// aggregated into columns once per channel per frame, and the mode picks which
+// aggregate reaches which panel. Switching the view never touches the history.
+//
+// COLOUR IS SET THROUGH gfx_r/gfx_g/gfx_b/gfx_a, never through gfx_set(): the
+// repository has a measured incident where an eight-argument gfx_set() killed
+// a whole @gfx block silently (AGENTS.md §3).
+//
+// COST: the trace scan is linear in the points held (45 000 at 48 kHz for a
+// 30 s window) and runs once per channel: twice per frame in Overlay and Split.
+// ===================================================================
+
+@init
+
+g_now_peak_db = -100;   // linked reading, Stereo
+g_now_rms_db = -100;
+g_now_l_db = -100;      // per channel, Overlay and Split
+g_now_lrms_db = -100;
+g_now_r_db = -100;
+g_now_rrms_db = -100;
+g_hold_db = -100;       // window maximum, per aggregate
+g_hold_l_db = -100;
+g_hold_r_db = -100;
+g_agg_hold = 0;         // the aggregate() scratch, not a readout
+g_channels_differ_db = 0;
+g_window_differ = 0;    // either peak or RMS differs by >= 0.05 dB in the window
+
+#ev_lbl = "";
+#ev_stat = "";
+#ev_stat_alt = "";
+#ev_flag = "";
+#ev_state = "";
+#ev_side = "";
+#ev_position = "";
+
+// @gfx-owned immutable copy for one frame. A failed copy is never drawn.
+snap_n = 0;
+snap_now_t = 0;
+snap_audio_segment = 0;
+snap_written = 0;
+
+function snapshot_capture() local(rev, head, n, capacity, written, now_t, segment, ready, k, idx, ticket, ok) (
+  rev = atomic_get(cap_revision);
+  ok = (rev % 2) == 0;
+  head = cap_head;
+  n = cap_n;
+  capacity = cap_capacity;
+  written = cap_written;
+  now_t = cap_now_t;
+  segment = cap_now_segment;
+  ready = cap_ready;
+  atomic_get(cap_revision) != rev ? ok = 0;
+  (n < 0 || n > capacity || (n > 0 && (!ready || capacity <= 0))) ? ok = 0;
+  k = 0;
+  while (ok && k < n) (
+    idx = head - n + k;
+    idx < 0 ? idx += capacity;
+    idx >= capacity ? idx -= capacity;
+    ticket = written - n + k + 1;
+    atomic_get(mem[MEM_CAP_TICKET + idx]) != ticket ? ok = 0 : (
+      mem[MEM_SNAP_LPK + k] = capture_lpk(idx);
+      mem[MEM_SNAP_LRMS + k] = capture_lrms(idx);
+      mem[MEM_SNAP_RPK + k] = capture_rpk(idx);
+      mem[MEM_SNAP_RRMS + k] = capture_rrms(idx);
+      mem[MEM_SNAP_TIME + k] = capture_time(idx);
+      mem[MEM_SNAP_FLAG + k] = capture_break(idx);
+      mem[MEM_SNAP_BEAT_TIME + k] = capture_beat_time(idx);
+      mem[MEM_SNAP_BEAT + k] = capture_beat(idx);
+      atomic_get(mem[MEM_CAP_TICKET + idx]) != ticket ? ok = 0;
+    );
+    k += 1;
+  );
+  ok ? (
+    snap_n = n;
+    snap_now_t = now_t;
+    snap_audio_segment = segment;
+    snap_written = written;
+  );
+  ok;
+);
+
+function plot_lpk(k) ( mem[MEM_SNAP_LPK + k]; );
+function plot_lrms(k) ( mem[MEM_SNAP_LRMS + k]; );
+function plot_rpk(k) ( mem[MEM_SNAP_RPK + k]; );
+function plot_rrms(k) ( mem[MEM_SNAP_RRMS + k]; );
+function plot_time(k) ( mem[MEM_SNAP_TIME + k]; );
+function plot_break(k) ( mem[MEM_SNAP_FLAG + k]; );
+function plot_beat_time(k) ( mem[MEM_SNAP_BEAT_TIME + k]; );
+function plot_beat(k) ( mem[MEM_SNAP_BEAT + k]; );
+
+/**
+ * Linear amplitude to dBFS, floored so that log10 never sees zero.
+ */
+function ev_db_of_amp(a) local(v, d) (
+  v = a;
+  v < 0.000000001 ? v = 0.000000001;
+  d = 20 * log10(v);
+  d;
+);
+
+/**
+ * Pixel x of a project time, given the newest stored instant and the window.
+ */
+function ev_x_of_time(t, now_t, px_per_s) (
+  g_plot_x + g_plot_w - (now_t - t) * px_per_s;
+);
+
+// Sorted hop times and a range-coverage tree are private to @gfx. Tree nodes:
+// 0 = empty, 1 = partly covered, 2 = completely covered.
+vis_sorted = 0;
+vis_count = 0;
+vis_leaf = 0;
+
+function vis_lower(t) local(lo, hi, mid) (
+  lo = 0; hi = vis_count;
+  while (lo < hi) (
+    mid = floor((lo + hi) * 0.5);
+    mem[vis_sorted + mid] < t ? lo = mid + 1 : hi = mid;
+  );
+  lo;
+);
+
+function vis_upper(t) local(lo, hi, mid) (
+  lo = 0; hi = vis_count;
+  while (lo < hi) (
+    mid = floor((lo + hi) * 0.5);
+    mem[vis_sorted + mid] <= t ? lo = mid + 1 : hi = mid;
+  );
+  lo;
+);
+
+/** True if a covered interval intersects [a,b], endpoints included. */
+function vis_intersects(a, b) local(l, r, node, hit) (
+  l = vis_lower(a) + vis_leaf;
+  r = vis_upper(b) + vis_leaf;
+  hit = 0;
+  l < r ? (
+    // Full ancestors also cover a selected descendant.
+    node = floor(l / 2);
+    while (node > 0) (
+      mem[MEM_PLOT_TREE + node] == 2 ? hit = 1;
+      node = floor(node / 2);
+    );
+    node = floor((r - 1) / 2);
+    while (node > 0) (
+      mem[MEM_PLOT_TREE + node] == 2 ? hit = 1;
+      node = floor(node / 2);
+    );
+    while (l < r && !hit) (
+      (l % 2) ? ( mem[MEM_PLOT_TREE + l] ? hit = 1; l += 1; );
+      (r % 2) ? ( r -= 1; mem[MEM_PLOT_TREE + r] ? hit = 1; );
+      l = floor(l / 2); r = floor(r / 2);
+    );
+  );
+  hit;
+);
+
+/** Add [a,b] to the union; no existing covered range is ever removed. */
+function vis_cover(a, b) local(l, r, left, right, node, c1, c2) (
+  l = vis_lower(a) + vis_leaf;
+  r = vis_upper(b) + vis_leaf;
+  left = l; right = r - 1;
+  while (l < r) (
+    (l % 2) ? ( mem[MEM_PLOT_TREE + l] = 2; l += 1; );
+    (r % 2) ? ( r -= 1; mem[MEM_PLOT_TREE + r] = 2; );
+    l = floor(l / 2); r = floor(r / 2);
+  );
+  // Only the two boundary paths can have changed partial ancestors.
+  node = floor(left / 2);
+  while (node > 0) (
+    mem[MEM_PLOT_TREE + node] != 2 ? (
+      c1 = mem[MEM_PLOT_TREE + node * 2];
+      c2 = mem[MEM_PLOT_TREE + node * 2 + 1];
+      mem[MEM_PLOT_TREE + node] = c1 == 2 && c2 == 2 ? 2 : (c1 || c2 ? 1 : 0);
+    );
+    node = floor(node / 2);
+  );
+  node = floor(right / 2);
+  while (node > 0) (
+    mem[MEM_PLOT_TREE + node] != 2 ? (
+      c1 = mem[MEM_PLOT_TREE + node * 2];
+      c2 = mem[MEM_PLOT_TREE + node * 2 + 1];
+      mem[MEM_PLOT_TREE + node] = c1 == 2 && c2 == 2 ? 2 : (c1 || c2 ? 1 : 0);
+    );
+    node = floor(node / 2);
+  );
+  0;
+);
+
+/** Sort all hop times by bottom-up mergesort and clear the coverage tree. */
+function vis_prepare() local(n, k, width, start, middle, end, l, r, out, src, dst, tmp) (
+  n = snap_n;
+  k = 0;
+  loop(n, mem[MEM_PLOT_START + k] = plot_time(k); k += 1; );
+  src = MEM_PLOT_START; dst = MEM_PLOT_END;
+  width = 1;
+  while (width < n) (
+    start = 0;
+    while (start < n) (
+      middle = min(start + width, n);
+      end = min(start + 2 * width, n);
+      l = start; r = middle; out = start;
+      while (out < end) (
+        r >= end || (l < middle && mem[src + l] <= mem[src + r]) ? (
+          mem[dst + out] = mem[src + l]; l += 1;
+        ) : (
+          mem[dst + out] = mem[src + r]; r += 1;
+        );
+        out += 1;
+      );
+      start = end;
+    );
+    tmp = src; src = dst; dst = tmp;
+    width *= 2;
+  );
+  vis_sorted = src;
+  vis_count = n;
+  vis_leaf = 1;
+  while (vis_leaf < n) ( vis_leaf *= 2; );
+  n > 0 ? (
+    k = 0;
+    loop(2 * vis_leaf, mem[MEM_PLOT_TREE + k] = 0; k += 1; );
+  );
+  0;
+);
+
+/** Mark visible points: 0 hidden, 1 continuous, 2 boundary, 3 real boundary
+ * whose first block anchor does not cross a newer segment's coverage. */
+function plot_visibility() local(n, finish, start, k, t, prior, have_prior, marked) (
+  vis_prepare();
+  n = snap_n;
+  finish = n - 1;
+  while (finish >= 0) (
+    start = finish;
+    while (start > 0 && !plot_break(start)) ( start -= 1; );
+    have_prior = 0;
+    k = start;
+    while (k <= finish) (
+      t = plot_time(k);
+      marked = vis_intersects(t, t) ? 0 : 1;
+      marked ? (
+        !have_prior || plot_break(k) || vis_intersects(prior, t) ? marked = 2;
+        marked == 2 && plot_break(k) && plot_beat_time(k) <= t &&
+          !vis_intersects(plot_beat_time(k), t) ? marked = 3;
+        prior = t;
+        have_prior = 1;
+      ) : have_prior = 0;
+      mem[MEM_PLOT_VISIBLE + k] = marked;
+      k += 1;
+    );
+    vis_cover(plot_time(start), plot_time(finish));
+    finish = start - 1;
+  );
+  0;
+);
+
+/**
+ * Aggregates one source into the per-pixel column arrays.
+ *
+ * @param src 0 = linked stereo, 1 = left, 2 = right
+ *
+ * Linked is a per-hop reduction, not a fold-down: peak takes the louder
+ * channel and rms the mean of the two energies, so anti-phase material cannot
+ * cancel to silence. The rms smoothing happens here, at draw time, so moving
+ * the slider never rewrites history (0 = the raw hop value).
+ *
+ * One pass fills three column arrays (peak, smoothed rms, segment break) and
+ * the aggregate's window maximum into g_agg_hold.
+ */
+function aggregate(src) local(
+    win, px_per_s, now_t, left_t, cols, c, k, idx, t, x, col, pk, rms, smo,
+    tau_ms, count, span, sum, oldidx, oldrms, oldl, oldr, lpk, lrms, rpk, rrms, brk,
+    n
+) (
+  win = max(slider2, 1);
+  now_t = snap_now_t;
+  left_t = now_t - win;
+  px_per_s = g_plot_w / win;
+  cols = floor(g_plot_w);
+  cols > CAP_MAX_COLS ? cols = CAP_MAX_COLS;
+
+  c = 0;
+  loop(cols,
+    mem[MEM_COLS_PEAK + c] = -1;
+    mem[MEM_COLS_RMS + c] = -1;
+    mem[MEM_COLS_BRK + c] = 0;
+    c += 1;
+  );
+
+  tau_ms = slider5 == 0 ? 0 : slider5 == 1 ? 30 : slider5 == 2 ? 100 : 300;
+  span = max(1, floor(tau_ms * 0.001 * srate / CAP_HOP + 0.5));
+  sum = 0;
+  count = 0;
+  // Negative is the empty-window sentinel; zero is a valid silent maximum.
+  g_agg_hold = -1;
+  src != 2 ? g_window_differ = 0;
+
+  // Visibility is shared by both channels for this snapshot.
+  n = snap_n;
+
+  k = 0;
+  loop(n,
+    idx = k;
+    t = plot_time(idx);
+    mem[MEM_PLOT_VISIBLE + idx] && t <= now_t ? (
+      src == 1 ? (
+        pk = plot_lpk(idx); rms = plot_lrms(idx);
+      ) : src == 2 ? (
+        pk = plot_rpk(idx); rms = plot_rrms(idx);
+      ) : (
+        lpk = plot_lpk(idx); lrms = plot_lrms(idx);
+        rpk = plot_rpk(idx); rrms = plot_rrms(idx);
+        pk = max(lpk, rpk);
+        rms = sqrt((lrms * lrms + rrms * rrms) * 0.5);
+      );
+      brk = mem[MEM_PLOT_VISIBLE + idx] >= 2;
+      brk ? ( sum = 0; count = 0; );
+      count >= span ? (
+        oldidx = k - span;
+        src == 1 ? oldrms = plot_lrms(oldidx) : src == 2 ?
+          oldrms = plot_rrms(oldidx) : (
+            oldl = plot_lrms(oldidx);
+            oldr = plot_rrms(oldidx);
+            oldrms = sqrt((oldl * oldl + oldr * oldr) * 0.5);
+          );
+        sum -= oldrms;
+      ) : count += 1;
+      sum += rms;
+      smo = max(0, sum / count);
+
+      // Warm the moving average from retained points before the left edge,
+      // but keep them out of the columns and visible-window readouts.
+      t >= left_t ? (
+        x = ev_x_of_time(t, now_t, px_per_s);
+        col = floor(x - g_plot_x);
+        col == cols ? col = cols - 1;
+        col >= 0 && col < cols ? (
+          src != 2 ? (
+            abs(ev_db_of_amp(plot_lpk(idx)) - ev_db_of_amp(plot_rpk(idx))) >= 0.05 ||
+            abs(ev_db_of_amp(plot_lrms(idx)) - ev_db_of_amp(plot_rrms(idx))) >= 0.05 ?
+              g_window_differ = 1;
+          );
+          brk ? (
+            mem[MEM_COLS_BRK + col] = 1;
+            mem[MEM_COLS_PEAK + col] = -1;
+          );
+          pk > mem[MEM_COLS_PEAK + col] ? mem[MEM_COLS_PEAK + col] = pk;
+          mem[MEM_COLS_RMS + col] = smo;
+          pk > g_agg_hold ? g_agg_hold = pk;
+        );
+      );
+    ) : (
+      // Hidden overlaps or future points terminate the smoothing window.
+      sum = 0;
+      count = 0;
+    );
+    k += 1;
+  );
+  0;
+);
+
+/**
+ * Panel background inside a panel rectangle, so the axis lives inside it and
+ * nothing is painted outside: the top edge is 0 dBFS, the bottom edge the
+ * floor.
+ */
+function draw_panel(p) local(y) (
+  y = ev_panel_y(p);
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+  gfx_rect(g_plot_x, y, g_plot_w, g_panel_h);
+  0;
+);
+
+/** Tick spacing reserves enough horizontal room for project-time labels. */
+function ev_tick_step() local(tw, th, rightw, width, step, phase) (
+  gfx_setfont(1, "Arial", AXIS_FONT);
+  sprintf(#ev_lbl, "%.0f s", snap_now_t - max(slider2, 1));
+  gfx_measurestr(#ev_lbl, tw, th);
+  sprintf(#ev_lbl, "%.0f s", snap_now_t);
+  gfx_measurestr(#ev_lbl, rightw, th);
+  width = max(tw, rightw) + 10;
+  step = 1;
+  phase = 0;
+  while (g_plot_w * step / max(slider2, 1) < width) (
+    phase == 0 ? (step *= 2; phase = 1;) : phase == 1 ?
+      (step *= 2.5; phase = 2;) : (step *= 2; phase = 0;);
+  );
+  step;
+);
+
+/** One project-time axis shared by all panels. */
+function draw_time_axis() local(step, tick, x, tw, th, lx, last_right) (
+  snap_n > 0 && g_panels_fit ? (
+    step = ev_tick_step();
+    tick = ceil((snap_now_t - slider2) / step) * step;
+    last_right = g_plot_x - 1;
+    gfx_r = 0.62; gfx_g = 0.63; gfx_b = 0.68; gfx_a = 1;
+    while (tick <= snap_now_t) (
+      x = ev_x_of_time(tick, snap_now_t, g_plot_w / max(slider2, 1));
+      sprintf(#ev_lbl, "%.0f s", tick);
+      gfx_measurestr(#ev_lbl, tw, th);
+      lx = max(g_plot_x, min(x - tw * 0.5, g_plot_x + g_plot_w - tw));
+      lx >= last_right + 4 && tw <= g_plot_w ? (
+        gfx_x = lx; gfx_y = g_time_y;
+        gfx_drawstr(#ev_lbl);
+        last_right = lx + tw;
+      );
+      tick += step;
+    );
+  );
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);
+
+/**
+ * Beat anchors are exact host block-start observations. A crossing between two
+ * anchors is placed at their midpoint, with error bounded by half their time
+ * separation. Suppress pairs wider than 50 ms or crossing an ownership break.
+ */
+function draw_beat_grid(p) local(k, flag, t, beat, prev_t, prev_beat, seg_start,
+                                 have_prev, beat_num, end_beat, x, y, y0, limit) (
+  play_state == 1 && snap_n > 0 ? (
+    y0 = ev_panel_y(p);
+    k = 0;
+    have_prev = 0;
+    loop(snap_n,
+      flag = mem[MEM_PLOT_VISIBLE + k];
+      flag == 0 ? ( have_prev = 0; ) : (
+        flag >= 2 ? (
+          have_prev = 0;
+          seg_start = flag == 3 ? plot_beat_time(k) : plot_time(k);
+        );
+        t = plot_beat_time(k);
+        beat = plot_beat(k);
+        t >= seg_start ? (
+          have_prev && t > prev_t && t - prev_t <= 0.05 && beat > prev_beat ? (
+            beat_num = floor(prev_beat) + 1;
+            end_beat = floor(beat);
+            limit = 0;
+            while (beat_num <= end_beat && limit < 128) (
+              // A block-start observation exactly on a beat has no timing error.
+              beat_num == beat ? x = t : x = (prev_t + t) * 0.5;
+              x >= snap_now_t - slider2 && x <= snap_now_t ? (
+                x = ev_x_of_time(x, snap_now_t, g_plot_w / max(slider2, 1));
+                gfx_r = 0.20; gfx_g = 0.21; gfx_b = 0.26; gfx_a = 1;
+                y = y0;
+                while (y < y0 + g_panel_h) (
+                  gfx_line(x, y, x, min(y + 2, y0 + g_panel_h));
+                  y += 6;
+                );
+              );
+              beat_num += 1;
+              limit += 1;
+            );
+          );
+          // Multiple hops may carry the same block anchor; do not erase it.
+          !have_prev || t > prev_t ? (
+            prev_t = t; prev_beat = beat; have_prev = 1;
+          );
+        );
+      );
+      k += 1;
+    );
+  );
+  0;
+);
+
+/**
+ * The dB grid, its labels in the gutter, second ticks and the beat grid, for
+ * one panel. Both panels of Split carry the same lines: the scale is one scale.
+ */
+function draw_panel_grid(p) local(
+    i, db, y0, y, tw, th, step_s, tick, x, beat_dur, n, nb, t, limit
+) (
+  y0 = ev_panel_y(p);
+
+  // Block-start anchor pairs bound each historical beat crossing.
+  // Gate before the beat-history scan, not just its drawing primitives.
+  slider9 == 0 ? draw_beat_grid(p);
+
+  // Temporal lines belong only to Full; axis labels remain in every mode.
+  slider9 == 0 && snap_n > 0 ? (
+    step_s = ev_tick_step();
+    tick = ceil((snap_now_t - slider2) / step_s) * step_s;
+    while (tick <= snap_now_t) (
+      x = ev_x_of_time(tick, snap_now_t, g_plot_w / max(slider2, 1));
+      x >= g_plot_x && x <= g_plot_x + g_plot_w ? (
+        gfx_r = 0.24; gfx_g = 0.25; gfx_b = 0.30; gfx_a = 1;
+        gfx_line(x, y0, x, y0 + g_panel_h);
+      );
+      tick += step_s;
+    );
+  );
+
+  // Horizontal dB lines and their labels in the gutter.
+  gfx_setfont(1, "Arial", AXIS_FONT);
+  i = 0;
+  loop(ev_grid_count(),
+    db = ev_grid_db(i);
+    y = ev_y_of_db_p(db, p);
+    y >= y0 - 0.5 && y <= y0 + g_panel_h + 0.5 ? (
+      db == 0 ? ( gfx_r = 0.45; gfx_g = 0.47; gfx_b = 0.52; )
+              : ( gfx_r = 0.20; gfx_g = 0.21; gfx_b = 0.26; );
+      gfx_a = 1;
+      slider9 != 2 ? gfx_line(g_plot_x, y, g_plot_x + g_plot_w, y);
+
+      // Off hides internal lines, never the dBFS labels or panel border.
+      sprintf(#ev_lbl, "%d", db);
+      gfx_measurestr(#ev_lbl, tw, th);
+      gfx_r = 0.62; gfx_g = 0.63; gfx_b = 0.68; gfx_a = 1;
+      gfx_x = g_plot_x - tw - 6;
+      // Keep larger edge labels inside their panel, including in Split.
+      gfx_y = max(y0, min(y - th * 0.5, y0 + g_panel_h - th));
+      gfx_drawstr(#ev_lbl);
+    );
+    i += 1;
+  );
+
+  // Border, drawn last so it covers the line ends exactly.
+  gfx_r = 0.30; gfx_g = 0.31; gfx_b = 0.37; gfx_a = 1;
+  gfx_line(g_plot_x, y0, g_plot_x + g_plot_w, y0);
+  gfx_line(g_plot_x, y0 + g_panel_h, g_plot_x + g_plot_w, y0 + g_panel_h);
+  gfx_line(g_plot_x, y0, g_plot_x, y0 + g_panel_h);
+  gfx_line(g_plot_x + g_plot_w - 1, y0, g_plot_x + g_plot_w - 1, y0 + g_panel_h);
+  0;
+);
+
+/**
+ * The panel name, inside the panel's top-left corner. Split is the only mode
+ * that needs it -- and it is not decoration: two identical axes without a
+ * channel name is a plot that can be read backwards.
+ */
+function draw_panel_label(p) local(y) (
+  y = ev_panel_y(p);
+  gfx_setfont(1, "Arial", 11);
+  gfx_r = 0.55; gfx_g = 0.57; gfx_b = 0.63; gfx_a = 1;
+  p == 1 ? ( #ev_side = "RIGHT"; ) : ( #ev_side = "LEFT"; );
+  gfx_x = g_plot_x + 6;
+  gfx_y = y + 4;
+  gfx_drawstr(#ev_side);
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);
+
+/**
+ * The peak area, filled from the envelope down to the panel floor, plus its
+ * contour. One column at a time, because a column is what the aggregate gives.
+ */
+function fill_peak(p, r, g, b, a) local(y0, cols, c, pk, y, prev_col, prev_y, j, iy) (
+  y0 = ev_panel_y(p);
+  cols = floor(g_plot_w);
+  cols > CAP_MAX_COLS ? cols = CAP_MAX_COLS;
+  gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = a;
+  prev_col = -1;
+  prev_y = 0;
+  c = 0;
+  loop(cols,
+    pk = mem[MEM_COLS_PEAK + c];
+    pk >= 0 ? (
+      y = ev_y_of_db_p(ev_db_of_amp(pk), p);
+      y < y0 ? y = y0;
+      y > y0 + g_panel_h ? y = y0 + g_panel_h;
+      prev_col >= 0 && mem[MEM_COLS_BRK + c] == 0 ? (
+        j = prev_col + 1;
+        while (j < c) (
+          iy = prev_y + (y - prev_y) * (j - prev_col) / (c - prev_col);
+          gfx_rect(g_plot_x + j, iy, 1, y0 + g_panel_h - iy);
+          j += 1;
+        );
+      );
+      gfx_rect(g_plot_x + c, y, 1, y0 + g_panel_h - y);
+      prev_col = c;
+      prev_y = y;
+    );
+    c += 1;
+  );
+  0;
+);
+
+/**
+ * A line across the aggregate, broken wherever the acquisition broke. With
+ * `thick` set it is drawn two rows tall, which is how Peak and RMS stay
+ * distinguishable when both are shown in one colour family (Overlay).
+ */
+function line_series(p, r, g, b, thick, peak) local(
+    y0, cols, c, ry, y, brk, prev_col, prev_y
+) (
+  y0 = ev_panel_y(p);
+  cols = floor(g_plot_w);
+  cols > CAP_MAX_COLS ? cols = CAP_MAX_COLS;
+  gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1;
+
+  prev_col = -1;
+  prev_y = -1;
+  c = 0;
+  loop(cols,
+    ry = peak ? mem[MEM_COLS_PEAK + c] : mem[MEM_COLS_RMS + c];
+    ry >= 0 ? (
+      y = ev_y_of_db_p(ev_db_of_amp(ry), p);
+      y < y0 ? y = y0;
+      y > y0 + g_panel_h ? y = y0 + g_panel_h;
+      brk = mem[MEM_COLS_BRK + c];
+      prev_col >= 0 && brk == 0 ? (
+        gfx_line(g_plot_x + prev_col, prev_y, g_plot_x + c, y);
+        thick ? ( gfx_line(g_plot_x + prev_col, prev_y + 1, g_plot_x + c, y + 1); );
+      ) : (
+        thick ? ( gfx_rect(g_plot_x + c, y, 1, 2); ) : (
+          gfx_x = g_plot_x + c;
+          gfx_y = y;
+          gfx_setpixel(gfx_r, gfx_g, gfx_b);
+        );
+      );
+      prev_y = y;
+      prev_col = c;
+    );
+    c += 1;
+  );
+  0;
+);
+
+/**
+ * A hint instead of a silently different view: Split was asked for, the window
+ * cannot hold two readable panels, and the mode is NOT replaced by another.
+ */
+function draw_split_hint() local(tw, th, x, y) (
+  gfx_r = 0; gfx_g = 0; gfx_b = 0; gfx_a = 1;
+  gfx_rect(g_plot_x, g_plot_y, g_plot_w, g_plot_h);
+
+  gfx_setfont(1, "Arial", 12);
+  g_midi_visible > 0 ? #ev_lbl = "Audio + MIDI needs more height" :
+                      #ev_lbl = "Stereo Split needs more height";
+  gfx_measurestr(#ev_lbl, tw, th);
+  x = g_plot_x + (g_plot_w - tw) * 0.5;
+  y = g_plot_y + g_plot_h * 0.5 - th;
+  x < g_plot_x + 4 ? x = g_plot_x + 4;
+  gfx_r = 0.90; gfx_g = 0.72; gfx_b = 0.35; gfx_a = 1;
+  gfx_x = x;
+  gfx_y = y;
+  gfx_drawstr(#ev_lbl);
+
+  gfx_r = 0.60; gfx_g = 0.61; gfx_b = 0.66; gfx_a = 1;
+  g_midi_visible > 0 ? #ev_stat = "Resize to show audio panels and the shared note strip" :
+    sprintf(#ev_stat, "%d px per panel, %d needed · resize, or pick Stereo",
+            g_panel_h, PANEL_MIN_H);
+  gfx_x = x;
+  gfx_y = y + th + 6;
+  gfx_drawstr(#ev_stat);
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);
+
+/**
+ * Everything the plot owns, in the order the caller must not change.
+ *
+ * Peak and RMS are painted according to slider4: 0 = peak only, 1 = rms only,
+ * 2 = both. Detector selection affects drawing, never the stored history.
+ */
+function draw_plot() local(
+    show_peak, show_rms, p, idx
+) (
+  show_peak = slider4 == 0 || slider4 == 2;
+  show_rms = slider4 == 1 || slider4 == 2;
+  plot_visibility();
+
+  g_panels_fit == 0 ? (
+    g_view == VIEW_STEREO ? (
+      aggregate(0);
+      g_hold_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+    ) : (
+      aggregate(1);
+      g_hold_l_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      aggregate(2);
+      g_hold_r_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+    );
+    draw_split_hint();
+  ) : (
+    p = 0;
+    loop(g_panels,
+      draw_panel(p);
+      draw_panel_grid(p);
+      p += 1;
+    );
+
+    g_view == VIEW_OVERLAY ? (
+      // No fill and no band between channels: two contours on one axis.
+      aggregate(1);
+      g_hold_l_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      show_peak ? line_series(0, 0.55, 0.85, 0.70, 1, 1);
+      show_rms ? line_series(0, 0.38, 0.62, 0.52, 0, 0);
+
+      aggregate(2);
+      g_hold_r_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      show_peak ? line_series(0, 0.95, 0.76, 0.38, 1, 1);
+      show_rms ? line_series(0, 0.68, 0.54, 0.27, 0, 0);
+      gfx_setfont(1, "Arial", 11);
+      gfx_x = g_plot_x + 6; gfx_y = g_panel_y0 + 4;
+      gfx_r = 0.55; gfx_g = 0.85; gfx_b = 0.70; gfx_a = 1;
+      gfx_drawstr("L");
+      gfx_x = g_plot_x + 24; gfx_y = g_panel_y0 + 4;
+      gfx_r = 0.95; gfx_g = 0.76; gfx_b = 0.38;
+      gfx_drawstr("R");
+    ) : g_view == VIEW_SPLIT ? (
+      // Two filled panels, same scale, same time axis, L above R.
+      aggregate(1);
+      g_hold_l_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      show_peak ? fill_peak(0, 0.16, 0.36, 0.32, 0.55);
+      show_peak ? line_series(0, 0.55, 0.85, 0.70, 1, 1);
+      show_rms ? line_series(0, 0.75, 0.92, 0.82, 0, 0);
+
+      aggregate(2);
+      g_hold_r_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      show_peak ? fill_peak(1, 0.40, 0.30, 0.14, 0.55);
+      show_peak ? line_series(1, 0.95, 0.76, 0.38, 1, 1);
+      show_rms ? line_series(1, 0.98, 0.88, 0.66, 0, 0);
+
+      draw_panel_label(0);
+      draw_panel_label(1);
+    ) : (
+      // Stereo: one linked curve, filled, with the rms line on top.
+      aggregate(0);
+      g_hold_db = g_agg_hold >= 0 ? ev_db_of_amp(g_agg_hold) : -100;
+      show_peak ? fill_peak(0, 0.16, 0.36, 0.32, 0.55);
+      show_peak ? line_series(0, 0.55, 0.85, 0.70, 1, 1);
+      show_rms ? line_series(0, 0.75, 0.92, 0.82, 0, 0);
+    );
+  );
+
+  // Readouts: the newest point is what "now" means, the hold is the window's.
+  // They are independent of the view, so a mode change never blanks a reading.
+  snap_n > 0 ? (
+    idx = snap_n - 1;
+    g_now_l_db = ev_db_of_amp(plot_lpk(idx));
+    g_now_lrms_db = ev_db_of_amp(plot_lrms(idx));
+    g_now_r_db = ev_db_of_amp(plot_rpk(idx));
+    g_now_rrms_db = ev_db_of_amp(plot_rrms(idx));
+    g_now_peak_db = ev_db_of_amp(max(plot_lpk(idx), plot_rpk(idx)));
+    g_now_rms_db = ev_db_of_amp(
+      sqrt((plot_lrms(idx) * plot_lrms(idx) +
+            plot_rrms(idx) * plot_rrms(idx)) * 0.5));
+    g_channels_differ_db = g_now_l_db - g_now_r_db;
+  ) : (
+    g_now_l_db = -100;
+    g_now_lrms_db = -100;
+    g_now_r_db = -100;
+    g_now_rrms_db = -100;
+    g_now_peak_db = -100;
+    g_now_rms_db = -100;
+    g_channels_differ_db = 0;
+  );
+  0;
+);
+
+/**
+ * One line under the plot: the readings, the window, the view, and the states
+ * a reader must not have to infer (frozen, no audio yet, whether the two
+ * channels carry the same envelope). "pre-fader" is not decoration: a JSFX
+ * sees the chain before the fader, and a reading that silently excluded (or
+ * included) it would be misread.
+ *
+ * The wide form is dropped for a shorter one before it is allowed to overlap
+ * anything.
+ */
+function draw_status() local(tw, th, x, avail, fit, flag_width, alt_width) (
+  gfx_setfont(1, "Arial", 12);
+  cap_ready == 0 ? (
+    gfx_r = 1; gfx_g = 0.45; gfx_b = 0.35; gfx_a = 1;
+    gfx_x = g_plot_x; gfx_y = g_status_y;
+    gfx_drawstr("Capture unavailable: sample rate or memory capacity");
+  ) : (
+
+  g_view == VIEW_STEREO ? (
+    sprintf(#ev_stat, "now %.1f dB   rms %.1f dB   hold %.1f dB   %d s",
+            g_now_peak_db, g_now_rms_db, g_hold_db, floor(slider2));
+    sprintf(#ev_stat_alt, "now %.1f dB   %d s", g_now_peak_db, floor(slider2));
+  ) : (
+    sprintf(#ev_stat,
+            "now L %.1f / R %.1f dB   rms L %.1f / R %.1f dB   hold L %.1f / R %.1f dB   %d s",
+            g_now_l_db, g_now_r_db, g_now_lrms_db, g_now_rrms_db,
+            g_hold_l_db, g_hold_r_db, floor(slider2));
+    sprintf(#ev_stat_alt, "now L %.1f / R %.1f dB   %d s", g_now_l_db, g_now_r_db,
+            floor(slider2));
+  );
+  // Reserve the transport state and measurement position before choosing
+  // the verbose readings; omit optional fields rather than draw past the edge.
+  slider1 ? ( #ev_state = "FROZEN"; ) : (
+    loop_status == 1 ? ( #ev_state = "live | loop ready"; ) :
+    loop_status == 3 ? ( #ev_state = "live | loop too short"; ) :
+    loop_status == 4 ? ( #ev_state = "live | loop queue capped"; ) :
+                       ( #ev_state = "live | loop unavailable"; );
+  );
+  snap_n == 0 ? ( #ev_position = "no audio yet"; ) : ( #ev_position = "pre-fader"; );
+  gfx_measurestr(#ev_state, tw, th);
+  avail = tw + 14;
+  gfx_measurestr(#ev_position, tw, th);
+  avail += tw + 14;
+  flag_width = 0;
+  snap_n > 0 ? (
+    g_window_differ == 0 ? ( #ev_flag = "envelopes L=R"; ) : (
+      sprintf(#ev_flag, "L-R %.1f dB", g_channels_differ_db);
+    );
+    gfx_measurestr(#ev_flag, flag_width, th);
+    gfx_measurestr(#ev_stat_alt, alt_width, th);
+    alt_width + avail + flag_width + 14 <= g_plot_w ? avail += flag_width + 14;
+  );
+  gfx_measurestr(#ev_stat, tw, th);
+  fit = tw + avail <= g_plot_w;
+  fit == 0 ? gfx_measurestr(#ev_stat_alt, tw, th);
+
+  gfx_r = 0.80; gfx_g = 0.81; gfx_b = 0.84; gfx_a = 1;
+  gfx_x = g_plot_x;
+  gfx_y = g_status_y;
+  fit ? ( gfx_drawstr(#ev_stat); ) : ( gfx_drawstr(#ev_stat_alt); );
+  x = g_plot_x + tw + 14;
+
+  gfx_measurestr(#ev_state, tw, th);
+  x + tw <= g_plot_x + g_plot_w ? (
+    gfx_r = 0.55; gfx_g = 0.56; gfx_b = 0.60; gfx_a = 1;
+    slider1 ? ( gfx_r = 0.95; gfx_g = 0.72; gfx_b = 0.30; );
+    gfx_x = x; gfx_y = g_status_y;
+    gfx_drawstr(#ev_state);
+    x += tw + 14;
+  );
+
+  gfx_measurestr(#ev_position, tw, th);
+  x + tw <= g_plot_x + g_plot_w ? (
+    gfx_r = 0.42; gfx_g = 0.43; gfx_b = 0.47; gfx_a = 1;
+    gfx_x = x; gfx_y = g_status_y;
+    gfx_drawstr(#ev_position);
+    x += tw + 14;
+  );
+
+  snap_n > 0 ? (
+    gfx_measurestr(#ev_flag, tw, th);
+    x + tw <= g_plot_x + g_plot_w ? (
+      gfx_x = x; gfx_y = g_status_y;
+      gfx_drawstr(#ev_flag);
+    );
+  );
+
+  );
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);

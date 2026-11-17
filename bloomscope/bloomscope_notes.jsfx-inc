@@ -1,0 +1,246 @@
+// BloomScope C: one conditional note strip and aligned guides for all audio views.
+// Leaf renderer: reads only completed snapshots and conductor-owned geometry.
+@init
+
+#note_name = "";
+#note_label = "";
+#note_heading = "";
+
+function note_colour(ch, alpha) local(phase) (
+  phase = ch * 2.399963;
+  gfx_r = 0.65 + 0.25 * cos(phase);
+  gfx_g = 0.65 + 0.25 * cos(phase + 2.094395);
+  gfx_b = 0.65 + 0.25 * cos(phase + 4.188790);
+  gfx_a = alpha;
+  0;
+);
+
+// Event identity is independent of MIDI channel and L/R envelope colours.
+function event_colour(off, alpha) (
+  off ? ( gfx_r = 1; gfx_g = 0.55; gfx_b = 0.15; ) :
+        ( gfx_r = 1; gfx_g = 0.25; gfx_b = 0.25; );
+  gfx_a = alpha;
+  0;
+);
+
+function note_row_bar(pitch, row_h) local(ly) (
+  ly = g_midi_y + MIDI_STRIP_HEADING + mem[MEM_MIDI_ROW + pitch] * row_h;
+  floor(ly + row_h * 0.75);
+);
+
+function note_pitch_name(pitch) local(pc) (
+  pc = pitch % 12;
+  pc == 0 ? #note_name = "C" : pc == 1 ? #note_name = "C#" :
+  pc == 2 ? #note_name = "D" : pc == 3 ? #note_name = "D#" :
+  pc == 4 ? #note_name = "E" : pc == 5 ? #note_name = "F" :
+  pc == 6 ? #note_name = "F#" : pc == 7 ? #note_name = "G" :
+  pc == 8 ? #note_name = "G#" : pc == 9 ? #note_name = "A" :
+  pc == 10 ? #note_name = "A#" : #note_name = "B";
+  sprintf(#note_label, "%s%d", #note_name, floor(pitch / 12) - 1);
+  0;
+);
+
+/** Pixel-mirrored filled heads: identical area, dimensions and opacity for
+ * up/down and plot/strip. x is rasterized to its nearest pixel (<= 0.5 px);
+ * event timestamps and guide positions are not modified. No font or stem. */
+function draw_note_arrow(x, base_y, height, off) local(i, half, left, right, py, cx) (
+  cx = floor(x + 0.5);
+  i = 0;
+  loop(height,
+    half = height - 1 - i;
+    left = max(g_plot_x, cx - half);
+    right = min(g_plot_x + g_plot_w, cx + half);
+    py = off ? base_y + 1 + i : base_y - 1 - i;
+    left <= right ? gfx_rect(left, py, right - left + 1, 1);
+    i += 1;
+  );
+  0;
+);
+
+function draw_guide_line(x, top, bottom, off) local(y) (
+  off ? (
+    y = top;
+    while (y < bottom) (
+      gfx_line(x, y, x, min(y + 3, bottom));
+      y += 6;
+    );
+  ) : gfx_line(x, top, x, bottom);
+  0;
+);
+
+/** Separate line/head passes keep coincident events identifiable: all red
+ * on lines first, then orange dashed offs; opaque heads are painted last. */
+function draw_note_guide(t, off, target_y) local(p, x, y, bottom) (
+  slider10 > 0 && t >= snap_now_t - max(slider2, 1) && t <= snap_now_t ? (
+    x = ev_x_of_time(t, snap_now_t, g_plot_w / max(slider2, 1));
+    event_colour(off, 0.42);
+    p = 0;
+    loop(g_panels,
+      y = ev_panel_y(p);
+      draw_guide_line(x, y, y + g_panel_h, off);
+      p += 1;
+    );
+    slider10 == 2 ? (
+      event_colour(off, 0.16);
+      g_panels == 2 ? draw_guide_line(x, g_panel_y0 + g_panel_h, g_panel_y1, off);
+      bottom = ev_panel_y(g_panels - 1) + g_panel_h;
+      draw_guide_line(x, bottom, target_y, off);
+    );
+  );
+  0;
+);
+
+function draw_note_plot_head(t, off, height) local(p, x, y, base) (
+  slider10 > 0 && t >= snap_now_t - max(slider2, 1) && t <= snap_now_t ? (
+    x = ev_x_of_time(t, snap_now_t, g_plot_w / max(slider2, 1));
+    event_colour(off, 1);
+    p = 0;
+    loop(g_panels,
+      y = ev_panel_y(p);
+      base = off ? floor(y + g_panel_h) - 1 - height : ceil(y) + 1 + height;
+      draw_note_arrow(x, base, height, off);
+      p += 1;
+    );
+  );
+  0;
+);
+
+/** Four bounded width tiers retain both limit flags. At the minimum plot width,
+ * D means dense rows/labels omitted, C means history capped; D/C means both. */
+function note_heading_text(dense, capped, tier) (
+  tier == 0 ? (
+    dense ? sprintf(#note_heading, "MIDI: %d pitches; dense rows (labels omitted)", g_midi_pitches) :
+            #note_heading = "MIDI notes";
+    capped ? strcat(#note_heading, " (history capped)");
+  ) : tier == 1 ? (
+    dense && capped ? #note_heading = "MIDI: dense, capped" :
+    dense ? #note_heading = "MIDI: dense (no labels)" :
+    capped ? #note_heading = "MIDI: history capped" : #note_heading = "MIDI notes";
+  ) : tier == 2 ? (
+    dense && capped ? #note_heading = "dense/capped" :
+    dense ? #note_heading = "dense" :
+    capped ? #note_heading = "capped" : #note_heading = "MIDI";
+  ) : (
+    dense && capped ? #note_heading = "D/C" :
+    dense ? #note_heading = "D" :
+    capped ? #note_heading = "C" : #note_heading = "M";
+  );
+  0;
+);
+
+function draw_note_heading(dense, capped) local(tier, tw, th, avail) (
+  // No permanent strip title: reserve this row for actual limit diagnostics.
+  dense || capped ? (
+    avail = g_plot_w - 8;
+    tier = 0;
+    note_heading_text(dense, capped, tier);
+    gfx_measurestr(#note_heading, tw, th);
+    while (tw > avail && tier < 3) (
+      tier += 1;
+      note_heading_text(dense, capped, tier);
+      gfx_measurestr(#note_heading, tw, th);
+    );
+    // The final one/three-character tier fits the layout's 40 px minimum.
+    gfx_r = 0.62; gfx_g = 0.63; gfx_b = 0.68; gfx_a = 1;
+    gfx_x = g_plot_x + 4; gfx_y = g_midi_y + 2;
+    gfx_drawstr(#note_heading);
+  );
+  0;
+);
+
+function draw_notes() local(k, p, on, end, off, ch, has_on, pitch, x1, x2, y, ly,
+                            row_h, tw, th, lx, right, label_end, label_h, target) (
+  g_note_hover = 0;
+  g_midi_visible > 0 && g_panels_fit ? (
+    gfx_setfont(1, "Arial", 11);
+    // No separator above the MIDI strip: the shared time-axis row is enough.
+    row_h = (g_midi_h - MIDI_STRIP_HEADING) / max(g_midi_pitches, 1);
+    // One integer size for every marker, fitting every pitch row even at
+    // fractional row heights. Dense rows may leave no room for a head.
+    g_note_marker_h = 8;
+    p = 0;
+    loop(g_midi_pitches,
+      ly = g_midi_y + MIDI_STRIP_HEADING + p * row_h;
+      y = floor(ly + row_h * 0.75);
+      g_note_marker_h = max(0, min(g_note_marker_h, min(y - ceil(ly), floor(ly + row_h) - 1 - y)));
+      p += 1;
+    );
+    // Paint both guide types behind note bars, labels and opaque heads.
+    p = 0;
+    loop(2,
+      k = 0;
+      loop(snap_midi_n,
+        mem[MEM_MIDI_VISIBLE + k] ? (
+          target = note_row_bar(note_field(k, 2), row_h);
+          p == 0 && note_field(k, 7) ?
+            draw_note_guide(note_field(k, 0), 0, target - g_note_marker_h);
+          p == 1 && note_field(k, 5) == 1 && note_field(k, 1) <= snap_now_t ?
+            draw_note_guide(note_field(k, 1), 1, target + g_note_marker_h - 1);
+        );
+        k += 1;
+      );
+      p += 1;
+    );
+    gfx_setfont(1, "Arial", 16);
+    gfx_measurestr("Mg", tw, label_h);
+    gfx_setfont(1, "Arial", 11);
+    draw_note_heading(row_h < max(18, label_h), snap_midi_dropped > 0);
+    gfx_setfont(1, "Arial", 16);
+    p = 0;
+    loop(128, mem[MEM_MIDI_PITCH + p] = g_plot_x - 4; p += 1; );
+    k = 0;
+    loop(snap_midi_n,
+      mem[MEM_MIDI_VISIBLE + k] ? (
+        on = note_field(k, 0);
+        off = note_field(k, 5) == 1 && note_field(k, 1) <= snap_now_t;
+        end = note_field(k, 5) == 0 ? snap_now_t : min(note_field(k, 1), snap_now_t);
+        has_on = note_field(k, 7);
+        pitch = note_field(k, 2); ch = note_field(k, 3);
+        x1 = max(g_plot_x, ev_x_of_time(on, snap_now_t, g_plot_w / max(slider2, 1)));
+        x2 = min(g_plot_x + g_plot_w, ev_x_of_time(end, snap_now_t, g_plot_w / max(slider2, 1)));
+        ly = g_midi_y + MIDI_STRIP_HEADING + mem[MEM_MIDI_ROW + pitch] * row_h;
+        y = note_row_bar(pitch, row_h);
+        note_colour(ch, 0.95);
+        has_on ? (
+          gfx_line(x1, y, x2, y);
+          on >= snap_now_t - max(slider2, 1) ? (
+            event_colour(0, 1);
+            draw_note_arrow(x1, y, g_note_marker_h, 0);
+            draw_note_plot_head(on, 0, g_note_marker_h);
+          );
+        );
+        off ? (
+          event_colour(1, 1);
+          draw_note_arrow(x2, y - 1, g_note_marker_h, 1);
+          draw_note_plot_head(note_field(k, 1), 1, g_note_marker_h);
+        );
+        note_colour(ch, 0.95);
+        // Hover works even when dense rows or collisions suppress the label.
+        // At overlaps the last drawn matching bar wins, deterministically.
+        mouse_x >= g_plot_x && mouse_x <= g_plot_x + g_plot_w &&
+        mouse_x >= x1 - 4 && mouse_x <= x2 + 4 &&
+        mouse_y >= ly && mouse_y < ly + row_h ? (
+          g_note_hover = k + 1;
+          g_note_hover_top = ly;
+          g_note_hover_bottom = ly + row_h;
+        );
+        // Truncated bars end plainly: no false received note-off marker.
+        row_h >= max(18, label_h) ? (
+          note_pitch_name(pitch);
+          gfx_measurestr(#note_label, tw, th);
+          lx = x1 + 5;
+          right = g_plot_x + g_plot_w;
+          label_end = mem[MEM_MIDI_PITCH + pitch];
+          lx >= label_end + 4 && lx + tw <= right ? (
+            gfx_x = lx; gfx_y = ly;
+            gfx_drawstr(#note_label);
+            mem[MEM_MIDI_PITCH + pitch] = lx + tw;
+          );
+        );
+      );
+      k += 1;
+    );
+  );
+  gfx_setfont(1, "Arial", FONT_SIZE);
+  0;
+);

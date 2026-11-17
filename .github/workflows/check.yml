@@ -29,3 +29,8 @@ jobs:
       run: python3 -m unittest discover -s tests/ccscope -v
     - name: Check the PolyTrills engine models
       run: for t in tests/polytrills/*_model.py; do echo "=== $t"; python3 "$t"; done
+    - name: Check the BloomScope package and models
+      run: |
+        python3 tests/bloomscope/lint_header.py
+        python3 -m unittest discover -s tests/bloomscope -v
+        python3 tests/bloomscope/test_bloomscope_math.py
